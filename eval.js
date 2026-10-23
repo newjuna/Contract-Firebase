@@ -65,7 +65,7 @@ async function saveEval(final){const c=evCur;c.comment=value('evCmt');
 function renderEvalDone(e){const d=evData,au=e.auto.items||{};jobsMode='eval';evCur=null;
  $('jobs').innerHTML='<div class="card"><button class="button ghost" type="button" onclick="renderEvalList()">← 업체 목록</button><h2 style="margin-top:12px">종료 평가 결과 · '+escapeText(e.company)+'</h2><div class="muted">'+escapeText(d.job.title)+' · '+escapeText(e.evaluator)+' · '+escapeText(fmtTime(e.evaluatedAt))+' · 안전보건팀 사후 검토 대상</div>'
   +'<div style="margin-top:12px"><b style="font-size:22px">'+e.total+'점</b> '+gradePill(e.grade)+'</div>'
-  +'<button class="button" type="button" style="width:100%;margin-top:12px" onclick="evFile(\''+escapeText(e.id)+'\')">📦 전체 활동내역 ZIP 내려받기</button><p class="muted" style="margin-top:6px">1.계약 전 서류 · 2.계약 전 평가 · 3.수행 기록 · 4.작업 종료 폴더로 나뉜 PDF 묶음 (같은 구조로 Drive에도 보관)</p></div>'
+  +'<button class="button" type="button" style="width:100%;margin-top:12px" onclick="evFile(\''+escapeText(e.id)+'\')">📦 전체 활동내역 ZIP 내려받기</button><p class="muted" style="margin-top:6px">1.계약 전 서류 · 2.계약 전 평가 · 3.수행 기록 · 4.작업 종료 폴더로 나뉜 PDF 묶음 + 원본파일 ZIP(사진·서류, 35MB씩 나눔) · 같은 파일이 Drive에도 보관</p></div>'
   +'<div class="card"><table class="rtable"><tr><th style="width:36px">No</th><th>항목</th><th style="width:60px">결과</th><th style="width:56px">점수</th></tr>'+d.evalItems.map(([no,,name])=>{const x=e.items[no]||{},P=d.points[no];return '<tr><td style="text-align:center">'+no+'</td><td><b>'+escapeText(name)+'</b><div class="muted">'+escapeText((au[no]||{}).why||'')+(x.memo?'<br>의견: '+escapeText(x.memo):'')+'</div></td><td style="text-align:center"'+(x.lv==='P'?' class="req"':'')+'>'+escapeText(EV_LV[x.lv]||'-')+'</td><td style="text-align:center">'+(x.lv?P['GNP'.indexOf(x.lv)]:0)+'/'+P[0]+'</td></tr>'}).join('')+'</table>'
   +'<div class="stage">개선사항</div><p class="desc" style="white-space:pre-line">'+escapeText(e.comment||'없음')+'</p></div>'
   +'<div class="card"><button class="button ghost" type="button" style="width:100%" onclick="reopenEval(\''+escapeText(e.id)+'\')">다시 수정</button></div>';window.scrollTo(0,0)}
@@ -75,7 +75,23 @@ let evDl=null;
 /** 내려받기를 누른 뒤 화면 아래에 [드라이브에서 열기] 버튼 (10초 동안) */
 function evDlLink(){if(!evDl)return;let b=$('evDlBox');if(!b){b=document.createElement('div');b.id='evDlBox';b.setAttribute('role','status');b.style.cssText='position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:90;background:#26344b;color:#fff;border-radius:12px;padding:10px 14px;display:flex;gap:10px;align-items:center;box-shadow:0 6px 18px #0004;font-size:14px';document.body.appendChild(b)}
  b.innerHTML='<span>안 받아졌나요?</span>';const k=document.createElement('button');k.type='button';k.className='button ghost';k.textContent='드라이브에서 열기';k.onclick=()=>{window.open(evDl.url,'_blank');b.remove()};b.appendChild(k);clearTimeout(b._t);b._t=setTimeout(()=>b.remove(),10000)}
-async function evFile(id){try{const r=await call('jobEvalFile',id);if(!r.download){openFile(r);return}evDl=r;
+/** F1.7d 받을 파일이 여러 개(활동내역 ZIP + 원본파일 ZIP)일 때: 파일마다 [내려받기] 버튼
+ *  (브라우저는 한 번 누를 때 다운로드 하나만 허용하므로 버튼을 하나씩 따로 둠) */
+function evDlPanel(r){let b=$('evDlPanel');if(b)b.remove();b=document.createElement('div');b.id='evDlPanel';b.setAttribute('role','dialog');b.setAttribute('aria-modal','true');b.setAttribute('aria-labelledby','evDlTitle');
+ b.style.cssText='position:fixed;inset:0;z-index:95;background:#0007;display:flex;align-items:center;justify-content:center;padding:16px';
+ const box=document.createElement('div');box.className='card';box.style.cssText='max-width:460px;width:100%;max-height:90vh;overflow:auto;margin:0';
+ box.innerHTML='<h2 id="evDlTitle" style="margin:0 0 6px">ZIP 준비 완료 · '+r.files.length+'개</h2><p class="muted" style="margin:0 0 10px">파일마다 [내려받기]를 한 번씩 눌러 주세요. 새 탭이 잠깐 열렸다 닫힐 수 있습니다.<br>안 받아지면 [드라이브에서 열기]를 눌러 주세요. ('+escapeText(r.email||'')+' 계정으로 보기 권한이 있습니다)</p>';
+ r.files.forEach((f)=>{const row=document.createElement('div');row.style.cssText='border:1px solid #d8dee8;border-radius:10px;padding:10px;margin-top:8px';
+  row.innerHTML='<b>'+escapeText(f.label||'')+'</b><div class="muted" style="word-break:break-all">'+escapeText(f.name||'')+(f.size?' ('+(f.size/1048576).toFixed(1)+'MB)':'')+'</div>';
+  const bar=document.createElement('div');bar.style.cssText='display:flex;gap:8px;margin-top:8px';
+  const d=document.createElement('button');d.type='button';d.className='button';d.style.flex='1';d.textContent='내려받기';
+  d.onclick=()=>{const w=window.open(f.download,'_blank');if(!w)location.href=f.download;d.textContent='✓ 받기 시작함';msg('다운로드 폴더를 확인해 주세요.')};
+  const o=document.createElement('button');o.type='button';o.className='button ghost';o.textContent='드라이브에서 열기';o.onclick=()=>window.open(f.url,'_blank');
+  bar.append(d,o);row.appendChild(bar);box.appendChild(row)});
+ const c=document.createElement('button');c.type='button';c.className='button ghost';c.style.cssText='width:100%;margin-top:12px';c.textContent='닫기';
+ const close=()=>{b.remove();document.removeEventListener('keydown',esc)},esc=(ev)=>{if(ev.key==='Escape')close()};c.onclick=close;b.onclick=(ev)=>{if(ev.target===b)close()};document.addEventListener('keydown',esc);
+ box.appendChild(c);b.appendChild(box);document.body.appendChild(b);box.querySelector('button').focus()}
+async function evFile(id){try{const r=await call('jobEvalFile',id);if(Array.isArray(r.files)&&r.files.length>1){evDlPanel(r);return}if(!r.download){openFile(r);return}evDl=r;
   const mb=r.size?' ('+(r.size/1048576).toFixed(1)+'MB)':'';
   popup('ZIP 준비 완료',(r.name||'전체활동내역.zip')+mb+'\n\n[내려받기]를 누르면 다운로드 폴더로 받습니다.\n새 탭이 잠깐 열렸다 닫힐 수 있습니다.\n\n안 받아지면 이 화면의 [드라이브에서 열기]를 눌러 주세요.\n('+(r.email||'')+' 계정으로 보기 권한이 있습니다)','내려받기',()=>{const w=window.open(r.download,'_blank');if(!w)location.href=r.download;msg('다운로드 폴더를 확인해 주세요.');evDlLink()})}
  catch(e){/* v5.19 응답이 사라져도 서버는 계속 만들고 있을 수 있음 → 다시 누르라고 안내 (두 번 만들지 않음) */if(/응답을 받지 못했|만드는 중/.test(e&&e.message||''))alert('ZIP을 만드는 중입니다.\n처음 한 번은 1~2분 걸립니다. 잠시 뒤 [전체 활동내역 ZIP 내려받기]를 다시 눌러 주세요.\n(다 만들어진 뒤에는 바로 내려받아집니다)')}}
