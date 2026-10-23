@@ -69,8 +69,15 @@ function renderEvalDone(e){const d=evData,au=e.auto.items||{};jobsMode='eval';ev
   +'<div class="card"><table class="rtable"><tr><th style="width:36px">No</th><th>항목</th><th style="width:60px">결과</th><th style="width:56px">점수</th></tr>'+d.evalItems.map(([no,,name])=>{const x=e.items[no]||{},P=d.points[no];return '<tr><td style="text-align:center">'+no+'</td><td><b>'+escapeText(name)+'</b><div class="muted">'+escapeText((au[no]||{}).why||'')+(x.memo?'<br>의견: '+escapeText(x.memo):'')+'</div></td><td style="text-align:center"'+(x.lv==='P'?' class="req"':'')+'>'+escapeText(EV_LV[x.lv]||'-')+'</td><td style="text-align:center">'+(x.lv?P['GNP'.indexOf(x.lv)]:0)+'/'+P[0]+'</td></tr>'}).join('')+'</table>'
   +'<div class="stage">개선사항</div><p class="desc" style="white-space:pre-line">'+escapeText(e.comment||'없음')+'</p></div>'
   +'<div class="card"><button class="button ghost" type="button" style="width:100%" onclick="reopenEval(\''+escapeText(e.id)+'\')">다시 수정</button></div>';window.scrollTo(0,0)}
-/* F1.7 ZIP은 드라이브 화면으로 엶 (본인 계정에만 보기 권한 · 파일이 커도 빠름) */
-async function evFile(id){try{openFile(await call('jobEvalFile',id));msg('전체 활동내역 ZIP을 드라이브에서 엽니다. [다운로드]를 눌러 받으세요.')}
+/* F1.7b ZIP 바로 내려받기: [내려받기]를 누르면 드라이브 화면을 거치지 않고 다운로드 폴더로 받음 (본인 계정에만 보기 권한)
+ *  안 받아지면(브라우저에 다른 구글 계정이 로그인된 경우 등) 드라이브 화면에서 ⬇ */
+let evDl=null;
+/** 내려받기를 누른 뒤 화면 아래에 [드라이브에서 열기] 버튼 (10초 동안) */
+function evDlLink(){if(!evDl)return;let b=$('evDlBox');if(!b){b=document.createElement('div');b.id='evDlBox';b.setAttribute('role','status');b.style.cssText='position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:90;background:#26344b;color:#fff;border-radius:12px;padding:10px 14px;display:flex;gap:10px;align-items:center;box-shadow:0 6px 18px #0004;font-size:14px';document.body.appendChild(b)}
+ b.innerHTML='<span>안 받아졌나요?</span>';const k=document.createElement('button');k.type='button';k.className='button ghost';k.textContent='드라이브에서 열기';k.onclick=()=>{window.open(evDl.url,'_blank');b.remove()};b.appendChild(k);clearTimeout(b._t);b._t=setTimeout(()=>b.remove(),10000)}
+async function evFile(id){try{const r=await call('jobEvalFile',id);if(!r.download){openFile(r);return}evDl=r;
+  const mb=r.size?' ('+(r.size/1048576).toFixed(1)+'MB)':'';
+  popup('ZIP 준비 완료',(r.name||'전체활동내역.zip')+mb+'\n\n[내려받기]를 누르면 다운로드 폴더로 받습니다.\n새 탭이 잠깐 열렸다 닫힐 수 있습니다.\n\n안 받아지면 이 화면의 [드라이브에서 열기]를 눌러 주세요.\n('+(r.email||'')+' 계정으로 보기 권한이 있습니다)','내려받기',()=>{const w=window.open(r.download,'_blank');if(!w)location.href=r.download;msg('다운로드 폴더를 확인해 주세요.');evDlLink()})}
  catch(e){/* v5.19 응답이 사라져도 서버는 계속 만들고 있을 수 있음 → 다시 누르라고 안내 (두 번 만들지 않음) */if(/응답을 받지 못했|만드는 중/.test(e&&e.message||''))alert('ZIP을 만드는 중입니다.\n처음 한 번은 1~2분 걸립니다. 잠시 뒤 [전체 활동내역 ZIP 내려받기]를 다시 눌러 주세요.\n(다 만들어진 뒤에는 바로 내려받아집니다)')}}
 async function reopenEval(id){if(!confirm('확정을 풀고 다시 수정할까요?\n수정 후 다시 [평가 확정]을 눌러야 합니다.'))return;try{evData=await call('reopenJobEval',id);openEval(id);refreshBadges()}catch(e){}}
 /* ---------- 업체 화면: 종료된 공사 ---------- */
