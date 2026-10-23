@@ -34,7 +34,7 @@ function inspMark(n,k){ins.items[n]=k;const el=$('ii_'+n);el.classList.toggle('b
 /* F1.6b 고른 사진 여러 장을 한꺼번에 올림 (칸마다 최대 5장) → 올라간 사진 ID 목록. 일부만 실패하면 실패한 장 수를 알려 줌 */
 async function upInsp(inputId,staffCompany,room){const inp=$(inputId),fl=[...((inp&&inp.files)||[])].slice(0,Math.max(0,room??5));if(inp)inp.value='';if(!fl.length){if(inp&&room===0)msg('사진은 칸마다 5장까지입니다.');return []}
  msg('사진 '+fl.length+'장을 올리는 중입니다…');  // 이 안내가 안 뜨면 휴대폰이 사진을 화면에 넘겨주지 못한 것
- const rs=await Promise.allSettled(fl.map(async f0=>{const f=await readFile(f0,{max:1280,q:0.6});const r=staffCompany?await call('uploadInspPhotoStaff',inspJob.job.id,staffCompany,f):await call('uploadInspPhoto',vjob.job.id,f);inspPhoto[r.id]='data:'+f.mime+';base64,'+f.data;return r.id}));
+ const rs=await Promise.allSettled(fl.map(async f0=>{const f=await readFile(f0,PHOTO_SITE);const r=staffCompany?await call('uploadInspPhotoStaff',inspJob.job.id,staffCompany,f):await call('uploadInspPhoto',vjob.job.id,f);inspPhoto[r.id]='data:'+f.mime+';base64,'+f.data;return r.id}));
  const ids=rs.filter(x=>x.status==='fulfilled').map(x=>x.value),bad=rs.filter(x=>x.status==='rejected');
  if(bad.length)alert((ids.length?ids.length+'장은 올렸고 ':'')+bad.length+'장은 올리지 못했습니다.\n'+((bad[0].reason&&bad[0].reason.message)||''));return ids}
 async function addTbm(){const ids=await upInsp('tbmFile',null,5-ins.tbm.length);if(!ids.length)return;ins.name=value('inName')||ins.name;ins.tbm=ins.tbm.concat(ids).slice(0,5);$('tbmList').innerHTML=thumbs(ins.tbm,'dropTbm')+'<label class="button ghost" for="tbmFile">📷 사진 넣기</label><input class="hidefile" type="file" id="tbmFile" accept="image/*" capture="environment" onchange="addTbm()" aria-label="TBM 사진 선택">';$('tbmCard').classList.remove('miss','shake')}
