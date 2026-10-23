@@ -67,7 +67,7 @@ function text(id,label,value='',disabled=false){return `<div class="field"><labe
 function value(id){return $('f_'+id)?.value?.trim()||''}
 function switchTab(which){tab=which;toggleMenu(false);stopScan();if($(which+'Tab'))$('pageTitle').textContent=$(which+'Tab').textContent;clearInterval(roomTimer);clearInterval(wkTimer);for(const n of ['my','admin','review','tpl','staff','jobs','notice','vendors']){$(n).classList.toggle('hidden',n!==which);$(n+'Tab').classList.toggle('active',n===which)}if(which==='admin')loadAdmin();if(which==='review')loadReview();if(which==='tpl')loadTemplates();if(which==='staff')loadStaff();if(which==='jobs')loadJobs();if(which==='notice')loadNotices();if(which==='vendors')loadVendors();}
 // ★ 화면 버전: 여기 한 줄만 고침 (GitHub만 올리면 로그인 화면·앱 화면·메뉴에 모두 반영, Code.gs 수정 불필요)
-const UI_VERSION='26.10.24 F1.6b';
+const UI_VERSION='26.10.24 F1.7';
 function showVer(){document.querySelectorAll('.verTxt').forEach(x=>x.textContent=UI_VERSION)}
 /** v4.1 ⚙ 마스터 설정: 직원 관리로 바로 이동 (마스터 계정만 보임) */
 function openMaster(){if(!state||!state.isMaster)return;sgo('staff')}
@@ -416,7 +416,7 @@ function jointMark(n){collectDocs();const v=room.joint.items[n],el=$('ji_'+n);el
 /* F1.6b 합동점검 불량 사진: 여러 장 한꺼번에 (항목마다 최대 5장) */
 async function addPhoto(n){const inp=$('jf_'+n);collectDocs();const nt=room.joint.notes[n]=room.joint.notes[n]||{memo:'',photos:[]},left=5-(nt.photos||[]).length,fl=[...(inp.files||[])].slice(0,Math.max(0,left));inp.value='';
  if(!fl.length){if(left<=0)msg('사진은 항목마다 5장까지입니다.');return}if(fl.length>1)msg('사진 '+fl.length+'장을 올리는 중입니다…');
- const rs=await Promise.allSettled(fl.map(async f0=>{const f=await readFile(f0,{max:960,q:0.55});const r=await call('uploadMeetingPhoto',room.id,n,f);photoPrev[r.id]='data:'+f.mime+';base64,'+f.data;return r.id}));
+ const rs=await Promise.allSettled(fl.map(async f0=>{const f=await readFile(f0,PHOTO_SITE);const r=await call('uploadMeetingPhoto',room.id,n,f);photoPrev[r.id]='data:'+f.mime+';base64,'+f.data;return r.id}));
  const ids=rs.filter(x=>x.status==='fulfilled').map(x=>x.value),bad=rs.filter(x=>x.status==='rejected');
  if(ids.length){nt.photos=(nt.photos||[]).concat(ids).slice(0,5);$('jbx_'+n).innerHTML=badBox(n,'');msg(n+'번 사진 '+ids.length+'장을 올렸습니다. [임시 저장]을 눌러 보관하세요.')}
  if(bad.length)alert((ids.length?ids.length+'장은 올렸고 ':'')+bad.length+'장은 올리지 못했습니다.\n'+((bad[0].reason&&bad[0].reason.message)||''))}
@@ -597,7 +597,10 @@ function shrinkImage(f,o){o=o||{};const MX=o.max||2000,Q=o.q||0.82,t=String(f.ty
    cv.toBlob(b=>res(b&&(!okType||b.size<f.size)?new File([b],base+'.jpg',{type:'image/jpeg'}):f),'image/jpeg',Q)};
   img.onerror=()=>{URL.revokeObjectURL(url);res(f)};img.src=url})}
 const MAX_MB=10;
-async function readFile(f0,o){if(!f0)throw Error('파일을 선택해 주세요.');const f=await shrinkImage(f0,o);return new Promise((res,rej)=>{if(f.size>MAX_MB*1024*1024)return rej(Error('파일은 '+MAX_MB+'MB 이하만 올릴 수 있습니다. (현재 '+(f.size/1048576).toFixed(1)+'MB)'));const ext=(String(f.name||'').match(/\.(jpe?g|png|pdf)$/i)||[])[1],guess=ext?({jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',pdf:'application/pdf'})[ext.toLowerCase()]:'';const r=new FileReader();r.onload=()=>res({name:f.name||('photo_'+Date.now()+'.jpg'),mime:f.type||guess||'application/octet-stream',data:r.result.split(',')[1]});r.onerror=()=>rej(Error('파일을 읽을 수 없습니다.'));r.readAsDataURL(f)})}
+/* F1.7 사진 용량 최소화: 사진은 크기와 상관없이 항상 줄여서 올림 (긴 변 1280px · 화질 0.55 → 보통 100~250KB)
+ *  현장 사진(순회점검·합동점검·조치 후)은 화면에서 더 작게 지정 (긴 변 1024px · 0.5 → 보통 80~150KB) · PDF·문서 파일은 그대로 */
+const PHOTO_DEFAULT={max:1280,q:0.55},PHOTO_SITE={max:1024,q:0.5};
+async function readFile(f0,o){if(!f0)throw Error('파일을 선택해 주세요.');const f=await shrinkImage(f0,o||PHOTO_DEFAULT);return new Promise((res,rej)=>{if(f.size>MAX_MB*1024*1024)return rej(Error('파일은 '+MAX_MB+'MB 이하만 올릴 수 있습니다. (현재 '+(f.size/1048576).toFixed(1)+'MB)'));const ext=(String(f.name||'').match(/\.(jpe?g|png|pdf)$/i)||[])[1],guess=ext?({jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',pdf:'application/pdf'})[ext.toLowerCase()]:'';const r=new FileReader();r.onload=()=>res({name:f.name||('photo_'+Date.now()+'.jpg'),mime:f.type||guess||'application/octet-stream',data:r.result.split(',')[1]});r.onerror=()=>rej(Error('파일을 읽을 수 없습니다.'));r.readAsDataURL(f)})}
 async function register(e){e.preventDefault();try{const fields=['company','regNo','representative','address','contact','phone','approverEmail','industry'];const d=Object.fromEntries(fields.map(n=>[n,value(n)]));d.agree=$('agree').checked;const picked=$('cert').files[0];let f=null;if(picked)f=await readFile(picked);else if(!state.testSkipFiles)throw Error('사업자등록증을 첨부해 주세요.');if(!confirm(f?'입력한 정보로 신청하시겠습니까?':'[테스트 모드] 사업자등록증 없이 신청할까요?\n(운영 시에는 첨부가 필수입니다)'))return;display(await call('registerBusiness',d,f));msg('사업자 등록 신청이 접수됐습니다.')}catch(e){alert(e.message)}}
 async function otp(e){e.preventDefault();try{display(await call('verifyOtp',value('otp')));msg('업체 이메일 인증 완료')}catch(e){}}
 function changed(){if(!state?.company||['SUBMITTED','SAFETY_REVIEW','APPROVED'].includes(state.company.submissionStatus))return;dirty=true;$('saved').textContent='변경사항 있음 · 잠시 후 자동저장';clearTimeout(saveTimer);saveTimer=setTimeout(()=>save(false),1700)}
