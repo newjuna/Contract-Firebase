@@ -67,7 +67,7 @@ function text(id,label,value='',disabled=false){return `<div class="field"><labe
 function value(id){return $('f_'+id)?.value?.trim()||''}
 function switchTab(which){tab=which;toggleMenu(false);stopScan();if($(which+'Tab'))$('pageTitle').textContent=$(which+'Tab').textContent;clearInterval(roomTimer);clearInterval(wkTimer);for(const n of ['my','admin','review','tpl','staff','jobs','notice','vendors']){$(n).classList.toggle('hidden',n!==which);$(n+'Tab').classList.toggle('active',n===which)}if(which==='admin')loadAdmin();if(which==='review')loadReview();if(which==='tpl')loadTemplates();if(which==='staff')loadStaff();if(which==='jobs')loadJobs();if(which==='notice')loadNotices();if(which==='vendors')loadVendors();}
 // ★ 화면 버전: 여기 한 줄만 고침 (GitHub만 올리면 로그인 화면·앱 화면·메뉴에 모두 반영, Code.gs 수정 불필요)
-const UI_VERSION='26.10.24 F1.0';
+const UI_VERSION='26.10.24 F1.1';
 function showVer(){document.querySelectorAll('.verTxt').forEach(x=>x.textContent=UI_VERSION)}
 /** v4.1 ⚙ 마스터 설정: 직원 관리로 바로 이동 (마스터 계정만 보임) */
 function openMaster(){if(!state||!state.isMaster)return;sgo('staff')}
