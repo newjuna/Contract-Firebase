@@ -67,7 +67,7 @@ function text(id,label,value='',disabled=false){return `<div class="field"><labe
 function value(id){return $('f_'+id)?.value?.trim()||''}
 function switchTab(which){tab=which;toggleMenu(false);stopScan();if($(which+'Tab'))$('pageTitle').textContent=$(which+'Tab').textContent;clearInterval(roomTimer);clearInterval(wkTimer);for(const n of ['my','admin','review','tpl','staff','jobs','notice','vendors']){$(n).classList.toggle('hidden',n!==which);$(n+'Tab').classList.toggle('active',n===which)}if(which==='admin')loadAdmin();if(which==='review')loadReview();if(which==='tpl')loadTemplates();if(which==='staff')loadStaff();if(which==='jobs')loadJobs();if(which==='notice')loadNotices();if(which==='vendors')loadVendors();}
 // ★ 화면 버전: 여기 한 줄만 고침 (GitHub만 올리면 로그인 화면·앱 화면·메뉴에 모두 반영, Code.gs 수정 불필요)
-const UI_VERSION='26.10.24 F1.5';
+const UI_VERSION='26.10.24 F1.6';
 function showVer(){document.querySelectorAll('.verTxt').forEach(x=>x.textContent=UI_VERSION)}
 /** v4.1 ⚙ 마스터 설정: 직원 관리로 바로 이동 (마스터 계정만 보임) */
 function openMaster(){if(!state||!state.isMaster)return;sgo('staff')}
@@ -425,7 +425,9 @@ function minPhotosHtml(){const J=room.joint||{},list=Object.entries(J.items||{})
  if(!list.length)return '';return '<div class="stage">지적 사진 <span class="muted">(합동점검에서 자동)</span></div>'+list.map(n=>'<div class="mph"><div class="muted">'+n+'. '+escapeText(room.jointItems[n-1][1])+'</div><div class="row">'+J.notes[n].photos.map((id,i)=>'<img class="jph" data-mp="'+escapeText(id)+'" alt="'+n+'번 지적 사진 '+(i+1)+'" '+(photoPrev[id]?'src="'+photoPrev[id]+'"':'')+' onclick="viewPhoto(\''+escapeText(id)+'\')">').join('')+'</div></div>').join('')}
 /** 회의록: 수급인 의견 (합동점검에서 자동) */
 function minOpinHtml(){const O=(room.joint&&room.joint.opinions)||{},l=Object.values(O).filter(o=>o.text);if(!l.length)return '';return '<div class="stage">수급인 의견 <span class="muted">(합동점검에서 자동)</span></div><ol class="rules">'+l.map(o=>'<li><b>'+escapeText(o.company)+'</b>: '+escapeText(o.text)+'</li>').join('')+'</ol>'}
-async function loadMeetPhotos(){for(const img of document.querySelectorAll('img[data-mp]')){const id=img.dataset.mp;if(photoPrev[id]){img.src=photoPrev[id];continue}try{const f=await callQuiet('getMeetingPhoto',room.id,id);photoPrev[id]='data:'+f.mime+';base64,'+f.data;document.querySelectorAll('img[data-mp="'+id+'"]').forEach(x=>x.src=photoPrev[id])}catch(e){}}}
+/* F1.6 한꺼번에 요청 → fb.js가 8장씩 묶어 서버에 한 번만 */
+async function loadMeetPhotos(){const need=new Set();document.querySelectorAll('img[data-mp]').forEach(img=>{const id=img.dataset.mp;if(photoPrev[id])img.src=photoPrev[id];else need.add(id)});
+ await Promise.all([...need].map(id=>callQuiet('getMeetingPhoto',room.id,id).then(f=>{photoPrev[id]='data:'+f.mime+';base64,'+f.data;document.querySelectorAll('img[data-mp="'+id+'"]').forEach(x=>x.src=photoPrev[id])}).catch(()=>{})))}
 function councilPanel(r){const M=r.minutes,dis=r.done?'disabled':'';
  return '<div class="card"><h2>협력사 협의체 회의록</h2><table class="rtable"><tr><th>현장명</th><td>'+escapeText(r.job.storeName)+'</td><th>회의구분</th><td><label><input type="radio" name="mType" value="정기" '+(M.type==='정기'?'checked':'')+' '+dis+'> 정기</label> <label><input type="radio" name="mType" value="임시" '+(M.type!=='정기'?'checked':'')+' '+dis+'> 임시</label></td></tr>'
   +'<tr><th>일 시</th><td colspan="3">'+escapeText(r.date)+' <input type="time" id="f_mStart" value="'+escapeText(M.start)+'" '+dis+' aria-label="시작 시각"> ~ <input type="time" id="f_mEnd" value="'+escapeText(M.end)+'" '+dis+' aria-label="종료 시각"></td></tr>'
