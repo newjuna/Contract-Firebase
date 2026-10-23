@@ -41,7 +41,8 @@ function setCUser(u){u=String(u||'');if(u===CUSER)return;cacheClear();CUSER=u;tr
 const PERF_KEY='dsk_perf_521', PERF_CAP=80;
 function perfRead(){try{const x=JSON.parse(localStorage.getItem(PERF_KEY)||'[]');return Array.isArray(x)?x:[]}catch(e){return []}}
 function perfRecord(kind,name,ms,ok,detail){try{const all=perfRead();all.push({at:new Date().toLocaleString('ko-KR'),type:String(kind).slice(0,12),name:String(name||'').replace(/[^A-Za-z0-9_]/g,'').slice(0,40),ms:Math.max(0,Math.round(ms)),ok:!!ok,info:String(detail||'').replace(/[^A-Za-z0-9_]/g,'').slice(0,24)});localStorage.setItem(PERF_KEY,JSON.stringify(all.slice(-PERF_CAP)))}catch(e){}}
-function perfUI(){const allow=!!(state&&state.staff&&['SAFETY','ADMIN'].includes(state.staff.role))||!!(state&&state.isMaster);let b=$('perfBtn');if(!allow){if(b)b.remove();return}if(b)return;
+/* F1.7b 성능 진단은 마스터 계정(zxcv6309)에만 보임 (안전보건팀·담당자 메뉴에서는 숨김) */
+function perfUI(){const allow=!!(state&&state.isMaster);let b=$('perfBtn');if(!allow){if(b)b.remove();return}if(b)return;
  b=document.createElement('button');b.id='perfBtn';b.type='button';b.textContent='⏱ 성능 진단 (최근 요청)';b.style.cssText='margin:4px 18px 8px;padding:10px;border:1px solid #d1d5db;border-radius:9px;background:#fff;color:#374151;text-align:left;cursor:pointer';b.onclick=perfOpen;
  const anchor=document.querySelector('#drawer .logout');if(anchor)anchor.parentNode.insertBefore(b,anchor);
 }
@@ -67,7 +68,7 @@ function text(id,label,value='',disabled=false){return `<div class="field"><labe
 function value(id){return $('f_'+id)?.value?.trim()||''}
 function switchTab(which){tab=which;toggleMenu(false);stopScan();if($(which+'Tab'))$('pageTitle').textContent=$(which+'Tab').textContent;clearInterval(roomTimer);clearInterval(wkTimer);for(const n of ['my','admin','review','tpl','staff','jobs','notice','vendors']){$(n).classList.toggle('hidden',n!==which);$(n+'Tab').classList.toggle('active',n===which)}if(which==='admin')loadAdmin();if(which==='review')loadReview();if(which==='tpl')loadTemplates();if(which==='staff')loadStaff();if(which==='jobs')loadJobs();if(which==='notice')loadNotices();if(which==='vendors')loadVendors();}
 // ★ 화면 버전: 여기 한 줄만 고침 (GitHub만 올리면 로그인 화면·앱 화면·메뉴에 모두 반영, Code.gs 수정 불필요)
-const UI_VERSION='26.10.24 F1.7';
+const UI_VERSION='26.10.24 F1.7b';
 function showVer(){document.querySelectorAll('.verTxt').forEach(x=>x.textContent=UI_VERSION)}
 /** v4.1 ⚙ 마스터 설정: 직원 관리로 바로 이동 (마스터 계정만 보임) */
 function openMaster(){if(!state||!state.isMaster)return;sgo('staff')}
