@@ -71,7 +71,8 @@ function renderDash(){const el=$('execArea');if(!el||!vjobs)return;
 function renderVDrill(){const el=$('execArea');if(el)el.innerHTML='<div class="card"><div class="vh-top"><h2 style="margin:0">비상대피훈련 등록</h2><span class="pill todo">준비 중</span></div><p class="desc">공사마다 1회 훈련을 실시하고 결과를 등록하는 화면입니다.</p><div class="note">등록 화면은 준비 중입니다. 열리면 이 메뉴에서 바로 등록할 수 있습니다.</div></div>'}
 function renderVDocs(){const el=$('execArea');if(!el)return;const b=state.company,rows=((state.docBoard&&state.docBoard.rows)||[]).filter(r=>r.stage==='CONTRACT'&&r.vendorDoc);
  // v5.17 재평가 중: 계약 전 화면(사업장 정보·규정·계획서·제출)을 그대로 보여 줌
- if(b.renewAt){el.innerHTML='<div class="card"><div class="vh-top"><h2 style="margin:0">신규 작성 · 다음 계약 준비</h2><span class="pill lock">'+(b.renewMode==='NEW'?'처음부터 작성':'이전 정보 불러옴')+'</span></div><p class="desc">진행 중인 공사 업무는 그대로 할 수 있습니다. 아래를 작성해 제출하면 본사 담당자가 다시 검토합니다.</p>'+validNote(b)+'</div>'+contractHomeHtml(b);return}
+ if(b.renewAt){el.innerHTML='<div class="card"><div class="vh-top"><h2 style="margin:0">신규 작성 · 다음 계약 준비</h2><span class="pill lock">'+(b.renewMode==='NEW'?'처음부터 작성':'이전 정보 불러옴')+'</span></div><p class="desc">진행 중인 공사 업무는 그대로 할 수 있습니다. 아래를 작성해 제출하면 본사 담당자가 다시 검토합니다.</p>'+validNote(b)
+  +(b.submissionStatus==='DRAFT'?'<button class="button ghost" type="button" style="width:100%;margin-top:10px" onclick="cancelNewContract()">↩ 신규 작성 취소 (잘못 눌렀을 때 · 제출 전만)</button>':'')+'</div>'+contractHomeHtml(b);return}
  el.innerHTML='<div class="card"><div class="vh-top"><h2 style="margin:0">계약 서류</h2><span class="pill '+(b.valid&&b.valid.expired?'todo':'ok')+'">'+(b.valid&&b.valid.expired?'계약 전 평가 만료':'계약 전 검토 승인')+'</span></div>'+validNote(b)+'<p class="desc" style="margin-top:10px">계약 전에 제출한 서류입니다. 눌러서 내려받을 수 있습니다.</p>'
   +(rows.map(r=>{const u=r.uploads[0];return '<div class="item"><b>'+escapeText(r.name)+'</b><div class="muted">'+(u?'<a onclick="viewFile(\''+escapeText(u.id)+'\')">📄 '+escapeText(u.name)+'</a> · '+escapeText(fmtTime(u.uploadedAt)):'제출 기록 없음')+'</div></div>'}).join('')||'<p class="muted">제출한 서류가 없습니다.</p>')
   +'<div class="line"></div>'+newContractCard(true)+'</div>'}
@@ -88,11 +89,20 @@ function openNewContract(){let el=$('ncDlg');if(!el){el=document.createElement('
  el.innerHTML='<div class="card" style="max-width:420px;width:100%;margin:0"><h2 id="ncTitle">신규 작성</h2><p class="desc"><b>전에 입력한 정보를 불러올까요?</b></p>'
   +'<ul class="desc" style="padding-left:18px;margin:6px 0 12px"><li><b>이전 정보 불러오기</b>: 사업자·사업장 정보, 규정·계획서 내용이 채워진 상태로 시작합니다. 바뀐 곳만 고치면 됩니다.</li><li><b>처음부터 새로 작성</b>: 빈칸으로 시작합니다. (예전 기록은 지워지지 않고 보관됩니다)</li></ul>'
   +'<p class="muted">어느 쪽이든 규정·계획서는 다시 서명해야 제출할 수 있습니다. 작성·검토 중에도 진행 중인 공사 업무는 그대로 할 수 있습니다.</p>'
-  +'<div style="display:grid;gap:8px;margin-top:12px"><button class="button" type="button" id="ncKeep" onclick="doNewContract(\'KEEP\')">이전 정보 불러오기</button><button class="button dark" type="button" onclick="doNewContract(\'NEW\')">처음부터 새로 작성</button><button class="button ghost" type="button" onclick="closeNewContract()">취소</button></div></div>';
- el.style.display='flex';el.onclick=e=>{if(e.target===el)closeNewContract()};el.onkeydown=e=>{if(e.key==='Escape')closeNewContract()};setTimeout(()=>$('ncKeep')&&$('ncKeep').focus(),0)}
+  +'<p class="muted">잘못 눌렀다면: 제출하기 전까지는 [계약 서류] 화면의 <b>[신규 작성 취소]</b>로 원래 승인 상태로 되돌릴 수 있습니다.</p>'
+  +'<div style="display:grid;gap:8px;margin-top:12px"><button class="button" type="button" onclick="doNewContract(\'KEEP\')">이전 정보 불러오기</button><button class="button dark" type="button" onclick="doNewContract(\'NEW\')">처음부터 새로 작성</button><button class="button ghost" type="button" id="ncCancel" onclick="closeNewContract()">취소 (시작하지 않음)</button></div></div>';
+ // F1.7e 실수로 Enter를 눌러도 시작되지 않게 처음 선택은 [취소]
+ el.style.display='flex';el.onclick=e=>{if(e.target===el)closeNewContract()};el.onkeydown=e=>{if(e.key==='Escape')closeNewContract()};setTimeout(()=>$('ncCancel')&&$('ncCancel').focus(),0)}
+/** F1.7e [신규 작성 취소]: 제출 전(작성 중)일 때만 · 시작 전 승인 상태와 사업자·사업장 정보로 되돌림 */
+async function cancelNewContract(){
+ if(!confirm('신규 작성을 취소할까요?\n\n· 시작하기 전의 승인 상태로 돌아갑니다 (유효기간도 그대로)\n· 사업자 정보·사업장 정보는 시작 전 내용으로 되돌립니다\n· 작성 중에 올린 서류는 기록으로만 남고, 승인에는 쓰이지 않습니다'))return;
+ const done=s=>{vmenu='docs';display(s);window.scrollTo(0,0);msg('신규 작성을 취소했습니다. 원래 승인 상태로 돌아왔습니다.')};
+ try{done(await call('cancelRenewal'))}catch(e){
+  try{const s=await callQuiet('portalData');if(s.company&&!s.company.renewAt&&s.company.submissionStatus==='APPROVED'){done(s);return}}catch(x){}}}
 function closeNewContract(){const el=$('ncDlg');if(el)el.style.display='none'}
 async function doNewContract(mode){closeNewContract();
- if(mode==='NEW'&&!confirm('빈칸으로 새로 작성할까요?\n사업자·사업장 정보와 규정·계획서를 처음부터 다시 입력합니다.'))return;
+ if(mode==='NEW'&&!confirm('빈칸으로 새로 작성할까요?\n사업자·사업장 정보와 규정·계획서를 처음부터 다시 입력합니다.\n\n(제출하기 전까지는 [신규 작성 취소]로 되돌릴 수 있습니다)'))return;
+ if(mode!=='NEW'&&!confirm('이전 정보를 불러와 신규 작성(다음 계약 준비)을 시작할까요?\n\n(제출하기 전까지는 [신규 작성 취소]로 되돌릴 수 있습니다)'))return;
  if(mode==='NEW'){try{localStorage.removeItem(plKey())}catch(e){}}  // 계획서 임시 저장본도 비움
  const done=s=>{vmenu='docs';display(s);window.scrollTo(0,0);msg(s.company&&s.company.renewMode==='NEW'?'신규 작성을 시작했습니다. 빈칸을 채워 제출해 주세요.':'이전 정보를 불러왔습니다. 바뀐 곳만 고쳐서 제출해 주세요.')};
  try{done(await call('startRenewal',mode))}catch(e){
