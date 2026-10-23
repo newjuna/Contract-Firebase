@@ -1,4 +1,4 @@
-/* 도급 안전관리 · Firebase 연결부 (F1.0)
+/* 도급 안전관리 · Firebase 연결부 (F1.1: 로그인 · 직원 관리 · 사업자 등록/승인)
  * - 화면(app.js)은 예전처럼 api('기능이름', 인자) 로 부르고, 이 파일이 Firestore에서 바로 처리함
  *   (예전: 버튼마다 Apps Script 서버 왕복 → 느림 / 지금: 휴대폰이 Firestore를 직접 읽고 씀)
  * - 권한(업체는 자기 것만, 직원 관리는 안전보건팀만 등)은 Firebase 보안 규칙(firestore.rules)이 최종 확인
@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F1.0';
+  const VERSION = '26.10.24 F1.1';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   const CFG = {
     INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
@@ -83,23 +83,134 @@
   }
   const isSafety = async (a, memo) => (await staffOf(a, memo))?.role === 'SAFETY';
 
+  /* ---------- 중계 Apps Script (파일 · 메일 · 승인처럼 업체가 직접 쓰면 안 되는 일) ---------- */
+  const relayUrl = () => String(window.APP_CONFIG && window.APP_CONFIG.APPS_SCRIPT_URL || '').trim();
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  /** 중계 서버에 요청. retry=true면 연결 실패 시 2번까지 다시 보냄 (조회·내려받기만) */
+  async function relay(op, body, retry) {
+    const url = relayUrl();
+    if (!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(url)) fail('config.js에 중계 Apps Script 주소(/exec)가 아직 등록되지 않았습니다.');
+    await ready; if (!USER) fail('로그인이 만료되었습니다. 다시 로그인해 주세요.');
+    const idToken = await USER.getIdToken();
+    for (let i = 0; ; i++) {
+      const ctl = typeof AbortController === 'function' ? new AbortController() : null, t = ctl && setTimeout(() => ctl.abort(), 90000);
+      let o;
+      try {
+        // text/plain으로 보내야 Apps Script가 추가 확인 요청(CORS) 없이 받음
+        const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ ...body, op, idToken, mode: getMode() }), signal: ctl ? ctl.signal : undefined, redirect: 'follow' });
+        o = await r.json().catch(() => null);
+        if (!o) throw Error('중계 서버 응답을 읽을 수 없습니다. (배포 설정의 액세스가 "모든 사용자"인지 확인)');
+      } catch (e) {
+        if (retry && i < 2) { await sleep(800 * (i + 1)); continue; }
+        if (e && e.name === 'AbortError') fail('중계 서버 응답이 늦습니다. 화면을 새로 고쳐 처리됐는지 확인해 주세요.');
+        if (e instanceof TypeError) fail('중계 서버에 연결하지 못했습니다. 인터넷 연결을 확인한 뒤 화면을 새로 고쳐 처리됐는지 확인해 주세요.');
+        throw e;
+      } finally { if (t) clearTimeout(t); }
+      if (!o.ok) fail(o.error || '중계 서버 오류');
+      return o.data;
+    }
+  }
+
+  /* ---------- 업체 (COMPANIES: 업체는 읽기만 · 쓰기는 중계 서버만) ---------- */
+  const byNewest = (x, y) => String(y.createdAt || '').localeCompare(String(x.createdAt || ''));
+  const docs = (s) => s.docs.map((d) => ({ ...d.data(), id: d.data().id || d.id }));
+  /** 내가 신청한 업체 전부 (최신순) */
+  async function myCompanies(a) { return docs(await db.collection('COMPANIES').where('uid', '==', a.uid).get()).sort(byNewest); }
+  /** 지금 쓰는 업체 (반려 제외) — 기존 mine_와 같음 */
+  async function myCompany(a) {
+    if (a.mode === 'STAFF') return null;  // 담당자로 접속하면 업체 화면 사용 안 함
+    const b = (await myCompanies(a)).find((x) => x.status !== 'REJECTED') || null;
+    if (b && b.status === 'OTP_PENDING') b.status = 'VERIFIED';  // 예전 인증번호 단계 → 바로 작성 가능
+    return b;
+  }
+  /** 화면에 보여 줄 업체 정보 (기존 publicCompany_와 같은 항목) */
+  function publicCompany(b) {
+    if (!b) return null;
+    const o = {};
+    ['id', 'email', 'company', 'regNo', 'representative', 'address', 'industry', 'contact', 'phone', 'contactEmail', 'status', 'createdAt', 'duplicate', 'reason', 'submissionStatus', 'submittedAt', 'correctionKeys', 'approverEmail', 'renewAt', 'renewMode', 'infoAt'].forEach((k) => o[k] = b[k] ?? '');
+    o.certMissing = !b.certFileId; o.valid = null; o.infoFresh = true;  // 계약 전 평가 유효기간은 F1.2에서
+    return o;
+  }
+  /** 직원이 볼 수 있는 업체: 안전보건팀 = 전체 / 그 외 = 본인(로그인 계정·회사메일)이 승인 담당자인 업체 */
+  async function visibleCompanies(a, st, status) {
+    const C = db.collection('COMPANIES');
+    if (st && st.role === 'SAFETY') return docs(await (status ? C.where('status', '==', status) : C).get());
+    const mails = [...new Set([a.email, lower(st && st.companyEmail)].filter(Boolean))], seen = new Map();
+    // 보안 규칙이 확인할 수 있게 메일 주소마다 따로 조회
+    const snaps = await Promise.all(mails.map((m) => { let q = C.where('approverEmail', '==', m); if (status) q = q.where('status', '==', status); return q.get(); }));
+    snaps.forEach((s) => docs(s).forEach((x) => seen.set(x.id, x)));
+    return [...seen.values()];
+  }
+  /** 알림 숫자 (F1.1: 사업자 승인 대기만) */
+  async function badges(a, memo) {
+    const o = { admin: 0, review: 0, jobs: 0, newVendors: [], pendingAttend: 0 }, st = await staffOf(a, memo);
+    if (!st && !isInternalEmail(a.email)) return o;
+    o.admin = (await visibleCompanies(a, st, 'PENDING')).length;
+    return o;
+  }
+
   /* ---------- 기능 (기존 Code.gs 이름 그대로) ---------- */
   const API = {};
   /** 첫 화면 정보 (기존 portalData와 같은 모양) */
   API.portalData = async (a) => {
-    const memo = {}, st = await staffOf(a, memo);
+    const memo = {}, st = await staffOf(a, memo), b = await myCompany(a), verified = !!b && b.status === 'VERIFIED';
+    let isApprover = false;
+    if (isInternalEmail(a.email)) isApprover = !(await db.collection('COMPANIES').where('approverEmail', '==', a.email).limit(1).get()).empty;
+    let documents = [];
+    if (verified) documents = docs(await db.collection('DOCUMENTS').where('uid', '==', a.uid).get()).filter((x) => x.companyId === b.id).map((x) => ({ id: x.id, name: x.name, mime: x.mime }));
     return {
-      email: a.email, isApprover: isInternalEmail(a.email), correctionNote: '', openJobs: null,
+      email: a.email, isApprover, correctionNote: '', openJobs: verified ? 0 : null,
       staff: st ? { name: st.name, role: st.role, roleLabel: (st.master ? '마스터 · ' : '') + (STAFF_ROLES[st.role] || st.role), master: !!st.master } : null,
       isMaster: isMaster(a), testSkipFiles: CFG.TEST_SKIP_FILES,
-      company: null,  // F1.0: 업체 등록은 다음 단계(F1.1)에서 옮김
-      role: st ? st.role : 'VENDOR', industries: CFG.INDUSTRIES, fields: FIELDS, stepNames: STEP_NAMES, industryFields: [],
-      steps: [], documents: [], docBoard: null, forms: null, appVersion: VERSION, mode: a.mode,
-      badges: { admin: 0, review: 0, jobs: 0, newVendors: [], pendingAttend: 0 }, loginUrl: location.origin + location.pathname,
+      company: publicCompany(b),
+      role: st ? st.role : 'VENDOR', industries: CFG.INDUSTRIES, fields: FIELDS, stepNames: STEP_NAMES, industryFields: (b && INDUSTRY_FIELDS[b.industry]) || [],
+      steps: [], documents,
+      docBoard: verified ? { contract: [], later: [], rows: [] } : null,  // 계약 서류는 F1.2에서
+      forms: null, appVersion: VERSION, mode: a.mode,
+      badges: await badges(a, memo), loginUrl: location.origin + location.pathname,
     };
   };
-  API.myStatus = async () => null;
-  API.myBadges = async () => ({ admin: 0, review: 0, jobs: 0, newVendors: [], pendingAttend: 0 });
+  /** [업체] 승인 대기 화면의 자동 확인용 (반려 포함 가장 최근 신청) */
+  API.myStatus = async (a) => {
+    const b = (await myCompanies(a))[0];
+    return b ? { status: b.status === 'OTP_PENDING' ? 'VERIFIED' : b.status, reason: b.reason || '', submissionStatus: b.submissionStatus || 'DRAFT' } : null;
+  };
+  API.myBadges = async (a) => badges(a);
+
+  /** [업체] 사업자 등록 신청 → 중계 서버가 기록·승인요청 메일 */
+  API.registerBusiness = async (a, d, cert) => {
+    if (a.mode === 'STAFF') fail('다이소 담당자로 접속했습니다. 업체 신청은 로그인 화면에서 [협력업체]로 다시 로그인해 주세요.');
+    await relay('register', { d: d || {}, cert: cert && cert.data ? cert : null });
+    return API.portalData(a);
+  };
+  /** [직원] 사업자 등록 신청 목록 */
+  API.applications = async (a) => {
+    const st = await staffOf(a);
+    if (!st && !isInternalEmail(a.email)) fail('승인 담당자 권한이 없습니다.');
+    return (await visibleCompanies(a, st)).sort(byNewest).map(publicCompany);
+  };
+  /** [직원] 업체 현황 */
+  API.vendorList = async (a) => {
+    const st = await staffOf(a);
+    if (!st && !isInternalEmail(a.email)) fail('아성다이소 직원 계정만 볼 수 있습니다.');
+    // 계약 서류·공사·평가는 F1.2 이후에 채움
+    return { list: (await visibleCompanies(a, st)).sort(byNewest).map((b) => ({ ...publicCompany(b), docs: [], evidence: [], jobs: 0, contractEval: null, lastEval: null })) };
+  };
+  /** [직원] 승인·반려 → 중계 서버가 처리하고 업체에 메일 */
+  API.decideBusiness = async (a, id, decision, reason, ret) => {
+    if (!['APPROVE', 'REJECT'].includes(decision)) fail('승인 또는 반려를 선택해 주세요.');
+    if (decision === 'REJECT' && !tidy(reason)) fail('반려 사유를 입력해 주세요.');
+    await relay('decide', { companyId: String(id || ''), decision, reason: tidy(reason, 500) });
+    return ret === 'vendors' ? API.vendorList(a) : API.applications(a);
+  };
+  /** [직원] 신청 첨부파일 목록 (직원 명단에 있으면 바로, 아니면 중계 서버가 권한 확인) */
+  API.getRegistrationDocs = async (a, id) => {
+    if (await staffOf(a)) return docs(await db.collection('DOCUMENTS').where('companyId', '==', String(id || '')).get()).map((x) => ({ id: x.id, name: x.name }));
+    return relay('regDocs', { companyId: String(id || '') }, true);
+  };
+  /** 파일 내려받기 (권한은 중계 서버가 다시 확인) */
+  API.getInternalFile = async (a, companyId, docId) => relay('file', { companyId: String(companyId || ''), docId: String(docId || '') }, true);
+  API.getMyFile = async (a, docId) => relay('file', { docId: String(docId || '') }, true);
   /** 공사 목록: F1.0에서는 아직 공사 기능을 옮기지 않아 빈 목록 (공사 기능은 F1.2) */
   API.jobBoard = async (a) => {
     const st = await staffOf(a); if (!st) fail('아성다이소 직원 계정만 사용할 수 있습니다.');
@@ -148,7 +259,7 @@
   };
 
   /* ---------- 화면에서 쓰는 창구 ---------- */
-  const NEXT = { registerBusiness: 'F1.1', saveStep: 'F1.1', submitProfile: 'F1.1', applications: 'F1.1', decideBusiness: 'F1.1', saveJob: 'F1.2', myJobs: 'F1.2', vendorJob: 'F1.2', addWorker: 'F1.2', workerCheckIn: 'F1.2', getPermit: 'F1.3', issuePermit: 'F1.3', submitInspection: 'F1.4', meetCheckIn: 'F1.5', createMeeting: 'F1.5', endJob: 'F1.6' };
+  const NEXT = { saveStep: 'F1.2', submitProfile: 'F1.2', checkSubmission: 'F1.2', uploadContractDoc: 'F1.2', uploadEvidence: 'F1.2', getTemplate: 'F1.2', saveRuleDoc: 'F1.2', savePlanDoc: 'F1.2', uploadPlanFile: 'F1.2', reviewList: 'F1.2', getReviewData: 'F1.2', reviewAction: 'F1.2', saveJob: 'F1.2', myJobs: 'F1.2', vendorJob: 'F1.2', addWorker: 'F1.2', workerCheckIn: 'F1.2', getPermit: 'F1.3', issuePermit: 'F1.3', submitInspection: 'F1.4', meetCheckIn: 'F1.5', createMeeting: 'F1.5', endJob: 'F1.6' };
   async function call(fn, args) {
     const f = Object.prototype.hasOwnProperty.call(API, fn) ? API[fn] : null;
     if (!f) fail('아직 Firebase로 옮기지 않은 기능입니다 (' + fn + (NEXT[fn] ? ' · ' + NEXT[fn] + ' 예정' : '') + ').');
