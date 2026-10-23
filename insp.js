@@ -1,0 +1,87 @@
+/* 순회점검일지 (v5.0) — 2일 1회
+ *  업체: [오늘 할 일] ④ → TBM 사진 + 11개 항목(전부 양호로 시작) → 불량은 사진·지적 내용 → [제출]
+ *  지적사항: 조치될 때까지 업체·도급인 양쪽에 '미조치'로 남음 → [조치 등록] (조치 내용·조치일·조치 후 사진)
+ *  도급인: 공사 카드 [순회점검 보기] → [전체 확인] · 일지 보기
+ *  일지 칸은 사실대로: 점검 실시 = 업체 작성자 / 도급인 확인 = 확인한 직원
+ *  서버: Code.gs (submitInspection · resolveFinding · inspList · checkInspections · uploadInspPhoto · getInspPhoto) */
+const INSP_MARK={OK:'양호',BAD:'불량',NA:'해당없음'};
+const inspPhoto={};          // 문서ID → data URL (한 번 받은 사진은 다시 받지 않음)
+let ins=null;                // 작성 중인 점검 {items,notes,tbm}
+let inspJob=null,inspFind=null;
+/* ---------- 업체: [오늘 할 일] ④ 카드 ---------- */
+function inspCardHtml(v){const I=v.insp||{open:[],recent:[]};
+ const st=I.todayDone?['✔ 오늘 점검 완료','ok']:I.due?['점검 필요'+(I.since!=null?' · '+I.since+'일 경과':''),'bad']:['다음 점검 '+(2-I.since)+'일 후','todo'];
+ return '<div class="card" id="inspCard"><div class="vh-top"><h2 style="margin:0">순회점검</h2><span class="pill '+st[1]+'">'+escapeText(st[0])+'</span></div>'
+  +'<p class="desc">2일 1회 · 첫 장에 TBM 사진, 그 아래 11개 항목을 점검합니다.'+(I.last?' 마지막 점검 '+escapeText(I.last):'')+'</p>'
+  +(I.todayDone?'':'<button class="button" type="button" style="width:100%" onclick="openInspForm()">오늘 순회점검 작성</button>')
+  +(I.open.length?'<div class="stage">미조치 지적사항 <span class="cnt">'+I.open.length+'</span></div>'+I.open.map(f=>findRow(f,'vendor')).join(''):'')
+  +(I.recent.length?'<details class="hist" style="margin-top:12px"><summary>순회점검일지 '+I.recent.length+'건</summary>'+I.recent.map(x=>'<div class="item"><div class="row" style="justify-content:space-between"><span>'+escapeText(x.date)+(x.bad?' · <b class="req">지적 '+x.bad+'</b>':' · 이상 없음')+' '+(x.checkedAt?'<span class="pill ok">도급인 확인</span>':'<span class="pill todo">확인 대기</span>')+'</span><button class="button ghost" type="button" onclick="openInspSheet(\''+escapeText(x.id)+'\',\'vendor\')">일지 보기</button></div></div>').join('')+'</details>':'')+'</div>'}
+function findRow(f,who){return '<div class="item"><div class="row" style="justify-content:space-between"><div><b>'+f.no+'. '+escapeText(f.item)+'</b>'+(who==='staff'?' <span class="muted">'+escapeText(f.company)+'</span>':'')+'<div class="muted">지적 '+escapeText(f.foundDate)+' · '+escapeText(f.memo)+'</div></div><button class="button" type="button" onclick="openResolve(\''+escapeText(f.id)+'\',\''+who+'\')">조치 등록</button></div></div>'}
+/* ---------- 업체: 점검 작성 ---------- */
+function openInspForm(){const items={};vjob.insp.items.forEach((_,i)=>items[i+1]='OK');ins={items,notes:{},tbm:[],name:vjob.siteManager||''};renderInspForm()}
+function thumbs(ids,del){return ids.map(id=>'<span class="thumb"><img data-doc="'+escapeText(id)+'" alt="사진" '+(inspPhoto[id]?'src="'+inspPhoto[id]+'"':'')+' onclick="viewInspPhoto(\''+escapeText(id)+'\')">'+(del?'<button type="button" class="tx" aria-label="사진 빼기" onclick="'+del+'(\''+escapeText(id)+'\')">✕</button>':'')+'</span>').join('')}
+function renderInspForm(){const v=vjob,I=v.insp;clearInterval(wkTimer);
+ const bad=Object.values(ins.items).filter(x=>x==='BAD').length;
+ $('execArea').innerHTML='<div class="card"><button class="button ghost" type="button" onclick="renderVJob()">← 오늘 할 일</button><h2 style="margin-top:12px">순회점검 작성 · '+escapeText(v.today)+'</h2><div class="muted">'+escapeText(v.job.storeName)+' · '+escapeText(v.company.company)+'</div></div>'
+  +'<div class="card" id="tbmCard"><h2>① TBM 실시 사진 <span class="req">*</span></h2><p class="desc">작업 전 TBM(안전 미팅) 사진을 1장 이상 올려 주세요.</p><div class="row" id="tbmList">'+thumbs(ins.tbm,'dropTbm')+'<label class="button ghost" for="tbmFile">📷 사진 넣기</label><input class="hidefile" type="file" id="tbmFile" accept="image/*" capture="environment" onchange="addTbm()" aria-label="TBM 사진 선택"></div></div>'
+  +'<div class="card"><h2>② 점검 항목</h2><p class="desc">전 항목이 <b>양호</b>로 미리 체크되어 있습니다. 지적사항만 <b>불량</b>(또는 해당없음)으로 바꾸고, 불량은 사진과 지적 내용을 남겨 주세요. <span id="inSum">'+(bad?'· 불량 <b class="req">'+bad+'</b>건':'')+'</span></p>'
+  +I.items.map((t,i)=>{const n=i+1,x=ins.items[n];return '<div class="jitem'+(x==='BAD'?' bad':'')+'" id="ii_'+n+'"><div class="jq"><b>'+n+'.</b> '+escapeText(t)+'</div><div class="jm" role="radiogroup" aria-label="'+n+'번 결과">'+Object.entries(INSP_MARK).map(([k,l])=>'<label class="jb '+k.toLowerCase()+'"><input type="radio" name="in'+n+'" value="'+k+'" '+(x===k?'checked':'')+' onchange="inspMark('+n+',\''+k+'\')"><span>'+l+'</span></label>').join('')+'</div><div id="ibx_'+n+'">'+(x==='BAD'?inspBadBox(n):'')+'</div></div>'}).join('')+'</div>'
+  +'<div class="card"><div class="field" style="margin-top:0"><label for="f_inName">점검자 (작성자) <span class="req">*</span></label><input id="f_inName" value="'+escapeText(ins.name)+'" placeholder="예: 김소장"></div><p class="muted">일지에는 "점검 실시: '+escapeText(v.company.company)+' · 작성자"로 남고, 도급인 담당자가 확인하면 "도급인 확인"이 추가됩니다.</p></div>'
+  +'<div class="card roomfoot"><button class="button" type="button" style="width:100%" onclick="submitInspNow()">순회점검 제출</button></div>';window.scrollTo(0,0)}
+function inspBadBox(n){const nt=ins.notes[n]||(ins.notes[n]={memo:'',photos:[]});return '<div class="jbad"><label for="f_im'+n+'">지적 내용 <span class="req">*</span></label><input id="f_im'+n+'" class="jmemo" value="'+escapeText(nt.memo)+'" oninput="ins.notes['+n+'].memo=this.value" placeholder="예) 통로에 자재 적치 → 즉시 정리"><div class="row" style="margin-top:8px">'+thumbs(nt.photos,'')+'<label class="button ghost" for="if_'+n+'">📷 사진 넣기</label><input class="hidefile" type="file" id="if_'+n+'" accept="image/*" capture="environment" onchange="addInspBad('+n+')" aria-label="'+n+'번 불량 사진 선택"></div></div>'}
+function inspMark(n,k){ins.items[n]=k;const el=$('ii_'+n);el.classList.toggle('bad',k==='BAD');el.classList.remove('miss','shake');$('ibx_'+n).innerHTML=k==='BAD'?inspBadBox(n):'';if(k==='BAD')setTimeout(()=>$('f_im'+n)?.focus(),50);
+ const bad=Object.values(ins.items).filter(x=>x==='BAD').length;$('inSum').innerHTML=bad?'· 불량 <b class="req">'+bad+'</b>건':''}
+async function upInsp(inputId,staffCompany){const inp=$(inputId),f0=inp.files[0];if(!f0)return null;try{const f=await readFile(f0,{max:1280,q:0.6});const r=staffCompany?await call('uploadInspPhotoStaff',inspJob.job.id,staffCompany,f):await call('uploadInspPhoto',vjob.job.id,f);inspPhoto[r.id]='data:'+f.mime+';base64,'+f.data;return r.id}catch(e){alert(e.message);return null}finally{inp.value=''}}
+async function addTbm(){const id=await upInsp('tbmFile');if(!id)return;ins.name=value('inName')||ins.name;ins.tbm=ins.tbm.concat(id).slice(0,5);$('tbmList').innerHTML=thumbs(ins.tbm,'dropTbm')+'<label class="button ghost" for="tbmFile">📷 사진 넣기</label><input class="hidefile" type="file" id="tbmFile" accept="image/*" capture="environment" onchange="addTbm()" aria-label="TBM 사진 선택">';$('tbmCard').classList.remove('miss','shake')}
+function dropTbm(id){ins.tbm=ins.tbm.filter(x=>x!==id);addTbmRefresh()}
+function addTbmRefresh(){$('tbmList').innerHTML=thumbs(ins.tbm,'dropTbm')+'<label class="button ghost" for="tbmFile">📷 사진 넣기</label><input class="hidefile" type="file" id="tbmFile" accept="image/*" capture="environment" onchange="addTbm()" aria-label="TBM 사진 선택">'}
+async function addInspBad(n){const id=await upInsp('if_'+n);if(!id)return;const nt=ins.notes[n];nt.memo=$('f_im'+n)?.value||nt.memo;nt.photos=nt.photos.concat(id).slice(0,5);$('ibx_'+n).innerHTML=inspBadBox(n)}
+function inspFlag(ids,text){document.querySelectorAll('.miss').forEach(x=>x.classList.remove('miss','shake'));ids.forEach(id=>{const el=$(id);if(!el)return;el.classList.add('miss');void el.offsetWidth;el.classList.add('shake')});const f=$(ids[0]);if(f){f.scrollIntoView({behavior:'smooth',block:'center'});if(f.tagName==='INPUT')setTimeout(()=>f.focus({preventScroll:true}),400)}msg(text)}
+async function submitInspNow(){ins.name=value('inName');const miss=[];if(!ins.tbm.length)miss.push('tbmCard');
+ Object.entries(ins.items).forEach(([n,x])=>{if(x==='BAD'&&!String(ins.notes[n]?.memo||'').trim())miss.push('f_im'+n)});if(!ins.name)miss.push('f_inName');
+ if(miss.length){inspFlag(miss,miss[0]==='tbmCard'?'TBM 사진을 먼저 올려 주세요':miss[0]==='f_inName'?'점검자 이름을 적어 주세요':'불량 항목의 지적 내용을 적어 주세요');return}
+ const bad=Object.values(ins.items).filter(x=>x==='BAD').length;if(!confirm('순회점검을 제출할까요?'+(bad?'\n지적사항 '+bad+'건은 조치될 때까지 미조치로 남습니다.':'\n전 항목 이상 없음으로 제출합니다.')))return;
+ try{vjob=await call('submitInspection',vjob.job.id,{tbm:ins.tbm,items:ins.items,notes:ins.notes,name:ins.name});ins=null;renderVJob();$('inspCard')?.scrollIntoView({block:'start'});msg('순회점검을 제출했습니다.')}catch(e){alert(e.message)}}
+/* ---------- 지적사항 조치 등록 (업체·도급인 공용) ---------- */
+let rs=null;
+function openResolve(id,who){const list=who==='staff'?inspJob.findings:vjob.insp.open,f=list.find(x=>x.id===id);if(!f)return;rs={f,who,photos:[]};renderResolve()}
+function renderResolve(){const f=rs.f,staff=rs.who==='staff',t=new Date(Date.now()+9*3600e3).toISOString().slice(0,10),area=staff?$('jobs'):$('execArea');
+ area.innerHTML='<div class="card"><button class="button ghost" type="button" onclick="'+(staff?'renderInspList()':'renderVJob()')+'">← 돌아가기</button><h2 style="margin-top:12px">지적사항 조치 등록</h2><table class="rtable"><tr><th>항목</th><td>'+f.no+'. '+escapeText(f.item)+'</td></tr><tr><th>업체</th><td>'+escapeText(f.company)+'</td></tr><tr><th>지적일</th><td>'+escapeText(f.foundDate)+'</td></tr><tr><th>지적 내용</th><td>'+escapeText(f.memo)+'</td></tr><tr><th>조치 전</th><td>'+(thumbs(f.before,'')||'<span class="muted">사진 없음</span>')+'</td></tr></table></div>'
+  +'<div class="card"><div class="field"><label for="f_rsMemo">조치 내용 <span class="req">*</span></label><input id="f_rsMemo" placeholder="예) 통로 자재 정리 완료, 적치구역 지정"></div>'
+  +'<div class="split"><div class="field"><label for="f_rsDate">조치일 <span class="req">*</span></label><input id="f_rsDate" type="date" value="'+t+'" min="'+escapeText(f.foundDate)+'" max="'+t+'"></div>'+(staff?'':'<div class="field"><label for="f_rsName">조치 확인자 <span class="req">*</span></label><input id="f_rsName" value="'+escapeText(vjob.siteManager||'')+'"></div>')+'</div>'
+  +'<div class="field" id="rsPh"><label>조치 후 사진 <span class="req">*</span></label><div class="row" id="rsList">'+rsPhotoHtml()+'</div></div></div>'
+  +'<div class="card roomfoot"><button class="button" type="button" style="width:100%" onclick="resolveNow()">조치 완료 등록</button></div>';window.scrollTo(0,0);loadInspPhotos(staff?inspJob.job.id:vjob.job.id)}
+function rsPhotoHtml(){return thumbs(rs.photos,'')+'<label class="button ghost" for="rsFile">📷 조치 후 사진</label><input class="hidefile" type="file" id="rsFile" accept="image/*" capture="environment" onchange="addRsPhoto()" aria-label="조치 후 사진 선택">'}
+async function addRsPhoto(){const id=await upInsp('rsFile',rs.who==='staff'?rs.f.companyId:null);if(!id)return;rs.photos=rs.photos.concat(id).slice(0,5);$('rsList').innerHTML=rsPhotoHtml();$('rsPh').classList.remove('miss','shake')}
+async function resolveNow(){const d={memo:value('rsMemo'),date:value('rsDate'),name:value('rsName'),photos:rs.photos},miss=[];if(!d.memo)miss.push('f_rsMemo');if(!d.date)miss.push('f_rsDate');if(rs.who!=='staff'&&!d.name)miss.push('f_rsName');if(!d.photos.length)miss.push('rsPh');
+ if(miss.length){inspFlag(miss,'빨간 칸을 채워 주세요 (조치 후 사진 필수)');return}if(!confirm(d.date+' 조치 완료로 등록할까요?'))return;
+ try{if(rs.who==='staff'){inspJob=await call('resolveFinding',rs.f.id,d);renderInspList()}else{vjob=await call('resolveFinding',rs.f.id,d);renderVJob();$('inspCard')?.scrollIntoView({block:'start'})}rs=null;msg('조치 완료로 등록했습니다.')}catch(e){alert(e.message)}}
+/* ---------- 순회점검일지 (종이 일지 모양 보기, 업체·도급인 공용) ---------- */
+async function openInspSheet(id,who){let x,fs,items,job,area;
+ if(who==='staff'){x=inspJob.list.find(i=>i.id===id);fs=inspJob.findings.filter(f=>f.inspId===id);items=inspJob.items;job=inspJob.job;area=$('jobs')}
+ else{const I=vjob.insp;x=I.recent.find(i=>i.id===id);if(x&&x.bad&&!vjob.inspAll){try{vjob.inspAll=await call('inspMine',vjob.job.id)}catch(e){}}fs=(vjob.inspAll||I.open).filter(f=>f.inspId===id);items=I.items;job=vjob.job;area=$('execArea')}
+ if(!x)return;clearInterval(wkTimer);
+ area.innerHTML='<div class="card"><button class="button ghost" type="button" onclick="'+(who==='staff'?'renderInspList()':'renderVJob()')+'">← 돌아가기</button></div>'
+  +'<div class="card sheet ilog"><h2 class="sheet-t">순 회 점 검 일 지</h2><div class="sheet-s">(2일 1회)</div>'
+  +'<table class="rtable" style="margin-top:12px"><tr><th>현장명</th><td>다이소 '+escapeText(job.storeName)+'</td><th>점검일</th><td>'+escapeText(x.date)+'</td></tr>'
+  +'<tr><th>점검 실시</th><td colspan="3">'+escapeText(x.company)+' · '+escapeText(x.submittedName)+' <span class="muted">('+escapeText(fmtTime(x.submittedAt))+' 작성)</span></td></tr>'
+  +'<tr><th>도급인 확인</th><td colspan="3">'+(x.checkedAt?'<b>'+escapeText(x.checkedBy)+'</b> <span class="muted">'+escapeText(fmtTime(x.checkedAt))+'</span>':'<span class="req">확인 대기</span>')+'</td></tr></table>'
+  +'<div class="stage">TBM 실시 사진</div><div class="row">'+thumbs(x.tbm,'')+'</div>'
+  +'<table class="rtable" style="margin-top:12px"><tr><th style="width:44px">No</th><th>점검 항목</th><th style="width:90px">결과</th></tr>'+items.map((t,i)=>{const r=x.items[i+1];return '<tr><td style="text-align:center">'+(i+1)+'</td><td>'+escapeText(t)+'</td><td style="text-align:center"'+(r==='BAD'?' class="req"':'')+'>'+escapeText(INSP_MARK[r]||'-')+'</td></tr>'}).join('')+'</table>'
+  +'<div class="stage">지적사항 · 조치 결과</div>'+(fs.length?fs.map(f=>'<table class="rtable" style="margin-top:8px"><tr><th style="width:90px">항목</th><td colspan="3"><b>'+f.no+'. '+escapeText(f.item)+'</b></td></tr><tr><th>지적</th><td>'+escapeText(f.foundDate)+' · '+escapeText(f.memo)+'</td><th style="width:70px">상태</th><td style="width:90px">'+(f.status==='DONE'?'<b style="color:var(--ok)">조치 완료</b>':'<b class="req">미조치</b>')+'</td></tr>'
+   +'<tr><th>조치 전</th><td colspan="3"><div class="row">'+(thumbs(f.before,'')||'<span class="muted">사진 없음</span>')+'</div></td></tr>'
+   +'<tr><th>조치</th><td colspan="3">'+(f.status==='DONE'?escapeText(f.actionDate)+' · '+escapeText(f.actionMemo)+' <span class="muted">('+escapeText(f.actionBy)+')</span>':'<span class="muted">조치 전</span>')+'</td></tr>'
+   +'<tr><th>조치 후</th><td colspan="3"><div class="row">'+(f.status==='DONE'?thumbs(f.after,''):'<span class="muted">-</span>')+'</div></td></tr></table>').join(''):(x.bad?'<p class="muted">지적사항을 불러오지 못했습니다.</p>':'<p class="desc">지적사항 없음</p>'))+'</div>';window.scrollTo(0,0);loadInspPhotos(job.id)}
+/** 화면의 사진 칸을 채움 (처음 볼 때만 서버에서 받음) */
+async function loadInspPhotos(jobId){for(const img of document.querySelectorAll('img[data-doc]')){const id=img.dataset.doc;if(inspPhoto[id]){img.src=inspPhoto[id];continue}try{const f=await callQuiet('getInspPhoto',jobId,id);inspPhoto[id]='data:'+f.mime+';base64,'+f.data;document.querySelectorAll('img[data-doc="'+id+'"]').forEach(x=>x.src=inspPhoto[id])}catch(e){}}}
+function viewInspPhoto(id){if(!inspPhoto[id])return;const w=window.open();if(w)w.document.write('<img src="'+inspPhoto[id]+'" style="max-width:100%">')}
+/* ---------- 도급인: 공사별 순회점검 ---------- */
+async function openInspList(jobId){try{inspJob=await call('inspList',jobId);jobsMode='insp';renderInspList()}catch(e){}}
+function renderInspList(){const d=inspJob,un=d.list.filter(x=>!x.checkedAt).length,open=d.findings.filter(f=>f.status!=='DONE');jobsMode='insp';
+ $('jobs').innerHTML='<div class="card"><button class="button ghost" type="button" onclick="loadJobs()">← 공사 목록</button><h2 style="margin-top:12px">순회점검일지 · '+escapeText(d.job.title)+'</h2>'
+  +'<table class="rtable" style="margin-top:10px"><tr><th>업체</th><th>마지막 점검</th></tr>'+d.vendors.map(v=>'<tr><td>'+escapeText(v.company)+' <span class="muted">'+escapeText(v.trade)+'</span></td><td'+(v.since==null||v.since>=2?' class="req"':'')+'>'+(v.last?escapeText(v.last)+' ('+v.since+'일 전)':'점검 기록 없음')+'</td></tr>').join('')+'</table>'
+  +(un?'<button class="button" type="button" style="width:100%;margin-top:12px" onclick="checkAllInsp()">확인 대기 '+un+'건 전체 확인</button>':'<p class="desc" style="margin-top:10px">확인 대기 없음</p>')+'</div>'
+  +'<div class="card"><h2>미조치 지적사항 '+(open.length?'<span class="cnt">'+open.length+'</span>':'')+'</h2>'+(open.map(f=>findRow(f,'staff')).join('')||'<p class="muted">미조치 지적사항이 없습니다.</p>')+'</div>'
+  +'<div class="card"><h2>일지 '+d.list.length+'건</h2>'+(d.list.map(x=>'<button class="jobitem" type="button" onclick="openInspSheet(\''+escapeText(x.id)+'\',\'staff\')"><div><b>'+escapeText(x.date)+' · '+escapeText(x.company)+'</b> '+(x.checkedAt?'<span class="pill ok">확인</span>':'<span class="pill todo">확인 대기</span>')+'<div class="muted">점검 '+escapeText(x.submittedName)+(x.bad?' · 지적 '+x.bad+'건':' · 이상 없음')+'</div></div><span aria-hidden="true">›</span></button>').join('')||'<p class="muted">아직 제출된 일지가 없습니다.</p>')+'</div>';window.scrollTo(0,0)}
+async function checkAllInsp(){const n=inspJob.list.filter(x=>!x.checkedAt).length;if(!confirm('확인 대기 '+n+'건을 모두 확인할까요?\n일지에 "도급인 확인: '+(state.staff?state.staff.name:'')+'"이 남습니다.'))return;
+ try{inspJob=await call('checkInspections',inspJob.job.id,[]);renderInspList();msg(n+'건 확인했습니다.');refreshBadges();const j=jobData&&jobData.jobs.find(x=>x.id===inspJob.job.id);if(j)j.inspUnchecked=0}catch(e){}}
