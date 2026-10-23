@@ -1,4 +1,4 @@
-/* 도급 안전관리 · Firebase 연결부 (F1.3: 로그인 · 직원 · 사업자 등록/승인 · 계약 전 서류 · 공사/작업자)
+/* 도급 안전관리 · Firebase 연결부 (F1.4: 로그인 · 직원 · 사업자 등록/승인 · 계약 전 서류 · 공사/작업자 · 작업허가서)
  * - 화면(app.js)은 예전처럼 api('기능이름', 인자) 로 부르고, 이 파일이 Firestore에서 바로 처리함
  *   (예전: 버튼마다 Apps Script 서버 왕복 → 느림 / 지금: 휴대폰이 Firestore를 직접 읽고 씀)
  * - 권한(업체는 자기 것만, 직원 관리는 안전보건팀만 등)은 Firebase 보안 규칙(firestore.rules)이 최종 확인
@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F1.3';
+  const VERSION = '26.10.24 F1.4';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   const CFG = {
     INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
@@ -271,8 +271,10 @@
       const assigned = new Set(jvs.map((x) => x.companyId));
       o.newVendors = ver.filter((x) => x.submissionStatus === 'APPROVED' && !assigned.has(x.id)).map((x) => ({ id: x.id, company: x.company, industry: x.industry }));
       o.jobEnd = jobs.filter((j) => (st.role === 'SAFETY' || lower(j.hostEmail) === a.email) && ['SOON', 'OVER'].includes(jobEndInfo(j).state)).length;
-      o.permits = 0; o.insp = 0; o.evalDraft = 0;  // F1.4·F1.5·F1.7
-      o.jobs = o.newVendors.length + o.pendingAttend + o.jobEnd;
+      const mine = jobs.filter((j) => st.role === 'SAFETY' || lower(j.hostEmail) === a.email).map((j) => j.id);
+      o.permits = mine.length ? (await byJobs('PERMITS', mine)).filter((p) => p.status === 'ISSUED').length : 0;  // 승인 대기 허가서
+      o.insp = 0; o.evalDraft = 0;  // F1.5 · F1.7
+      o.jobs = o.newVendors.length + o.pendingAttend + o.permits + o.jobEnd;
     }
     return o;
   }
@@ -506,10 +508,11 @@
     const parts = []; for (let i = 0; i < ids.length; i += 30) parts.push(ids.slice(i, i + 30));
     return (await Promise.all(parts.map((p) => db.collection(col).where('jobId', 'in', p).get().then(docs)))).flat();
   }
-  /** 업체별 이행 현황 (작업허가서·순회점검은 F1.4·F1.5에서 채움) */
-  function vjStats(crew) {
-    const wd = new Set(crew.map((x) => x.date).filter(Boolean)).size;
-    return { workDays: wd, crewDays: crew.length, permitDays: 0, insp: 0, inspNeed: wd ? Math.max(1, Math.ceil(wd / 2)) : 0, openFindings: 0, findTotal: 0, todayPermit: false, inspToday: false, inspDue: true, lastInsp: '' };
+  /** 업체별 이행 현황 (작업일 = 인원·허가서 기록이 있는 날 · 순회점검은 F1.5에서 채움) */
+  function vjStats(crew, pm) {
+    pm = pm || []; const t = today(), wd = new Set([].concat(crew.map((x) => x.date), pm.map((x) => x.date)).filter(Boolean)).size;
+    return { workDays: wd, crewDays: crew.length, permitDays: new Set(pm.map((x) => x.date)).size, insp: 0, inspNeed: wd ? Math.max(1, Math.ceil(wd / 2)) : 0, openFindings: 0, findTotal: 0,
+      todayPermit: pm.some((p) => p.date === t), inspToday: false, inspDue: true, lastInsp: '' };
   }
   /** 공사에 배정할 수 있는 업체 (재평가 중 포함 · 테스트 모드면 승인 전도) */
   async function jobVendorChoices() {
@@ -518,13 +521,13 @@
       return { id: x.id, uid: x.uid, company: x.company, industry: x.industry, approved: canExec(x), renewing: !!x.renewAt, renewStatus: x.renewAt ? x.submissionStatus : '', valid: v, expired: !!(v && v.expired), lastEval: null };
     });
   }
-  function jobView(j, jvs, wks, crews) {
-    const vs = jvs.filter((v) => v.jobId === j.id).sort((x, y) => String(x.addedAt).localeCompare(String(y.addedAt))), cr = crews.filter((c) => c.jobId === j.id);
+  function jobView(j, jvs, wks, crews, pms) {
+    const vs = jvs.filter((v) => v.jobId === j.id).sort((x, y) => String(x.addedAt).localeCompare(String(y.addedAt))), cr = crews.filter((c) => c.jobId === j.id), pm = (pms || []).filter((p) => p.jobId === j.id);
     return { id: j.id, title: j.title, storeName: j.storeName, storeCode: j.storeCode, address: j.address, kind: j.kind, kindLabel: JOB_KINDS[j.kind] || j.kind, startDate: j.startDate, endDate: j.endDate,
       delegations: j.delegations || {}, hostName: j.hostName, hostEmail: j.hostEmail, status: j.status,
       vendors: vs.map((v) => ({ companyId: v.companyId, company: v.company, trade: v.trade })),
-      workerCount: wks.filter((w) => w.jobId === j.id).length, permitWaiting: 0, permitTotal: 0, inspTotal: 0, inspUnchecked: 0, findOpen: 0,
-      vstats: vs.map((v) => Object.assign({ company: v.company, companyId: v.companyId }, vjStats(cr.filter((c) => c.companyId === v.companyId)))),
+      workerCount: wks.filter((w) => w.jobId === j.id).length, permitWaiting: pm.filter((p) => p.status === 'ISSUED').length, permitTotal: pm.length, inspTotal: 0, inspUnchecked: 0, findOpen: 0,
+      vstats: vs.map((v) => Object.assign({ company: v.company, companyId: v.companyId }, vjStats(cr.filter((c) => c.companyId === v.companyId), pm.filter((p) => p.companyId === v.companyId)))),
       end: jobEndInfo(j), evalDone: 0, evalTotal: 0, crewDays: cr.length, meetings: [] };  // 미팅은 F1.6 · 종료 평가는 F1.7
   }
   async function staffOnly(a) { const s = await staffOf(a); if (!s) fail('아성다이소 직원 계정만 사용할 수 있습니다.'); return s; }
@@ -533,8 +536,8 @@
     const s = await staffOnly(a);
     const [choices, all] = await Promise.all([jobVendorChoices(), db.collection('JOBS').get().then(docs)]);
     const jobs = all.filter((j) => canSeeJob(a, s, j)).sort((x, y) => String(y.createdAt).localeCompare(String(x.createdAt))), ids = jobs.map((j) => j.id);
-    const [jvs, wks, crews] = await Promise.all([byJobs('JOB_VENDORS', ids), byJobs('WORKERS', ids), byJobs('CREW', ids)]);
-    return { me: { name: s.name, role: s.role }, kinds: JOB_KINDS, meetKinds: MEET_KINDS, vendors: choices.map(({ uid, ...v }) => v), testMode: CFG.TEST_SKIP_FILES, jobs: jobs.map((j) => jobView(j, jvs, wks, crews)) };
+    const [jvs, wks, crews, pms] = await Promise.all([byJobs('JOB_VENDORS', ids), byJobs('WORKERS', ids), byJobs('CREW', ids), byJobs('PERMITS', ids)]);
+    return { me: { name: s.name, role: s.role }, kinds: JOB_KINDS, meetKinds: MEET_KINDS, vendors: choices.map(({ uid, ...v }) => v), testMode: CFG.TEST_SKIP_FILES, jobs: jobs.map((j) => jobView(j, jvs, wks, crews, pms)) };
   };
   /** [직원] 공사 만들기·수정 (참여 업체·위임장 정보 포함) */
   API.saveJob = async (a, d) => {
@@ -573,9 +576,9 @@
   API.deleteJob = async (a, jobId) => {
     const s = await staffOnly(a), id = tidy(jobId, 40), js = await db.collection('JOBS').doc(id).get(), j = js.exists ? js.data() : null;
     if (!j || !canSeeJob(a, s, j)) fail('삭제할 수 없는 공사입니다.');
-    const lists = await Promise.all(['JOB_VENDORS', 'WORKERS', 'CREW'].map((n) => db.collection(n).where('jobId', '==', id).get()));
+    const COLS = ['JOB_VENDORS', 'WORKERS', 'CREW', 'PERMITS'], lists = await Promise.all(COLS.map((n) => db.collection(n).where('jobId', '==', id).get()));
     const b = db.batch(), cnt = {};
-    ['JOB_VENDORS', 'WORKERS', 'CREW'].forEach((n, i) => { cnt[n] = lists[i].docs.length; lists[i].docs.forEach((d) => b.delete(d.ref)); });
+    COLS.forEach((n, i) => { cnt[n] = lists[i].docs.length; lists[i].docs.forEach((d) => b.delete(d.ref)); });
     b.delete(js.ref); await b.commit();
     audit(a, '', 'JOB_DELETE', id + ' ' + j.title + ' ' + JSON.stringify(cnt));
     return API.jobBoard(a);
@@ -614,18 +617,19 @@
   /** [업체] 내 공사 목록 */
   API.myJobs = async (a) => {
     const b = await execVendor(a), t = today(), jvs = (await myAssign(a, b)).sort((x, y) => String(y.addedAt).localeCompare(String(x.addedAt)));
-    const [jobs, wks, crews] = await Promise.all([
-      Promise.all(jvs.map((v) => db.collection('JOBS').doc(v.jobId).get().then((s) => (s.exists ? s.data() : null)).catch(() => null))),
-      db.collection('WORKERS').where('vendorUid', '==', a.uid).get().then(docs), db.collection('CREW').where('vendorUid', '==', a.uid).get().then(docs)]);
+    const mineAll = (col) => db.collection(col).where('vendorUid', '==', a.uid).get().then(docs);
+    const [jobs, wks, crews, pms] = await Promise.all([
+      Promise.all(jvs.map((v) => db.collection('JOBS').doc(v.jobId).get().then((s) => (s.exists ? s.data() : null)).catch(() => null))), mineAll('WORKERS'), mineAll('CREW'), mineAll('PERMITS')]);
     return { today: t, company: b.company, jobs: jvs.map((v, i) => {
       const j = jobs[i]; if (!j) return null;
       const cr = crews.filter((c) => c.jobId === j.id && c.companyId === b.id), c = cr.find((x) => x.date === t);
       return { id: j.id, title: j.title, storeName: j.storeName, startDate: j.startDate, endDate: j.endDate, hostName: j.hostName, trade: v.trade, status: j.status,
-        workers: wks.filter((w) => w.jobId === j.id && w.companyId === b.id && w.active !== 'N').length, todayCount: c ? Number(c.count) : 0, todayDone: !!c, end: jobEndInfo(j), stats: vjStats(cr) };
+        workers: wks.filter((w) => w.jobId === j.id && w.companyId === b.id && w.active !== 'N').length, todayCount: c ? Number(c.count) : 0, todayDone: !!c, end: jobEndInfo(j),
+        stats: vjStats(cr, pms.filter((p) => p.jobId === j.id && p.companyId === b.id)) };
     }).filter(Boolean) };
   };
   async function jobPack(a, b, j, jv) {
-    const t = today(), [wks, crews, sm0] = await Promise.all([mineOf('WORKERS', a, j.id), mineOf('CREW', a, j.id), siteManagerOf(a, b)]);
+    const t = today(), [wks, crews, sm0, pms] = await Promise.all([mineOf('WORKERS', a, j.id), mineOf('CREW', a, j.id), siteManagerOf(a, b), mineOf('PERMITS', a, j.id)]);
     const ws = wks.filter((w) => w.companyId === b.id && w.active !== 'N'), cr = crews.filter((c) => c.companyId === b.id).sort((x, y) => (x.date < y.date ? 1 : -1));
     const day = (c) => ({ date: c.date, count: Number(c.count) || (c.workers || []).length, siteManager: c.siteManager, savedAt: c.savedAt, workers: c.workers || [] }), tc = cr.find((x) => x.date === t);
     return { today: t, job: { id: j.id, title: j.title, storeName: j.storeName, address: j.address, startDate: j.startDate, endDate: j.endDate, hostName: j.hostName },
@@ -633,7 +637,7 @@
       workers: ws.map((w) => ({ id: w.id, name: w.name, role: w.role, trade: w.trade, method: w.method, eduAt: w.eduAt, email: w.email })),
       todayCrew: tc ? day(tc) : null, history: cr.slice(0, 30).map(day), siteManager: tc ? tc.siteManager : sm0,
       rules: WORK_RULES, pledge: WORK_PLEDGE, roles: WORKER_ROLES,
-      permits: [], insp: { items: INSP_ITEMS, type: '순회점검일지', last: '', todayDone: false, due: true, since: null, open: [], recent: [] },  // F1.4·F1.5
+      permits: pms.filter((p) => p.companyId === b.id).sort((x, y) => (x.date < y.date ? 1 : -1)).slice(0, 30).map(permitSummary), insp: { items: INSP_ITEMS, type: '순회점검일지', last: '', todayDone: false, due: true, since: null, open: [], recent: [] },  // F1.4·F1.5
       jobStatus: j.status, permitToday: null, evalResult: null };
   }
   /** [업체] 공사 화면 (처음 열 때 작업자 등록 QR 값 생성) */
@@ -686,8 +690,137 @@
   /** [작업자] QR 본인 등록 — QR 값 확인이 필요해 중계 서버가 처리. info 없이 부르면 입력 화면 정보 */
   API.workerCheckIn = async (a, token, info) => relay('workerIn', { token: String(token || ''), info: info || null }, !info);
 
+  /* ---------- F1.4 안전작업허가서 (매일 1회 · 업체 발행 → 바로 작업 · 도급인 나중 승인) ----------
+   *  PERMITS/{공사ID_업체ID_날짜}  data = 허가서 내용(JSON 글자) · progress = 발행 후 진행 기록(가스측정·작업중 확인·완료·연장)
+   *  승인 뒤에는 data는 못 고치고 progress만 고칠 수 있음 (보안 규칙이 확인) */
+  const PERMIT_PROGRESS_KEYS = ['gas', 'gasNote', 'during', 'complete', 'extend'];
+  /** 허가서 내용 정리: 글자 300자, 배열 10개, 키 60개, 깊이 5단계 */
+  function permitClean(v, depth) {
+    depth = depth || 0; if (depth > 5) return null;
+    if (typeof v === 'boolean') return v; if (typeof v === 'number') return isFinite(v) ? v : 0; if (typeof v === 'string') return tidy(v, 300);
+    if (Array.isArray(v)) return v.slice(0, 10).map((x) => permitClean(x, depth + 1));
+    if (v && typeof v === 'object') { const o = {}; Object.keys(v).slice(0, 60).forEach((k) => { if (/^[A-Za-z0-9_]{1,30}$/.test(k)) o[k] = permitClean(v[k], depth + 1); }); return o; }
+    return null;
+  }
+  const permitData = (p) => ({ ...parse(p.data, {}), ...parse(p.progress, {}) });
+  function permitSummary(p) {
+    const d = permitData(p);
+    return { id: p.id, no: p.no, date: p.date, status: p.status, company: p.company, workName: d.workName || '', place: d.place || '', start: (d.period || {}).start || '', end: (d.period || {}).end || '',
+      issuedAt: p.issuedAt, approvedBy: p.approvedBy, approvedAt: p.approvedAt, completed: !!(d.complete && d.complete.time) };
+  }
+  const permitFull = (p) => ({ ...permitSummary(p), companyId: p.companyId, jobId: p.jobId, data: permitData(p), issuedBy: p.issuedBy, updatedAt: p.updatedAt, approveNote: p.approveNote });
+  /** 발행 전 필수 확인 (화면에서도 같은 검사) */
+  function permitCheck(d) {
+    const bad = [], P = d.period || {};
+    if (!d.workName) bad.push('작업명(공정)'); if (!d.place) bad.push('작업지역(장소)'); if (!P.start || !P.end) bad.push('작업허가기간(시작·종료 시각)');
+    if (!(d.applicant || {}).name) bad.push('신청인 성명'); if (!(d.issuer || {}).name) bad.push('발급자 성명'); if (!(d.confirm || {}).manager) bad.push('안전조치 확인: 작업 부서 책임자');
+    Object.entries(d.safety || {}).forEach(([k, v]) => { if (v && v.need && !v.done) bad.push('안전조치 요구사항 \'' + k + '\' 조치 완료 체크'); });
+    Object.entries(d.supp || {}).forEach(([k, v]) => {
+      if (v && v.on) {
+        if (!v.from || !v.to) bad.push('보충작업(' + k + ') 허가기간'); if (!v.checker) bad.push('보충작업(' + k + ') 확인자');
+        Object.entries(v.checks || {}).forEach(([c, x]) => { if (x && x.need && !x.done) bad.push('보충작업(' + k + ') \'' + c + '\' 조치 완료 체크'); });
+      }
+    });
+    return bad;
+  }
+  /** 업체 허가서 한 장 (지정일) · 없으면 지난 허가서로 미리 채운 새 양식 */
+  async function permitPack(a, b, j, jv, dt) {
+    const list = (await mineOf('PERMITS', a, j.id)).filter((x) => x.companyId === b.id), p = list.find((x) => x.date === dt);
+    if (p) return { exists: true, today: today(), permit: permitFull(p) };
+    if (dt !== today()) fail('해당 날짜의 허가서가 없습니다.');
+    const last = list.sort((x, y) => (x.date < y.date ? 1 : -1))[0], ld = last ? permitData(last) : null, sm = await siteManagerOf(a, b);
+    const base = { applicant: { dept: b.company, title: '현장책임자', name: sm }, period: { start: '08:00', end: '17:00' }, place: j.storeName, device: '', workName: '', attach: {}, pre: { procChange: '무', workDiff: '무' }, safety: {}, supp: {},
+      gas: [], gasNote: '', confirm: { manager: sm, witness: '' }, during: [], complete: {}, etc: '', issuer: { dept: b.company, title: '현장책임자', name: sm }, extend: {} };
+    if (ld) {
+      ['applicant', 'period', 'place', 'device', 'workName', 'attach', 'pre', 'safety', 'supp', 'confirm', 'issuer'].forEach((k) => { if (ld[k] !== undefined) base[k] = ld[k]; });
+      // 보충작업 확인자·조치 완료 체크는 매일 새로 확인 (필요 체크만 이어받음)
+      Object.values(base.supp || {}).forEach((s) => { s.checker = ''; Object.values(s.checks || {}).forEach((c) => { c.done = false; }); }); Object.values(base.safety || {}).forEach((c) => { c.done = false; });
+    }
+    return { exists: false, today: today(), fromLast: last ? last.date : '', permit: { status: 'NEW', date: today(), company: b.company, trade: jv.trade, data: base } };
+  }
+  API.getPermit = async (a, jobId, date) => {
+    const b = await execVendor(a), { j, jv } = await vendorJobOf(a, b, jobId);
+    return permitPack(a, b, j, jv, isDate(date) ? date : today());
+  };
+  /** [업체] 발행 (매일 1회) → 바로 작업 가능 · 도급인에게 승인 요청 메일(중계 서버, 기다리지 않음) */
+  API.issuePermit = async (a, jobId, data) => {
+    const b = await execVendor(a), { j, jv } = await vendorJobOf(a, b, jobId, true), d = permitClean(data || {}) || {}, bad = permitCheck(d);
+    if (bad.length) fail('발행 전에 확인해 주세요:\n- ' + bad.join('\n- '));
+    const raw = JSON.stringify(d); if (raw.length > 30000) fail('허가서 내용이 너무 깁니다.');
+    const t = today(), id = j.id + '_' + b.id + '_' + t;
+    if ((await mineOf('PERMITS', a, j.id)).some((x) => x.id === id)) fail('오늘 허가서는 이미 발행했습니다. 연장 작업은 허가서의 [작업허가 연장]에 적어 주세요.');
+    const seq = Math.max(0, (j.vendorUids || []).indexOf(a.uid)) + 1;  // 같은 공사·같은 날 업체마다 다른 번호
+    const no = j.id.replace('JOB-', '') + '-' + t.replace(/-/g, '').slice(2) + '-' + ('0' + seq).slice(-2);
+    await db.collection('PERMITS').doc(id).set({ id, no, jobId: j.id, companyId: b.id, company: b.company, vendorUid: a.uid, date: t, data: raw, progress: '{}', status: 'ISSUED',
+      issuedBy: a.email, issuedAt: now(), updatedAt: now(), approvedBy: '', approvedAt: '', approveNote: '' });
+    audit(a, b.id, 'PERMIT_ISSUE', no + ' ' + j.id);
+    relay('permitMail', { permitId: id }).catch(() => {});
+    return permitPack(a, b, j, jv, t);
+  };
+  async function myPermit(a, b, permitId) {
+    const p = docs(await db.collection('PERMITS').where('vendorUid', '==', a.uid).get()).find((x) => x.id === tidy(permitId, 80) && x.companyId === b.id);
+    if (!p) fail('허가서를 찾을 수 없습니다.'); return p;
+  }
+  /** [업체] 발행 후 진행 기록 (가스농도 측정·작업중 확인·작업완료·연장만) — 승인 후에도 가능 */
+  API.updatePermitProgress = async (a, permitId, prog) => {
+    const b = await execVendor(a), p = await myPermit(a, b, permitId), x = permitClean(prog || {}) || {}, pr = parse(p.progress, {});
+    PERMIT_PROGRESS_KEYS.forEach((k) => { if (x[k] !== undefined) pr[k] = x[k]; });
+    await db.collection('PERMITS').doc(p.id).update({ progress: JSON.stringify(pr), updatedAt: now() }); audit(a, b.id, 'PERMIT_PROGRESS', p.no);
+    return API.getPermit(a, p.jobId, p.date);
+  };
+  /** [업체] 승인 전 수정 (허가번호 유지) */
+  API.editPermit = async (a, permitId, data) => {
+    const b = await execVendor(a), d = permitClean(data || {}) || {}, bad = permitCheck(d);
+    if (bad.length) fail('수정 제출 전에 확인해 주세요:\n- ' + bad.join('\n- '));
+    const raw = JSON.stringify(d); if (raw.length > 30000) fail('허가서 내용이 너무 깁니다.');
+    const p = await myPermit(a, b, permitId); if (p.status === 'APPROVED') fail('도급인이 이미 승인한 허가서는 고칠 수 없습니다.');
+    await vendorJobOf(a, b, p.jobId, true);
+    await db.collection('PERMITS').doc(p.id).update({ data: raw, progress: '{}', updatedAt: now() }); audit(a, b.id, 'PERMIT_EDIT', p.no);
+    return API.getPermit(a, p.jobId, p.date);
+  };
+  /** [업체] 제출 취소 = 삭제 (승인 전까지만 · 이력은 접근및작업이력에) */
+  API.withdrawPermit = async (a, permitId) => {
+    const b = await execVendor(a), p = await myPermit(a, b, permitId); if (p.status === 'APPROVED') fail('도급인이 이미 승인한 허가서는 취소할 수 없습니다.');
+    await vendorJobOf(a, b, p.jobId, true);
+    await db.collection('PERMITS').doc(p.id).delete(); audit(a, b.id, 'PERMIT_WITHDRAW', p.no + ' ' + p.date);
+    return API.vendorJob(a, p.jobId);
+  };
+  /* 직원: 공사별 허가서 · 보기 · 승인 */
+  async function staffJob(a, s, jobId) { const js = await db.collection('JOBS').doc(tidy(jobId, 40)).get().catch(() => null), j = js && js.exists ? js.data() : null; if (!canSeeJob(a, s, j)) fail('권한이 없는 공사입니다.'); return j; }
+  API.permitList = async (a, jobId) => {
+    const s = await staffOnly(a), j = await staffJob(a, s, jobId);
+    const list = docs(await db.collection('PERMITS').where('jobId', '==', j.id).get()).sort((x, y) => (x.date < y.date ? 1 : x.date > y.date ? -1 : (x.company < y.company ? -1 : 1)));
+    return { job: { id: j.id, title: j.title, storeName: j.storeName }, list: list.map(permitSummary) };
+  };
+  async function permitOf(a, s, id) {
+    const ps = await db.collection('PERMITS').doc(tidy(id, 80)).get().catch(() => null); if (!ps || !ps.exists) fail('허가서를 찾을 수 없거나 권한이 없습니다.');
+    const p = ps.data(), j = await staffJob(a, s, p.jobId).catch(() => fail('허가서를 찾을 수 없거나 권한이 없습니다.')); return { p, j };
+  }
+  const approverOf = (s) => ({ dept: s.dept || '아성다이소', title: STAFF_ROLES[s.role] || '', name: s.name });
+  API.permitDetail = async (a, id) => { const s = await staffOnly(a), { p, j } = await permitOf(a, s, id); return { ...permitFull(p), job: { id: j.id, title: j.title, storeName: j.storeName }, approver: approverOf(s) }; };
+  /** [직원] 승인 (승인자 부서·직책·성명 = 로그인한 직원) */
+  API.approvePermit = async (a, id, note) => {
+    const s = await staffOnly(a), { p } = await permitOf(a, s, id); if (p.status === 'APPROVED') fail('이미 승인된 허가서입니다.');
+    const ap = approverOf(s);
+    await db.collection('PERMITS').doc(p.id).update({ status: 'APPROVED', approvedBy: ap.dept + ' / ' + ap.title + ' / ' + ap.name, approvedAt: now(), approveNote: tidy(note, 300) });
+    audit(a, p.companyId, 'PERMIT_APPROVE', p.no);
+    return API.permitDetail(a, id);
+  };
+  /** [직원] 선택·일괄 승인 (승인 대기만 · '일괄 승인'으로 기록) */
+  API.approvePermits = async (a, jobId, ids, note) => {
+    const s = await staffOnly(a), j = await staffJob(a, s, jobId), pick = Array.isArray(ids) && ids.length ? new Set(ids.map(String)) : null, ap = approverOf(s);
+    const ps = docs(await db.collection('PERMITS').where('jobId', '==', j.id).get()).filter((p) => p.status === 'ISSUED' && (!pick || pick.has(p.id)));
+    for (let i = 0; i < ps.length; i += 400) {
+      const b = db.batch();
+      ps.slice(i, i + 400).forEach((p) => b.update(db.collection('PERMITS').doc(p.id), { status: 'APPROVED', approvedBy: ap.dept + ' / ' + ap.title + ' / ' + ap.name, approvedAt: now(), approveNote: tidy(note, 300) || '일괄 승인' }));
+      await b.commit();
+    }
+    audit(a, '', 'PERMIT_APPROVE_BULK', j.id + ' ' + ps.length + '건');
+    return API.permitList(a, jobId);
+  };
+
   /* ---------- 화면에서 쓰는 창구 ---------- */
-  const NEXT = { getPermit: 'F1.4', issuePermit: 'F1.4', permitList: 'F1.4', submitInspection: 'F1.5', inspList: 'F1.5', meetCheckIn: 'F1.6', createMeeting: 'F1.6', extendJob: 'F1.7', endJob: 'F1.7', jobEvalList: 'F1.7' };
+  const NEXT = { submitInspection: 'F1.5', inspList: 'F1.5', meetCheckIn: 'F1.6', createMeeting: 'F1.6', extendJob: 'F1.7', endJob: 'F1.7', jobEvalList: 'F1.7' };
   async function call(fn, args) {
     const f = Object.prototype.hasOwnProperty.call(API, fn) ? API[fn] : null;
     if (!f) fail('아직 Firebase로 옮기지 않은 기능입니다 (' + fn + (NEXT[fn] ? ' · ' + NEXT[fn] + ' 예정' : '') + ').');
