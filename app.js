@@ -67,7 +67,7 @@ function text(id,label,value='',disabled=false){return `<div class="field"><labe
 function value(id){return $('f_'+id)?.value?.trim()||''}
 function switchTab(which){tab=which;toggleMenu(false);stopScan();if($(which+'Tab'))$('pageTitle').textContent=$(which+'Tab').textContent;clearInterval(roomTimer);clearInterval(wkTimer);for(const n of ['my','admin','review','tpl','staff','jobs','notice','vendors']){$(n).classList.toggle('hidden',n!==which);$(n+'Tab').classList.toggle('active',n===which)}if(which==='admin')loadAdmin();if(which==='review')loadReview();if(which==='tpl')loadTemplates();if(which==='staff')loadStaff();if(which==='jobs')loadJobs();if(which==='notice')loadNotices();if(which==='vendors')loadVendors();}
 // ★ 화면 버전: 여기 한 줄만 고침 (GitHub만 올리면 로그인 화면·앱 화면·메뉴에 모두 반영, Code.gs 수정 불필요)
-const UI_VERSION='26.10.24 F1.4';
+const UI_VERSION='26.10.24 F1.4b';
 function showVer(){document.querySelectorAll('.verTxt').forEach(x=>x.textContent=UI_VERSION)}
 /** v4.1 ⚙ 마스터 설정: 직원 관리로 바로 이동 (마스터 계정만 보임) */
 function openMaster(){if(!state||!state.isMaster)return;sgo('staff')}
@@ -594,6 +594,19 @@ async function upload(){try{const f=await readFile($('evidence').files[0]);displ
  *  새 창이 막히면(휴대폰 팝업 차단) 안내 창의 [열기] 버튼으로 다시 열기 */
 function openFile(f){if(!f)return;if(!f.url){saveBlob(f);return}const w=window.open(f.url,'_blank');if(!w)popup('파일 열기',(f.name||'파일')+'\n\n구글 드라이브 화면으로 엽니다.\n'+(f.email?'('+f.email+' 계정으로 보기 권한이 있습니다)':''),'열기',()=>window.open(f.url,'_blank'))}
 async function viewFile(id){try{openFile(await call('getMyFile',id))}catch(e){}}
+/* F1.4 휴대폰에서 사진 칸을 누르면 카메라만 열리던 것(capture) → 옆에 [🖼 앨범·파일] 버튼을 자동으로 붙임
+ *  고른 사진은 원래 사진 칸에 넣고 원래 처리(올리기)를 그대로 실행. 화면을 다시 그려도 계속 붙음 */
+(function(){
+ function addGallery(inp){if(inp.dataset.gal||!inp.id)return;inp.dataset.gal='1';
+  const g=document.createElement('input');g.type='file';g.className='hidefile';g.id=inp.id+'_gal';g.accept=inp.accept||'image/*';g.disabled=inp.disabled;g.setAttribute('aria-label',(inp.getAttribute('aria-label')||'사진')+' (앨범·파일에서 고르기)');
+  const lb=document.createElement('label');lb.className='button ghost';lb.htmlFor=g.id;lb.textContent='🖼 앨범·파일';
+  g.addEventListener('change',()=>{if(!g.files.length)return;try{const dt=new DataTransfer();Array.from(g.files).forEach(f=>dt.items.add(f));inp.files=dt.files}catch(e){g.value='';msg('이 브라우저에서는 앨범에서 고르기가 안 됩니다. 크롬·사파리로 열어 주세요.');return}
+   g.value='';inp.dispatchEvent(new Event('change',{bubbles:true}))});
+  const cam=document.querySelector('label[for="'+CSS.escape(inp.id)+'"]');if(cam&&/^📷 (사진 넣기)?$/.test(cam.textContent.trim()))cam.textContent='📷 촬영';
+  inp.after(lb,g)}
+ const scan=()=>document.querySelectorAll('input[type=file][capture]').forEach(addGallery);
+ new MutationObserver(scan).observe(document.documentElement,{childList:true,subtree:true});scan();
+})();
 function localMissing(){const data=((state.steps||[]).find(x=>Number(x.step)===1)||{}).data||{},m=[];
  if(state.company&&state.company.renewAt&&!state.company.infoFresh)m.push({key:'bRep'});  // v5.17 처음부터 새로 작성: 사업자 정보 저장 필요
  (state.fields[1]||[]).forEach(([k])=>{if(k==='note')return;const el=$('f_'+k),v=el&&!el.disabled?el.value.trim():String(data[k]||'').trim();if(!v)m.push({key:k})});
