@@ -1,4 +1,4 @@
-/* 도급 안전관리 · Firebase 연결부 (F1.6: 로그인 · 직원 · 사업자 등록/승인 · 계약 전 서류 · 공사/작업자 · 작업허가서 · 순회점검 · 협의체/합동점검)
+/* 도급 안전관리 · Firebase 연결부 (F1.7: 로그인 · 직원 · 사업자 등록/승인 · 계약 전 서류 · 공사/작업자 · 작업허가서 · 순회점검 · 협의체/합동점검 · 공사 종료/평가)
  * - 화면(app.js)은 예전처럼 api('기능이름', 인자) 로 부르고, 이 파일이 Firestore에서 바로 처리함
  *   (예전: 버튼마다 Apps Script 서버 왕복 → 느림 / 지금: 휴대폰이 Firestore를 직접 읽고 씀)
  * - 권한(업체는 자기 것만, 직원 관리는 안전보건팀만 등)은 Firebase 보안 규칙(firestore.rules)이 최종 확인
@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F1.6';
+  const VERSION = '26.10.24 F1.7';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   const CFG = {
     INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
@@ -97,6 +97,29 @@
    ['기타','안전수칙을 준수하며, 해당보호구를 착용하고 작업하는가?'],['기타','안전교육은 정기적으로 실시되고 있는가?'],['기타','하역. 운반작업시 적절한 안전조치를 실시하고 있는가?'],['기타','기타 근로자에 유해위험을 미칠 수 있는 것이 있는가?']];
   const JOINT_MARKS=['OK','BAD','NA'];
   const COUNCIL_AGENDA=['작업의 시작 시간','작업 또는 작업장 간의 연락방법','재해발생 위험이 있는 경우 대피방법','작업장에서의 법 제36조에 따른 위험성평가의 실시에 관한 사항','사업주와 수급인 또는 수급인 상호 간의 연락 방법 및 작업공정의 조정'];
+  /* v5.27 Code.gs에서 그대로: 종료 평가 12항목 · 배점 · 등급 계산 */
+  const EVAL_ITEMS=[
+   ['1','A. 안전보건관리체제','일반원칙 (안전보건방침)','규정 · 계획서 Ⅰ 안전보건경영 방침'],
+   ['2','A. 안전보건관리체제','계획수립 (목표·성과지표·법규)','계획서 Ⅰ 안전목표 · 성과지표 · 관련법규'],
+   ['3','A. 안전보건관리체제','역할 및 책임 (조직·연락체계)','계획서 Ⅰ 조직 및 비상연락체계'],
+   ['4','B. 실행수준','위험성평가','계획서 Ⅱ-1 위험성평가 계획'],
+   ['5','B. 실행수준','안전점검 및 모니터링','계획서 Ⅱ-2 안전점검 및 모니터링 계획'],
+   ['6','B. 실행수준','이행확인 (개선조치)','계획서 Ⅴ 이행확인'],
+   ['7','B. 실행수준','교육 및 기록','계획서 Ⅱ-3 안전보건교육 계획'],
+   ['8','B. 실행수준','안전작업허가','계획서 Ⅱ-4 안전작업 허가'],
+   ['9','C. 운영관리','신호 및 연락체계','계획서 Ⅲ-1 신호 및 연락체계'],
+   ['10','C. 운영관리','위험물질 및 설비','계획서 Ⅲ-2 위험물질 및 설비'],
+   ['11','C. 운영관리','비상대책','계획서 Ⅲ-3 비상대책(시나리오)'],
+   ['12','D. 재해발생 수준','최근 3년 산업재해 현황','계획서 Ⅳ 증빙자료']
+  ];
+  const EVAL_LEVELS={G:'우수',N:'보통',P:'미흡'};
+  const EVAL_POINTS={1:[5,3,1],2:[10,5,1],3:[5,3,1],4:[5,3,1],5:[10,5,1],6:[10,5,1],7:[5,3,1],8:[10,5,1],9:[5,3,1],10:[10,5,1],11:[5,3,1],12:[20,10,1]};
+  const EVAL_SECTIONS=[['A',[1,2,3],20],['B',[4,5,6,7,8],40],['C',[9,10,11],20],['D',[12],20]];
+  const EVAL_RULE={rateGood:0.9,rateNormal:0.6,fixDaysGood:3};
+  function evalScore_(items){let total=0;const sec={};EVAL_SECTIONS.forEach(([k,nos])=>{sec[k]=nos.reduce((s,n)=>s+(items[n]?EVAL_POINTS[n]['GNP'.indexOf(items[n].lv)]||0:0),0);total+=sec[k];});
+    let grade=total>=90?'S':total>=80?'A':total>=70?'B':total>=60?'C':'D';
+    // 등급제한: A·B·C 분야 중 하나라도 배점의 50% 미만이면 D
+    const limited=EVAL_SECTIONS.slice(0,3).some(([k,,max])=>sec[k]<max/2);if(limited)grade='D';return {total,grade,sec,limited};}
   /* @@v527-end */
 
   /* ---------- 준비 ---------- */
@@ -156,13 +179,13 @@
   const relayUrl = () => String(window.APP_CONFIG && window.APP_CONFIG.APPS_SCRIPT_URL || '').trim();
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   /** 중계 서버에 요청. retry=true면 연결 실패 시 2번까지 다시 보냄 (조회·내려받기만) */
-  async function relay(op, body, retry) {
+  async function relay(op, body, retry, waitMs) {
     const url = relayUrl();
     if (!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(url)) fail('config.js에 중계 Apps Script 주소(/exec)가 아직 등록되지 않았습니다.');
     await ready; if (!USER) fail('로그인이 만료되었습니다. 다시 로그인해 주세요.');
     const idToken = await USER.getIdToken();
     for (let i = 0; ; i++) {
-      const ctl = typeof AbortController === 'function' ? new AbortController() : null, t = ctl && setTimeout(() => ctl.abort(), 90000);
+      const ctl = typeof AbortController === 'function' ? new AbortController() : null, t = ctl && setTimeout(() => ctl.abort(), waitMs || 90000);
       let o;
       try {
         // text/plain으로 보내야 Apps Script가 추가 확인 요청(CORS) 없이 받음
@@ -287,8 +310,8 @@
       o.permits = mine.length ? (await byJobs('PERMITS', mine)).filter((p) => p.status === 'ISSUED').length : 0;  // 승인 대기 허가서
       o.pendingAttend = mine.length ? (await byJobs('ATTEND', mine)).filter((x) => x.status === 'PENDING').length : 0;  // 미팅 참석 확인 대기
       o.insp = mine.length ? (await byJobs('INSPECTIONS', mine)).filter((x) => !x.checkedAt).length : 0;  // 도급인 확인 대기 순회점검
-      o.evalDraft = 0;  // F1.7
-      o.jobs = o.newVendors.length + o.pendingAttend + o.permits + o.insp + o.jobEnd;
+      o.evalDraft = mine.length ? (await byJobs('JOB_EVALS', mine)).filter((e) => e.status === 'DRAFT').length : 0;  // 작성 중인 종료 평가
+      o.jobs = o.newVendors.length + o.pendingAttend + o.permits + o.insp + o.jobEnd + o.evalDraft;
     }
     return o;
   }
@@ -365,8 +388,10 @@
           contractEval: e ? { good: Number(e.good) || 0, normal: Number(e.normal) || 0, poor: Number(e.poor) || 0, at: e.evaluatedAt } : null };
       } catch (e) { if (e.code !== 'permission-denied') throw e; return { docs: [], evidence: [], contractEval: null }; }
     };
-    const [more, jvs] = await Promise.all([Promise.all(list.map(detail)), st ? db.collection('JOB_VENDORS').get().then(docs) : []]);
-    return { list: list.map((b, i) => ({ ...publicCompany(b), ...more[i], jobs: jvs.filter((x) => x.companyId === b.id).length, lastEval: null })) };  // 종료 평가는 F1.7
+    const [more, jvs, evs, jobs] = await Promise.all([Promise.all(list.map(detail)), st ? db.collection('JOB_VENDORS').get().then(docs) : [],
+      st ? db.collection('JOB_EVALS').where('status', '==', 'DONE').get().then(docs) : [], st ? db.collection('JOBS').get().then(docs) : []]);
+    const le = lastEvals(evs, jobs);
+    return { list: list.map((b, i) => ({ ...publicCompany(b), ...more[i], jobs: jvs.filter((x) => x.companyId === b.id).length, lastEval: le[b.id] || null })) };
   };
   /** [직원] 승인·반려 → 중계 서버가 처리하고 업체에 메일 */
   API.decideBusiness = async (a, id, decision, reason, ret) => {
@@ -536,7 +561,7 @@
       return { id: x.id, uid: x.uid, company: x.company, industry: x.industry, approved: canExec(x), renewing: !!x.renewAt, renewStatus: x.renewAt ? x.submissionStatus : '', valid: v, expired: !!(v && v.expired), lastEval: null };
     });
   }
-  function jobView(j, jvs, wks, crews, pms, inss, fds, mts, ats) {
+  function jobView(j, jvs, wks, crews, pms, inss, fds, mts, ats, evs) {
     const of = (l) => (l || []).filter((x) => x.jobId === j.id), vs = of(jvs).sort((x, y) => String(x.addedAt).localeCompare(String(y.addedAt))), cr = of(crews), pm = of(pms), ins = of(inss), fd = of(fds);
     const by = (l, v) => l.filter((x) => x.companyId === v.companyId);
     return { id: j.id, title: j.title, storeName: j.storeName, storeCode: j.storeCode, address: j.address, kind: j.kind, kindLabel: JOB_KINDS[j.kind] || j.kind, startDate: j.startDate, endDate: j.endDate,
@@ -545,7 +570,7 @@
       workerCount: wks.filter((w) => w.jobId === j.id).length, permitWaiting: pm.filter((p) => p.status === 'ISSUED').length, permitTotal: pm.length,
       inspTotal: ins.length, inspUnchecked: ins.filter((x) => !x.checkedAt).length, findOpen: fd.filter((f) => f.status !== 'DONE').length,
       vstats: vs.map((v) => Object.assign({ company: v.company, companyId: v.companyId }, vjStats(by(cr, v), by(pm, v), by(ins, v), by(fd, v)))),
-      end: jobEndInfo(j), evalDone: 0, evalTotal: 0, crewDays: cr.length,  // 종료 평가는 F1.7
+      end: jobEndInfo(j), evalDone: of(evs).filter((e) => e.status === 'DONE').length, evalTotal: of(evs).length, crewDays: cr.length,
       meetings: of(mts).sort((x, y) => String(x.createdAt).localeCompare(String(y.createdAt))).map((m) => meetSummary(m, of(ats))) };
   }
   async function staffOnly(a) { const s = await staffOf(a); if (!s) fail('아성다이소 직원 계정만 사용할 수 있습니다.'); return s; }
@@ -554,8 +579,10 @@
     const s = await staffOnly(a);
     const [choices, all] = await Promise.all([jobVendorChoices(), db.collection('JOBS').get().then(docs)]);
     const jobs = all.filter((j) => canSeeJob(a, s, j)).sort((x, y) => String(y.createdAt).localeCompare(String(x.createdAt))), ids = jobs.map((j) => j.id);
-    const L = await Promise.all(['JOB_VENDORS', 'WORKERS', 'CREW', 'PERMITS', 'INSPECTIONS', 'FINDINGS', 'MEETINGS', 'ATTEND'].map((n) => byJobs(n, ids)));
-    return { me: { name: s.name, role: s.role }, kinds: JOB_KINDS, meetKinds: MEET_KINDS, vendors: choices.map(({ uid, ...v }) => v), testMode: CFG.TEST_SKIP_FILES, jobs: jobs.map((j) => jobView(j, ...L)) };
+    const L = await Promise.all(['JOB_VENDORS', 'WORKERS', 'CREW', 'PERMITS', 'INSPECTIONS', 'FINDINGS', 'MEETINGS', 'ATTEND', 'JOB_EVALS'].map((n) => byJobs(n, ids)));
+    // 업체 고를 때 지난 종료 평가 (C·D등급 경고)
+    const le = lastEvals(await db.collection('JOB_EVALS').where('status', '==', 'DONE').get().then(docs), all);
+    return { me: { name: s.name, role: s.role }, kinds: JOB_KINDS, meetKinds: MEET_KINDS, vendors: choices.map(({ uid, ...v }) => ({ ...v, lastEval: le[v.id] || null })), testMode: CFG.TEST_SKIP_FILES, jobs: jobs.map((j) => jobView(j, ...L)) };
   };
   /** [직원] 공사 만들기·수정 (참여 업체·위임장 정보 포함) */
   API.saveJob = async (a, d) => {
@@ -594,7 +621,7 @@
   API.deleteJob = async (a, jobId) => {
     const s = await staffOnly(a), id = tidy(jobId, 40), js = await db.collection('JOBS').doc(id).get(), j = js.exists ? js.data() : null;
     if (!j || !canSeeJob(a, s, j)) fail('삭제할 수 없는 공사입니다.');
-    const COLS = ['JOB_VENDORS', 'WORKERS', 'CREW', 'PERMITS', 'INSPECTIONS', 'FINDINGS', 'MEETINGS', 'ATTEND'], lists = await Promise.all(COLS.map((n) => db.collection(n).where('jobId', '==', id).get()));
+    const COLS = ['JOB_VENDORS', 'WORKERS', 'CREW', 'PERMITS', 'INSPECTIONS', 'FINDINGS', 'MEETINGS', 'ATTEND', 'JOB_EVALS'], lists = await Promise.all(COLS.map((n) => db.collection(n).where('jobId', '==', id).get()));
     const b = db.batch(), cnt = {};
     COLS.forEach((n, i) => { cnt[n] = lists[i].docs.length; lists[i].docs.forEach((d) => b.delete(d.ref)); });
     lists[COLS.indexOf('MEETINGS')].docs.forEach((d) => { if (d.data().token) b.delete(db.collection('MEET_LINKS').doc(d.data().token)); });  // 참석 QR도 무효
@@ -648,7 +675,9 @@
     }).filter(Boolean) };
   };
   async function jobPack(a, b, j, jv) {
-    const t = today(), [wks, crews, sm0, pms, inss, fds] = await Promise.all([mineOf('WORKERS', a, j.id), mineOf('CREW', a, j.id), siteManagerOf(a, b), mineOf('PERMITS', a, j.id), mineOf('INSPECTIONS', a, j.id), mineOf('FINDINGS', a, j.id)]);
+    const t = today(), [wks, crews, sm0, pms, inss, fds, evs] = await Promise.all([mineOf('WORKERS', a, j.id), mineOf('CREW', a, j.id), siteManagerOf(a, b), mineOf('PERMITS', a, j.id), mineOf('INSPECTIONS', a, j.id), mineOf('FINDINGS', a, j.id),
+      j.status === 'ENDED' ? mineOf('JOB_EVALS', a, j.id).catch(() => []) : []]);
+    const ev = evs.find((e) => e.companyId === b.id && e.status === 'DONE');
     const ws = wks.filter((w) => w.companyId === b.id && w.active !== 'N'), cr = crews.filter((c) => c.companyId === b.id).sort((x, y) => (x.date < y.date ? 1 : -1));
     const day = (c) => ({ date: c.date, count: Number(c.count) || (c.workers || []).length, siteManager: c.siteManager, savedAt: c.savedAt, workers: c.workers || [] }), tc = cr.find((x) => x.date === t);
     return { today: t, job: { id: j.id, title: j.title, storeName: j.storeName, address: j.address, startDate: j.startDate, endDate: j.endDate, hostName: j.hostName },
@@ -657,7 +686,7 @@
       todayCrew: tc ? day(tc) : null, history: cr.slice(0, 30).map(day), siteManager: tc ? tc.siteManager : sm0,
       rules: WORK_RULES, pledge: WORK_PLEDGE, roles: WORKER_ROLES,
       permits: pms.filter((p) => p.companyId === b.id).sort((x, y) => (x.date < y.date ? 1 : -1)).slice(0, 30).map(permitSummary), insp: inspPack(inss.filter((x) => x.companyId === b.id), fds.filter((x) => x.companyId === b.id)),
-      jobStatus: j.status, permitToday: null, evalResult: null };
+      jobStatus: j.status, permitToday: null, evalResult: ev ? { total: Number(ev.total), grade: ev.grade, comment: ev.comment, date: ev.evaluatedAt ? kst(ev.evaluatedAt) : '' } : null };
   }
   /** [업체] 공사 화면 (처음 열 때 작업자 등록 QR 값 생성) */
   API.vendorJob = async (a, jobId) => {
@@ -1093,8 +1122,109 @@
     return rec({ name, side: 'VENDOR', companyId: v.companyId, company: v.company, role, status: 'PENDING' });
   };
 
+  /* ---------- F1.7 공사 연장 · 종료 · 종료 평가 ----------
+   *  종료 예정 3일 전부터 알림 → [연장](새 종료일·사유, 이력) 또는 [종료]
+   *  [종료] → 참여 업체마다 평가서(JOB_EVALS): 12항목을 수행 기록으로 자동 체크 → 담당자 확인·수정 → [평가 확정]
+   *  확정 후 [전체 활동내역 ZIP] → 중계 서버가 결과지 PDF·단계별 기록을 만들어 드라이브에 보관 (처음 한 번 1~2분)
+   *  참조 알림(연장·종료·평가 확정)은 중계 서버가 안전보건팀에 남김 */
+  const notice = (type, text, jobId, companyId) => relay('notice', { type, text: tidy(text, 500), jobId: jobId || '', companyId: companyId || '' }).catch(() => {});
+  /** 수행 기록 → 12항목 자동 체크 + 근거 (v5.27 jobEvalAuto_와 같은 기준) */
+  async function jobEvalAuto(j, cid) {
+    const by = (col) => db.collection(col).where('jobId', '==', j.id).get().then(docs).then((l) => l.filter((x) => x.companyId === cid));
+    const [crew, pm, ins, fd, wk, evs] = await Promise.all([by('CREW'), by('PERMITS'), by('INSPECTIONS'), by('FINDINGS'), by('WORKERS'), db.collection('EVALUATIONS').where('companyId', '==', cid).get().then(docs).catch(() => [])]);
+    const wd = new Set([].concat(crew.map((x) => x.date), pm.map((x) => x.date), ins.map((x) => x.date)).filter(Boolean)).size;
+    const lvRate = (r) => (r >= EVAL_RULE.rateGood ? 'G' : r >= EVAL_RULE.rateNormal ? 'N' : 'P'), pct = (r) => Math.round(r * 100) + '%';
+    const ev = evs.filter((x) => x.result === 'APPROVED').sort((p, q) => String(p.evaluatedAt).localeCompare(String(q.evaluatedAt))).pop(), pre = ev ? parse(ev.items, {}) : {}, o = {};
+    [1, 2, 3, 4, 9, 10].forEach((n) => { o[n] = { lv: pre[n] || '', why: pre[n] ? '계약 전 평가 결과 (' + EVAL_LEVELS[pre[n]] + ') · 공사 중 이행 상태를 보고 판단' : '계약 전 평가 기록 없음 · 직접 판단', auto: !!pre[n] }; });
+    if (!wd) [5, 7, 8].forEach((n) => { o[n] = { lv: '', why: '작업 기록 없음 · 직접 판단', auto: false }; });
+    else {
+      const need = Math.max(1, Math.ceil(wd / 2)), r5 = ins.length / need; o[5] = { lv: lvRate(r5), why: '순회점검 ' + ins.length + '회 / 필요 ' + need + '회 (작업일 ' + wd + '일 ÷ 2) = ' + pct(r5), auto: true };
+      const r7 = crew.length / wd; o[7] = { lv: lvRate(r7), why: '일일 인원·안전수칙 서명 ' + crew.length + '일 / 작업일 ' + wd + '일 = ' + pct(r7) + ' · 신규자 교육 등록 ' + wk.length + '명', auto: true };
+      const r8 = pm.length / wd, ap = pm.filter((x) => x.status === 'APPROVED').length; o[8] = { lv: lvRate(r8), why: '작업허가서 ' + pm.length + '일 / 작업일 ' + wd + '일 = ' + pct(r8) + ' · 도급인 승인 ' + ap + '건', auto: true };
+    }
+    const done = fd.filter((f) => f.status === 'DONE'), open = fd.length - done.length, avg = done.length ? done.reduce((s, f) => s + Math.max(0, daysBetween(f.foundDate, f.actionDate)), 0) / done.length : 0;
+    o[6] = !fd.length ? { lv: 'G', why: '지적사항 없음', auto: true } : { lv: open ? 'P' : avg <= EVAL_RULE.fixDaysGood ? 'G' : 'N', why: '지적 ' + fd.length + '건 · 조치 ' + done.length + '건 · 미조치 ' + open + '건 · 평균 조치 ' + avg.toFixed(1) + '일', auto: true };
+    o[11] = { lv: '', why: '비상대응훈련 기능 준비 중 · 직접 판단', auto: false };
+    o[12] = { lv: '', why: '공사 중 사고 여부를 직접 입력 (무재해 = 우수)', auto: false };
+    return { items: o, stats: { workDays: wd, crewDays: crew.length, permits: pm.length, inspections: ins.length, findings: fd.length, openFindings: open, workers: wk.length, from: j.startDate, to: (j.endedAt ? kst(j.endedAt) : '') || today() } };
+  }
+  function jobEvalView(e, fresh) {
+    const items = parse(e.items, {}), au = fresh || parse(e.auto, {});
+    return { id: e.id, jobId: e.jobId, companyId: e.companyId, company: e.company, status: e.status, items, auto: au, total: e.total === '' || e.total == null ? null : Number(e.total), grade: e.grade, comment: e.comment,
+      evaluator: e.evaluator, evaluatedAt: e.evaluatedAt, hasFiles: !!(e.pdfId && e.zipId) };
+  }
+  async function jobEvalListOf(j, pre) {
+    const list = docs(await db.collection('JOB_EVALS').where('jobId', '==', j.id).get()).sort((x, y) => String(x.createdAt).localeCompare(String(y.createdAt)));
+    const fresh = await Promise.all(list.map((e) => (e.status === 'DRAFT' ? ((pre && pre[e.companyId]) || jobEvalAuto(j, e.companyId)) : null)));
+    return { job: { id: j.id, title: j.title, storeName: j.storeName, startDate: j.startDate, endDate: j.endDate, endedAt: j.endedAt ? kst(j.endedAt) : '', endedBy: j.endedBy || '', extensions: j.extensions || [] },
+      evalItems: EVAL_ITEMS, points: EVAL_POINTS, sections: EVAL_SECTIONS, list: list.map((e, i) => jobEvalView(e, fresh[i])) };
+  }
+  /** [직원] 공사 연장 (새 종료일 · 사유, 이력 남김) */
+  API.extendJob = async (a, jobId, newEnd, reason) => {
+    const s = await staffOnly(a), j = await staffJob(a, s, jobId); if (j.status === 'ENDED') fail('이미 종료된 공사입니다.');
+    const ne = tidy(newEnd, 10), rs = tidy(reason, 200);
+    if (!isDate(ne)) fail('새 종료일을 입력해 주세요.'); if (ne <= String(j.endDate || '') || ne < today()) fail('새 종료일은 기존 종료일·오늘보다 뒤여야 합니다.'); if (!rs) fail('연장 사유를 입력해 주세요.');
+    const h = (j.extensions || []).concat([{ from: j.endDate || '', to: ne, reason: rs, by: s.name, at: now() }]);
+    await db.collection('JOBS').doc(j.id).update({ endDate: ne, extensions: h }); audit(a, '', 'JOB_EXTEND', j.id + ' ' + j.endDate + '→' + ne);
+    notice('JOB_EXTENDED', j.title + ' (' + j.storeName + ') 종료일 ' + (j.endDate || '-') + ' → ' + ne + ' · 사유: ' + rs + ' · ' + s.name, j.id, '');
+    return API.jobBoard(a);
+  };
+  /** [직원] 공사 종료 → 참여 업체마다 종료 평가서 (수행 기록 자동 반영) */
+  API.endJob = async (a, jobId) => {
+    const s = await staffOnly(a), j = await staffJob(a, s, jobId); if (j.status === 'ENDED') fail('이미 종료된 공사입니다.');
+    const [vs, had] = await Promise.all([db.collection('JOB_VENDORS').where('jobId', '==', j.id).get().then(docs), db.collection('JOB_EVALS').where('jobId', '==', j.id).get().then(docs)]);
+    const at = now(), jj = { ...j, status: 'ENDED', endedAt: at, endedBy: s.name + ' ' + a.email }, pre = {}, B = db.batch();
+    B.update(db.collection('JOBS').doc(j.id), { status: 'ENDED', endedAt: at, endedBy: jj.endedBy });
+    for (const v of vs) {
+      if (had.some((e) => e.companyId === v.companyId)) continue;
+      const au = await jobEvalAuto(jj, v.companyId), items = {}, id = 'JE-' + rand8(); pre[v.companyId] = au;
+      Object.entries(au.items).forEach(([n, x]) => { items[n] = { lv: x.lv, memo: '' }; });
+      B.set(db.collection('JOB_EVALS').doc(id), { id, jobId: j.id, companyId: v.companyId, company: v.company, vendorUid: v.vendorUid || '', status: 'DRAFT', items: JSON.stringify(items), auto: JSON.stringify(au),
+        total: '', grade: '', comment: '', evaluator: '', evaluatedAt: '', pdfId: '', zipId: '', createdAt: at });
+    }
+    await B.commit(); audit(a, '', 'JOB_END', j.id + ' 업체 ' + vs.length);
+    notice('JOB_ENDED', j.title + ' (' + j.storeName + ') 공사 종료 · 참여 업체 ' + vs.length + '곳 종료 평가 시작 · ' + s.name, j.id, '');
+    return jobEvalListOf(jj, pre);
+  };
+  /** [직원] 공사의 종료 평가 목록 (작성 중인 평가는 근거를 최신 기록으로 다시 계산) */
+  API.jobEvalList = async (a, jobId) => { const s = await staffOnly(a), j = await staffJob(a, s, jobId); return jobEvalListOf(j, null); };
+  async function jobEvalOf(a, s, id) {
+    const es = await db.collection('JOB_EVALS').doc(tidy(id, 40)).get().catch(() => null), e = es && es.exists ? es.data() : null; if (!e) fail('평가를 찾을 수 없거나 권한이 없습니다.');
+    const j = await staffJob(a, s, e.jobId).catch(() => fail('평가를 찾을 수 없거나 권한이 없습니다.')); return { e, j };
+  }
+  /** [직원] 평가 저장 (final = 확정 · 안전보건팀 참조 알림) */
+  API.saveJobEval = async (a, id, d, final) => {
+    const s = await staffOnly(a), { e, j } = await jobEvalOf(a, s, id); if (e.status === 'DONE') fail('확정된 평가입니다. 고치려면 [다시 수정]을 눌러 주세요.');
+    const items = {}, miss = [];
+    EVAL_ITEMS.forEach(([no]) => { const x = ((d && d.items) || {})[no] || {}, lv = ['G', 'N', 'P'].includes(x.lv) ? x.lv : ''; items[no] = { lv, memo: tidy(x.memo, 300) }; if (!lv) miss.push(no + '번'); });
+    if (final && miss.length) fail('체크하지 않은 항목이 있습니다: ' + miss.join(', '));
+    if (final && !items[12].memo) fail('12번 재해 항목에 공사 중 사고 여부를 적어 주세요. (예: 무재해)');
+    const sc = evalScore_(items), au = await jobEvalAuto(j, e.companyId), comment = tidy(d && d.comment, 1000);
+    await db.collection('JOB_EVALS').doc(e.id).update({ items: JSON.stringify(items), auto: JSON.stringify(au), comment, total: final ? sc.total : '', grade: final ? sc.grade : '', status: final ? 'DONE' : 'DRAFT',
+      pdfId: '', zipId: '', evaluator: final ? (s.dept || '아성다이소') + ' ' + s.name : '', evaluatedAt: final ? now() : '' });
+    audit(a, e.companyId, final ? 'JOB_EVAL_DONE' : 'JOB_EVAL_SAVE', e.id + ' ' + (final ? sc.total + '점 ' + sc.grade : ''));
+    if (final) notice('JOB_EVAL_DONE', j.title + ' (' + j.storeName + ') · ' + e.company + ' 종료 평가 ' + sc.total + '점 ' + sc.grade + '등급 · 평가 ' + s.name + ' (안전보건팀 사후 검토 대상)', j.id, e.companyId);
+    return jobEvalListOf(j, { [e.companyId]: au });
+  };
+  /** [직원] 확정 평가 다시 수정 */
+  API.reopenJobEval = async (a, id) => {
+    const s = await staffOnly(a), { e, j } = await jobEvalOf(a, s, id);
+    await db.collection('JOB_EVALS').doc(e.id).update({ status: 'DRAFT' }); audit(a, e.companyId, 'JOB_EVAL_REOPEN', e.id);
+    return jobEvalListOf(j, null);
+  };
+  /** [직원] 전체 활동내역 ZIP (결과지 PDF 포함) — 중계 서버가 만들고 드라이브 보기 권한 + 주소를 돌려줌 */
+  API.jobEvalFile = async (a, id) => { const s = await staffOnly(a), { e } = await jobEvalOf(a, s, id); if (e.status !== 'DONE') fail('평가를 확정한 뒤 받을 수 있습니다.'); return relay('evalZip', { evalId: e.id }, false, 330000); };
+  /** 업체별 최근 확정 종료 평가 (공사 배정 때 경고용) */
+  function lastEvals(evals, jobs) {
+    const m = {};
+    evals.filter((e) => e.status === 'DONE').sort((p, q) => String(p.evaluatedAt).localeCompare(String(q.evaluatedAt))).forEach((l) => {
+      const j = jobs.find((x) => x.id === l.jobId) || {}; m[l.companyId] = { grade: l.grade, total: Number(l.total), comment: l.comment, job: j.title || '', date: l.evaluatedAt ? kst(l.evaluatedAt) : '' };
+    });
+    return m;
+  }
+
   /* ---------- 화면에서 쓰는 창구 ---------- */
-  const NEXT = { extendJob: 'F1.7', endJob: 'F1.7', jobEvalList: 'F1.7' };
+  const NEXT = {};  // v5.27의 모든 기능을 옮김 (F1.7). 남은 것은 예전 '제출자료 검토' 화면(reviewList 등 · 메일 링크 검토로 대체)
   async function call(fn, args) {
     const f = Object.prototype.hasOwnProperty.call(API, fn) ? API[fn] : null;
     if (!f) fail('아직 Firebase로 옮기지 않은 기능입니다 (' + fn + (NEXT[fn] ? ' · ' + NEXT[fn] + ' 예정' : '') + ').');
