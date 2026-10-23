@@ -1,4 +1,4 @@
-/* 도급 안전관리 · Firebase 연결부 (F1.4: 로그인 · 직원 · 사업자 등록/승인 · 계약 전 서류 · 공사/작업자 · 작업허가서)
+/* 도급 안전관리 · Firebase 연결부 (F1.5: 로그인 · 직원 · 사업자 등록/승인 · 계약 전 서류 · 공사/작업자 · 작업허가서 · 순회점검)
  * - 화면(app.js)은 예전처럼 api('기능이름', 인자) 로 부르고, 이 파일이 Firestore에서 바로 처리함
  *   (예전: 버튼마다 Apps Script 서버 왕복 → 느림 / 지금: 휴대폰이 Firestore를 직접 읽고 씀)
  * - 권한(업체는 자기 것만, 직원 관리는 안전보건팀만 등)은 Firebase 보안 규칙(firestore.rules)이 최종 확인
@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F1.4';
+  const VERSION = '26.10.24 F1.5';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   const CFG = {
     INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
@@ -273,8 +273,9 @@
       o.jobEnd = jobs.filter((j) => (st.role === 'SAFETY' || lower(j.hostEmail) === a.email) && ['SOON', 'OVER'].includes(jobEndInfo(j).state)).length;
       const mine = jobs.filter((j) => st.role === 'SAFETY' || lower(j.hostEmail) === a.email).map((j) => j.id);
       o.permits = mine.length ? (await byJobs('PERMITS', mine)).filter((p) => p.status === 'ISSUED').length : 0;  // 승인 대기 허가서
-      o.insp = 0; o.evalDraft = 0;  // F1.5 · F1.7
-      o.jobs = o.newVendors.length + o.pendingAttend + o.permits + o.jobEnd;
+      o.insp = mine.length ? (await byJobs('INSPECTIONS', mine)).filter((x) => !x.checkedAt).length : 0;  // 도급인 확인 대기 순회점검
+      o.evalDraft = 0;  // F1.7
+      o.jobs = o.newVendors.length + o.pendingAttend + o.permits + o.insp + o.jobEnd;
     }
     return o;
   }
@@ -508,11 +509,12 @@
     const parts = []; for (let i = 0; i < ids.length; i += 30) parts.push(ids.slice(i, i + 30));
     return (await Promise.all(parts.map((p) => db.collection(col).where('jobId', 'in', p).get().then(docs)))).flat();
   }
-  /** 업체별 이행 현황 (작업일 = 인원·허가서 기록이 있는 날 · 순회점검은 F1.5에서 채움) */
-  function vjStats(crew, pm) {
-    pm = pm || []; const t = today(), wd = new Set([].concat(crew.map((x) => x.date), pm.map((x) => x.date)).filter(Boolean)).size;
-    return { workDays: wd, crewDays: crew.length, permitDays: new Set(pm.map((x) => x.date)).size, insp: 0, inspNeed: wd ? Math.max(1, Math.ceil(wd / 2)) : 0, openFindings: 0, findTotal: 0,
-      todayPermit: pm.some((p) => p.date === t), inspToday: false, inspDue: true, lastInsp: '' };
+  /** 업체별 이행 현황 (작업일 = 인원·허가서·순회점검 기록이 있는 날) */
+  function vjStats(crew, pm, ins, fd) {
+    pm = pm || []; ins = ins || []; fd = fd || [];
+    const t = today(), wd = new Set([].concat(crew.map((x) => x.date), pm.map((x) => x.date), ins.map((x) => x.date)).filter(Boolean)).size, last = ins.map((x) => x.date).filter(Boolean).sort().pop() || '';
+    return { workDays: wd, crewDays: crew.length, permitDays: new Set(pm.map((x) => x.date)).size, insp: ins.length, inspNeed: wd ? Math.max(1, Math.ceil(wd / 2)) : 0,
+      openFindings: fd.filter((x) => x.status !== 'DONE').length, findTotal: fd.length, todayPermit: pm.some((p) => p.date === t), inspToday: last === t, inspDue: !last || daysBetween(last, t) >= 2, lastInsp: last };
   }
   /** 공사에 배정할 수 있는 업체 (재평가 중 포함 · 테스트 모드면 승인 전도) */
   async function jobVendorChoices() {
@@ -521,13 +523,15 @@
       return { id: x.id, uid: x.uid, company: x.company, industry: x.industry, approved: canExec(x), renewing: !!x.renewAt, renewStatus: x.renewAt ? x.submissionStatus : '', valid: v, expired: !!(v && v.expired), lastEval: null };
     });
   }
-  function jobView(j, jvs, wks, crews, pms) {
-    const vs = jvs.filter((v) => v.jobId === j.id).sort((x, y) => String(x.addedAt).localeCompare(String(y.addedAt))), cr = crews.filter((c) => c.jobId === j.id), pm = (pms || []).filter((p) => p.jobId === j.id);
+  function jobView(j, jvs, wks, crews, pms, inss, fds) {
+    const of = (l) => (l || []).filter((x) => x.jobId === j.id), vs = of(jvs).sort((x, y) => String(x.addedAt).localeCompare(String(y.addedAt))), cr = of(crews), pm = of(pms), ins = of(inss), fd = of(fds);
+    const by = (l, v) => l.filter((x) => x.companyId === v.companyId);
     return { id: j.id, title: j.title, storeName: j.storeName, storeCode: j.storeCode, address: j.address, kind: j.kind, kindLabel: JOB_KINDS[j.kind] || j.kind, startDate: j.startDate, endDate: j.endDate,
       delegations: j.delegations || {}, hostName: j.hostName, hostEmail: j.hostEmail, status: j.status,
       vendors: vs.map((v) => ({ companyId: v.companyId, company: v.company, trade: v.trade })),
-      workerCount: wks.filter((w) => w.jobId === j.id).length, permitWaiting: pm.filter((p) => p.status === 'ISSUED').length, permitTotal: pm.length, inspTotal: 0, inspUnchecked: 0, findOpen: 0,
-      vstats: vs.map((v) => Object.assign({ company: v.company, companyId: v.companyId }, vjStats(cr.filter((c) => c.companyId === v.companyId), pm.filter((p) => p.companyId === v.companyId)))),
+      workerCount: wks.filter((w) => w.jobId === j.id).length, permitWaiting: pm.filter((p) => p.status === 'ISSUED').length, permitTotal: pm.length,
+      inspTotal: ins.length, inspUnchecked: ins.filter((x) => !x.checkedAt).length, findOpen: fd.filter((f) => f.status !== 'DONE').length,
+      vstats: vs.map((v) => Object.assign({ company: v.company, companyId: v.companyId }, vjStats(by(cr, v), by(pm, v), by(ins, v), by(fd, v)))),
       end: jobEndInfo(j), evalDone: 0, evalTotal: 0, crewDays: cr.length, meetings: [] };  // 미팅은 F1.6 · 종료 평가는 F1.7
   }
   async function staffOnly(a) { const s = await staffOf(a); if (!s) fail('아성다이소 직원 계정만 사용할 수 있습니다.'); return s; }
@@ -536,8 +540,8 @@
     const s = await staffOnly(a);
     const [choices, all] = await Promise.all([jobVendorChoices(), db.collection('JOBS').get().then(docs)]);
     const jobs = all.filter((j) => canSeeJob(a, s, j)).sort((x, y) => String(y.createdAt).localeCompare(String(x.createdAt))), ids = jobs.map((j) => j.id);
-    const [jvs, wks, crews, pms] = await Promise.all([byJobs('JOB_VENDORS', ids), byJobs('WORKERS', ids), byJobs('CREW', ids), byJobs('PERMITS', ids)]);
-    return { me: { name: s.name, role: s.role }, kinds: JOB_KINDS, meetKinds: MEET_KINDS, vendors: choices.map(({ uid, ...v }) => v), testMode: CFG.TEST_SKIP_FILES, jobs: jobs.map((j) => jobView(j, jvs, wks, crews, pms)) };
+    const [jvs, wks, crews, pms, inss, fds] = await Promise.all(['JOB_VENDORS', 'WORKERS', 'CREW', 'PERMITS', 'INSPECTIONS', 'FINDINGS'].map((n) => byJobs(n, ids)));
+    return { me: { name: s.name, role: s.role }, kinds: JOB_KINDS, meetKinds: MEET_KINDS, vendors: choices.map(({ uid, ...v }) => v), testMode: CFG.TEST_SKIP_FILES, jobs: jobs.map((j) => jobView(j, jvs, wks, crews, pms, inss, fds)) };
   };
   /** [직원] 공사 만들기·수정 (참여 업체·위임장 정보 포함) */
   API.saveJob = async (a, d) => {
@@ -576,7 +580,7 @@
   API.deleteJob = async (a, jobId) => {
     const s = await staffOnly(a), id = tidy(jobId, 40), js = await db.collection('JOBS').doc(id).get(), j = js.exists ? js.data() : null;
     if (!j || !canSeeJob(a, s, j)) fail('삭제할 수 없는 공사입니다.');
-    const COLS = ['JOB_VENDORS', 'WORKERS', 'CREW', 'PERMITS'], lists = await Promise.all(COLS.map((n) => db.collection(n).where('jobId', '==', id).get()));
+    const COLS = ['JOB_VENDORS', 'WORKERS', 'CREW', 'PERMITS', 'INSPECTIONS', 'FINDINGS'], lists = await Promise.all(COLS.map((n) => db.collection(n).where('jobId', '==', id).get()));
     const b = db.batch(), cnt = {};
     COLS.forEach((n, i) => { cnt[n] = lists[i].docs.length; lists[i].docs.forEach((d) => b.delete(d.ref)); });
     b.delete(js.ref); await b.commit();
@@ -618,18 +622,18 @@
   API.myJobs = async (a) => {
     const b = await execVendor(a), t = today(), jvs = (await myAssign(a, b)).sort((x, y) => String(y.addedAt).localeCompare(String(x.addedAt)));
     const mineAll = (col) => db.collection(col).where('vendorUid', '==', a.uid).get().then(docs);
-    const [jobs, wks, crews, pms] = await Promise.all([
-      Promise.all(jvs.map((v) => db.collection('JOBS').doc(v.jobId).get().then((s) => (s.exists ? s.data() : null)).catch(() => null))), mineAll('WORKERS'), mineAll('CREW'), mineAll('PERMITS')]);
+    const [jobs, wks, crews, pms, inss, fds] = await Promise.all([
+      Promise.all(jvs.map((v) => db.collection('JOBS').doc(v.jobId).get().then((s) => (s.exists ? s.data() : null)).catch(() => null))), mineAll('WORKERS'), mineAll('CREW'), mineAll('PERMITS'), mineAll('INSPECTIONS'), mineAll('FINDINGS')]);
     return { today: t, company: b.company, jobs: jvs.map((v, i) => {
       const j = jobs[i]; if (!j) return null;
       const cr = crews.filter((c) => c.jobId === j.id && c.companyId === b.id), c = cr.find((x) => x.date === t);
       return { id: j.id, title: j.title, storeName: j.storeName, startDate: j.startDate, endDate: j.endDate, hostName: j.hostName, trade: v.trade, status: j.status,
         workers: wks.filter((w) => w.jobId === j.id && w.companyId === b.id && w.active !== 'N').length, todayCount: c ? Number(c.count) : 0, todayDone: !!c, end: jobEndInfo(j),
-        stats: vjStats(cr, pms.filter((p) => p.jobId === j.id && p.companyId === b.id)) };
+        stats: vjStats(cr, ...[pms, inss, fds].map((l) => l.filter((x) => x.jobId === j.id && x.companyId === b.id))) };
     }).filter(Boolean) };
   };
   async function jobPack(a, b, j, jv) {
-    const t = today(), [wks, crews, sm0, pms] = await Promise.all([mineOf('WORKERS', a, j.id), mineOf('CREW', a, j.id), siteManagerOf(a, b), mineOf('PERMITS', a, j.id)]);
+    const t = today(), [wks, crews, sm0, pms, inss, fds] = await Promise.all([mineOf('WORKERS', a, j.id), mineOf('CREW', a, j.id), siteManagerOf(a, b), mineOf('PERMITS', a, j.id), mineOf('INSPECTIONS', a, j.id), mineOf('FINDINGS', a, j.id)]);
     const ws = wks.filter((w) => w.companyId === b.id && w.active !== 'N'), cr = crews.filter((c) => c.companyId === b.id).sort((x, y) => (x.date < y.date ? 1 : -1));
     const day = (c) => ({ date: c.date, count: Number(c.count) || (c.workers || []).length, siteManager: c.siteManager, savedAt: c.savedAt, workers: c.workers || [] }), tc = cr.find((x) => x.date === t);
     return { today: t, job: { id: j.id, title: j.title, storeName: j.storeName, address: j.address, startDate: j.startDate, endDate: j.endDate, hostName: j.hostName },
@@ -637,7 +641,7 @@
       workers: ws.map((w) => ({ id: w.id, name: w.name, role: w.role, trade: w.trade, method: w.method, eduAt: w.eduAt, email: w.email })),
       todayCrew: tc ? day(tc) : null, history: cr.slice(0, 30).map(day), siteManager: tc ? tc.siteManager : sm0,
       rules: WORK_RULES, pledge: WORK_PLEDGE, roles: WORKER_ROLES,
-      permits: pms.filter((p) => p.companyId === b.id).sort((x, y) => (x.date < y.date ? 1 : -1)).slice(0, 30).map(permitSummary), insp: { items: INSP_ITEMS, type: '순회점검일지', last: '', todayDone: false, due: true, since: null, open: [], recent: [] },  // F1.4·F1.5
+      permits: pms.filter((p) => p.companyId === b.id).sort((x, y) => (x.date < y.date ? 1 : -1)).slice(0, 30).map(permitSummary), insp: inspPack(inss.filter((x) => x.companyId === b.id), fds.filter((x) => x.companyId === b.id)),
       jobStatus: j.status, permitToday: null, evalResult: null };
   }
   /** [업체] 공사 화면 (처음 열 때 작업자 등록 QR 값 생성) */
@@ -819,8 +823,100 @@
     return API.permitList(a, jobId);
   };
 
+  /* ---------- F1.5 순회점검일지 (2일 1회) ----------
+   *  업체가 점검: TBM 사진 + 11항목(양호/불량/해당없음) · 불량 = 지적사항(사진·메모) → 조치될 때까지 남음
+   *  지적사항 조치: 업체·도급인 누구나 (조치 내용·조치일·조치 후 사진) · 도급인이 일지를 [확인]
+   *  INSPECTIONS/{공사ID_업체ID_날짜} (하루 1장) · FINDINGS/{FD-…} · 사진은 구글 드라이브(중계 서버) */
+  const photoIds = (v, max) => (Array.isArray(v) ? v : []).map((x) => tidy(x, 60)).filter((x) => /^[A-Za-z0-9-]+$/.test(x)).slice(0, max || 5);
+  const inspView = (x) => ({ id: x.id, date: x.date, company: x.company, companyId: x.companyId, items: x.items || {}, tbm: photoIds(x.tbm, 5), submittedName: x.submittedName, submittedAt: x.submittedAt,
+    checkedBy: x.checkedBy || '', checkedAt: x.checkedAt || '', bad: Object.values(x.items || {}).filter((v) => v === 'BAD').length });
+  const findView = (f) => ({ id: f.id, inspId: f.inspId, company: f.company, companyId: f.companyId, no: Number(f.no), item: f.item, memo: f.memo, before: photoIds(f.before), foundDate: f.foundDate, status: f.status,
+    actionMemo: f.actionMemo || '', after: photoIds(f.after), actionDate: f.actionDate || '', actionBy: f.actionBy || '', actionAt: f.actionAt || '' });
+  /** 업체 화면용 요약: 마지막 점검일 · 2일 경과 여부 · 미조치 지적사항 · 최근 기록 */
+  function inspPack(ins, fs) {
+    const t = today(); ins = ins.slice().sort((p, q) => (p.date < q.date ? 1 : -1)); const last = ins[0] ? ins[0].date : '';
+    return { items: INSP_ITEMS, type: '순회점검일지', last, todayDone: last === t, due: !last || daysBetween(last, t) >= 2, since: last ? daysBetween(last, t) : null,
+      open: fs.filter((f) => f.status !== 'DONE').map(findView), recent: ins.slice(0, 30).map(inspView) };
+  }
+  const isPhoto = (f) => /^image\/(jpeg|png)$/.test(String(f && f.mime || ''));
+  /** [업체] 사진 올리기 (TBM·불량·조치 후 공용) → 문서ID */
+  API.uploadInspPhoto = async (a, jobId, f) => { if (!isPhoto(f)) fail('사진(JPG·PNG)만 올릴 수 있습니다.'); return relay('inspPhoto', { jobId: tidy(jobId, 40), f }); };
+  /** [직원] 조치 후 사진 올리기 */
+  API.uploadInspPhotoStaff = async (a, jobId, companyId, f) => { if (!isPhoto(f)) fail('사진(JPG·PNG)만 올릴 수 있습니다.'); return relay('inspPhoto', { jobId: tidy(jobId, 40), companyId: tidy(companyId, 40), f }); };
+  /** 점검 사진 보기 — 화면이 한꺼번에 부르면 8장씩 묶어 중계 서버에 한 번만 요청 (사진마다 왕복하지 않음) */
+  const PQ = {};
+  API.getInspPhoto = (a, jobId, docId) => new Promise((res, rej) => {
+    const jid = tidy(jobId, 40), q = PQ[jid] = PQ[jid] || { list: [], t: null };
+    q.list.push({ id: tidy(docId, 60), res, rej });
+    if (!q.t) q.t = setTimeout(async () => {
+      delete PQ[jid];
+      for (let i = 0; i < q.list.length; i += 8) {
+        const part = q.list.slice(i, i + 8);
+        try { const r = await relay('inspPhotos', { jobId: jid, ids: [...new Set(part.map((x) => x.id))] }, true); part.forEach((x) => (r && r[x.id] ? x.res(r[x.id]) : x.rej(Error('사진을 찾을 수 없습니다.')))); }
+        catch (e) { part.forEach((x) => x.rej(e)); }
+      }
+    }, 40);
+  });
+  /** [업체] 순회점검 제출 (하루 1회) · 불량 항목 → 지적사항 */
+  API.submitInspection = async (a, jobId, d) => {
+    const b = await execVendor(a), { j } = await vendorJobOf(a, b, jobId, true), t = today();
+    const tbm = photoIds(d?.tbm, 5); if (!tbm.length) fail('TBM 실시 사진을 1장 이상 올려 주세요.');
+    const items = {}, bad = [];
+    INSP_ITEMS.forEach((_, i) => { const v = String((d?.items || {})[i + 1] || ''); if (!['OK', 'BAD', 'NA'].includes(v)) bad.push((i + 1) + '번 결과'); items[i + 1] = v; });
+    INSP_ITEMS.forEach((_, i) => { if (items[i + 1] === 'BAD' && !tidy(((d?.notes || {})[i + 1] || {}).memo, 500)) bad.push((i + 1) + '번 지적 내용'); });
+    const name = tidy(d?.name, 40); if (!name) bad.push('점검자 이름');
+    if (bad.length) fail('제출 전에 확인해 주세요:\n- ' + bad.join('\n- '));
+    const id = j.id + '_' + b.id + '_' + t;
+    if ((await mineOf('INSPECTIONS', a, j.id)).some((x) => x.id === id)) fail('오늘 이행점검은 이미 제출했습니다.');
+    const B = db.batch(), at = now();
+    B.set(db.collection('INSPECTIONS').doc(id), { id, jobId: j.id, companyId: b.id, company: b.company, vendorUid: a.uid, date: t, tbm, items, submittedBy: a.email, submittedName: name, submittedAt: at, checkedBy: '', checkedAt: '' });
+    INSP_ITEMS.forEach((it, i) => {
+      const n = i + 1; if (items[n] !== 'BAD') return; const nt = (d.notes || {})[n] || {}, fid = 'FD-' + rand8();
+      B.set(db.collection('FINDINGS').doc(fid), { id: fid, inspId: id, jobId: j.id, companyId: b.id, company: b.company, vendorUid: a.uid, no: n, item: it, memo: tidy(nt.memo, 500), before: photoIds(nt.photos, 5),
+        foundDate: t, status: 'OPEN', actionMemo: '', after: [], actionDate: '', actionBy: '', actionAt: '' });
+    });
+    await B.commit(); audit(a, b.id, 'INSP_SUBMIT', id);
+    return API.vendorJob(a, jobId);
+  };
+  /** [업체·직원] 지적사항 조치 등록 (조치일은 지적일 ~ 오늘) — 종료된 공사도 가능 */
+  API.resolveFinding = async (a, findingId, d) => {
+    const st = await staffOf(a), fid = tidy(findingId, 40); let f, who;
+    if (st) {
+      const s = await db.collection('FINDINGS').doc(fid).get().catch(() => null); f = s && s.exists ? s.data() : null; if (!f) fail('지적사항을 찾을 수 없습니다.');
+      await staffJob(a, st, f.jobId).catch(() => fail('권한이 없습니다.')); who = '도급인 ' + st.name;
+    } else {
+      const b = await execVendor(a); f = docs(await db.collection('FINDINGS').where('vendorUid', '==', a.uid).get()).find((x) => x.id === fid && x.companyId === b.id);
+      if (!f) fail('지적사항을 찾을 수 없습니다.'); who = b.company + ' ' + tidy(d?.name, 40);
+    }
+    if (f.status === 'DONE') fail('이미 조치 완료된 지적사항입니다.');
+    const memo = tidy(d?.memo, 500), date = tidy(d?.date, 10), after = photoIds(d?.photos, 5), t = today(), bad = [];
+    if (!memo) bad.push('조치 내용'); if (!isDate(date)) bad.push('조치일'); else if (date < f.foundDate || date > t) bad.push('조치일 (' + f.foundDate + ' ~ ' + t + ' 사이)'); if (!after.length) bad.push('조치 후 사진');
+    if (bad.length) fail('다음 항목을 확인해 주세요:\n- ' + bad.join('\n- '));
+    await db.collection('FINDINGS').doc(f.id).update({ status: 'DONE', actionMemo: memo, after, actionDate: date, actionBy: who, actionAt: now() });
+    audit(a, f.companyId, 'FINDING_DONE', f.id);
+    return st ? API.inspList(a, f.jobId) : API.vendorJob(a, f.jobId);
+  };
+  /** [업체] 내 지적사항 전체 (조치 완료 포함 · 일지 보기용) */
+  API.inspMine = async (a, jobId) => { const b = await execVendor(a), { j } = await vendorJobOf(a, b, jobId); return (await mineOf('FINDINGS', a, j.id)).filter((f) => f.companyId === b.id).map(findView); };
+  /** [직원] 공사별 순회점검일지 + 지적사항 */
+  API.inspList = async (a, jobId) => {
+    const s = await staffOnly(a), j = await staffJob(a, s, jobId), t = today();
+    const [vs, ins, fs] = await Promise.all(['JOB_VENDORS', 'INSPECTIONS', 'FINDINGS'].map((n) => db.collection(n).where('jobId', '==', j.id).get().then(docs)));
+    return { job: { id: j.id, title: j.title, storeName: j.storeName }, items: INSP_ITEMS, type: '순회점검일지',
+      vendors: vs.map((v) => { const l = ins.filter((x) => x.companyId === v.companyId).map((x) => x.date).sort().pop() || ''; return { companyId: v.companyId, company: v.company, trade: v.trade, last: l, since: l ? daysBetween(l, t) : null }; }),
+      list: ins.sort((p, q) => (p.date < q.date ? 1 : p.date > q.date ? -1 : 0)).map(inspView), findings: fs.sort((p, q) => (p.foundDate < q.foundDate ? 1 : -1)).map(findView) };
+  };
+  /** [직원] 확인 (선택한 것 또는 확인 안 된 전체) → "도급인 확인: 부서 이름·일시" */
+  API.checkInspections = async (a, jobId, ids) => {
+    const s = await staffOnly(a), j = await staffJob(a, s, jobId), pick = Array.isArray(ids) && ids.length ? new Set(ids.map(String)) : null;
+    const xs = docs(await db.collection('INSPECTIONS').where('jobId', '==', j.id).get()).filter((x) => !x.checkedAt && (!pick || pick.has(x.id)));
+    for (let i = 0; i < xs.length; i += 400) { const B = db.batch(); xs.slice(i, i + 400).forEach((x) => B.update(db.collection('INSPECTIONS').doc(x.id), { checkedBy: (s.dept || '아성다이소') + ' ' + s.name, checkedAt: now() })); await B.commit(); }
+    audit(a, '', 'INSP_CHECK', j.id + ' ' + xs.length + '건');
+    return API.inspList(a, jobId);
+  };
+
   /* ---------- 화면에서 쓰는 창구 ---------- */
-  const NEXT = { submitInspection: 'F1.5', inspList: 'F1.5', meetCheckIn: 'F1.6', createMeeting: 'F1.6', extendJob: 'F1.7', endJob: 'F1.7', jobEvalList: 'F1.7' };
+  const NEXT = { meetCheckIn: 'F1.6', createMeeting: 'F1.6', extendJob: 'F1.7', endJob: 'F1.7', jobEvalList: 'F1.7' };
   async function call(fn, args) {
     const f = Object.prototype.hasOwnProperty.call(API, fn) ? API[fn] : null;
     if (!f) fail('아직 Firebase로 옮기지 않은 기능입니다 (' + fn + (NEXT[fn] ? ' · ' + NEXT[fn] + ' 예정' : '') + ').');

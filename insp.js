@@ -73,7 +73,9 @@ async function openInspSheet(id,who){let x,fs,items,job,area;
    +'<tr><th>조치</th><td colspan="3">'+(f.status==='DONE'?escapeText(f.actionDate)+' · '+escapeText(f.actionMemo)+' <span class="muted">('+escapeText(f.actionBy)+')</span>':'<span class="muted">조치 전</span>')+'</td></tr>'
    +'<tr><th>조치 후</th><td colspan="3"><div class="row">'+(f.status==='DONE'?thumbs(f.after,''):'<span class="muted">-</span>')+'</div></td></tr></table>').join(''):(x.bad?'<p class="muted">지적사항을 불러오지 못했습니다.</p>':'<p class="desc">지적사항 없음</p>'))+'</div>';window.scrollTo(0,0);loadInspPhotos(job.id)}
 /** 화면의 사진 칸을 채움 (처음 볼 때만 서버에서 받음) */
-async function loadInspPhotos(jobId){for(const img of document.querySelectorAll('img[data-doc]')){const id=img.dataset.doc;if(inspPhoto[id]){img.src=inspPhoto[id];continue}try{const f=await callQuiet('getInspPhoto',jobId,id);inspPhoto[id]='data:'+f.mime+';base64,'+f.data;document.querySelectorAll('img[data-doc="'+id+'"]').forEach(x=>x.src=inspPhoto[id])}catch(e){}}}
+/* F1.5 한꺼번에 요청 → fb.js가 8장씩 묶어 서버에 한 번만 (예전: 사진마다 한 번씩 차례로) */
+async function loadInspPhotos(jobId){const need=new Set();document.querySelectorAll('img[data-doc]').forEach(img=>{const id=img.dataset.doc;if(inspPhoto[id])img.src=inspPhoto[id];else need.add(id)});
+ await Promise.all([...need].map(id=>callQuiet('getInspPhoto',jobId,id).then(f=>{inspPhoto[id]='data:'+f.mime+';base64,'+f.data;document.querySelectorAll('img[data-doc="'+id+'"]').forEach(x=>x.src=inspPhoto[id])}).catch(()=>{})))}
 function viewInspPhoto(id){if(!inspPhoto[id])return;const w=window.open();if(w)w.document.write('<img src="'+inspPhoto[id]+'" style="max-width:100%">')}
 /* ---------- 도급인: 공사별 순회점검 ---------- */
 async function openInspList(jobId){try{inspJob=await call('inspList',jobId);jobsMode='insp';renderInspList()}catch(e){}}
