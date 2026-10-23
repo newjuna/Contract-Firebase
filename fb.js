@@ -1,4 +1,4 @@
-/* 도급 안전관리 · Firebase 연결부 (F1.1: 로그인 · 직원 관리 · 사업자 등록/승인)
+/* 도급 안전관리 · Firebase 연결부 (F1.2: 로그인 · 직원 관리 · 사업자 등록/승인 · 계약 전 서류)
  * - 화면(app.js)은 예전처럼 api('기능이름', 인자) 로 부르고, 이 파일이 Firestore에서 바로 처리함
  *   (예전: 버튼마다 Apps Script 서버 왕복 → 느림 / 지금: 휴대폰이 Firestore를 직접 읽고 씀)
  * - 권한(업체는 자기 것만, 직원 관리는 안전보건팀만 등)은 Firebase 보안 규칙(firestore.rules)이 최종 확인
@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F1.1';
+  const VERSION = '26.10.24 F1.2';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   const CFG = {
     INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
@@ -29,6 +29,63 @@
     '인테리어(마감)': ['전기·고소·화기작업 안전조치', '분진·소음 및 작업구역 통제'], '사인': ['고소·낙하물 방지대책', '외부 보행자 보호 및 전기 작업'],
     '냉난방기': ['전원 차단·전기 작업관리', '냉매·중량물·고소작업 관리'], '집기': ['집기 전도 및 낙하 방지', '전동공구 및 고객 동선 관리'], '본사 식당': ['미끄러짐·화상·절단 방지', 'MSDS·근골격계 예방'],
   };
+  const NOTICE_LABEL = { VENDOR_APPROVED: '계약 전 평가 확정', JOB_EXTENDED: '공사 연장', JOB_ENDED: '공사 종료', JOB_EVAL_DONE: '공사 종료 평가 확정' };
+  /* @@v527-start (v5.27 Code.gs에서 그대로 복사한 상수 · 중계 Relay.gs와 같은 값) */
+  const DOC_STAGE={CONTRACT:'계약',EXECUTION:'수행',CLOSE:'종료'};
+  const DOC_STAGE_ORDER={CONTRACT:1,EXECUTION:2,CLOSE:3};
+  const DOC_OWNER={VENDOR:'수급사(협력업체)',PRINCIPAL:'원청',JOINT:'원청·협력업체'};
+  const DOC_TYPE_SEED=[
+   ['C01','CONTRACT',1,'안전보건관리규정','용역·도급 계약시','VENDOR','TEMPLATE','Y'],
+   ['C02','CONTRACT',2,'안전보건관리계획서','용역·도급 계약시','VENDOR','TEMPLATE','Y'],
+   ['C03','CONTRACT',3,'수급업체 안전보건수준평가','용역·도급 계약시','PRINCIPAL','EVALUATION','N'],
+   ['E01','EXECUTION',1,'안전보건협의체','월1회','JOINT','TEMPLATE','N'],
+   ['E02','EXECUTION',2,'위험성평가','정기/수시','VENDOR','TEMPLATE','N'],
+   ['E03','EXECUTION',3,'작업장 순회점검','2일1회','PRINCIPAL','TEMPLATE','N'],
+   ['E04','EXECUTION',4,'작업장 합동 안전보건점검','2달1회','JOINT','TEMPLATE','N'],
+   ['E05','EXECUTION',5,'안전보건교육 지원 및 확인','정기/수시','PRINCIPAL','TEMPLATE','N'],
+   ['E06','EXECUTION',6,'안전작업계획서(안전작업허가 운영)','수시','VENDOR','TEMPLATE','N'],
+   ['E07','EXECUTION',7,'수급인에 대한 시정조치','수시','PRINCIPAL','TEMPLATE','N'],
+   ['E08','EXECUTION',8,'작업환경측정','정기','PRINCIPAL','TEMPLATE','N'],
+   ['E09','EXECUTION',9,'비상시 대비 및 대응 훈련','정기','PRINCIPAL','TEMPLATE','N'],
+   ['E10','EXECUTION',10,'위생시설 설치 또는 이용','정기/수시','PRINCIPAL','TEMPLATE','N'],
+   ['E11','EXECUTION',11,'안전보건에 관한 정보제공','수시','PRINCIPAL','NONE','N'],
+   ['X01','CLOSE',1,'안전보건수준 재평가','수시','PRINCIPAL','EVALUATION','N']
+  ];
+  const RULE_TITLE='도급사업에 있어서의 협의체 운영지침';
+  const RULE_TEXT=[
+   ['제1조 (목적)','도급사업에 있어서 발생될 수 있는 재해를 미연에 방지하며 수급업체와 함께 안전활동을 전개하여 무재해 사업장을 이룩하기 위함.'],
+   ['제2조 (적용범위)','"을" 및 "을"의 근로자를 대상으로 한다.'],
+   ['제3조 (협의체 구성)','"갑"과 "을" 전원으로 구성한다.\n【단, "갑"의 업무를 위임받은 안전보건총괄책임자 및 안전관리자 1인, 보건관리자 1인, 주관부서의 책임자 1인으로 하며 "을"의 경우 "을" 또는 "을"의 업무를 위임받은 (현장소장 등) 1인으로 할 수 있다.】'],
+   ['제4조 (협의내용)','작업의 시작시간, 작업장 간의 연락방법, 재해위험 시의 대피방법 기타 재해예방을 위하여 필요한 사항'],
+   ['제5조 (운영방법)','매월 1회 이상 정기회의 개최'],
+   ['제6조 (회의결과)','기록, 보존하여야 함 (안전관리자 기록유지)'],
+   ['제7조 (작업장의 순회점검)','2일에 1회 이상 안전보건총괄책임자를 제외한 협의체 위원 전원이 당해 작업장을 순회 점검한다.\n분기에 1회 이상 협의체 위원 전원이 당해 작업장을 순회점검한다.\n"을"은 순회점검을 기피해서는 안 된다.\n순회점검 결과 지적사항에 대해서는 "을"은 즉시 시정하여야 한다.'],
+   ['제8조 (작업중지)','안전사고의 급박한 위험이 예상되어 안전보건총괄책임자로부터 작업중지를 요구받은 경우에는 즉시 작업을 중지하고 근로자를 안전한 장소로 대피시켜야 하며 작업중지로 인하여 발생되는 손실은 "을"이 부담한다.'],
+   ['제9조 (안전보건교육)','"을"은 당해 "을"의 근로자에 대하여 노동부령이 정하는 바에 의하여 정기적으로 안전보건에 관한 교육을 실시하여야 하며 교육결과를 기록 보전하여야 한다. "갑"은 "을"이 당해 근로자 안전보건교육에 관한 협조 요청 시 특별한 사유가 없는 한 지도와 지원을 할 수 있다.'],
+   ['제10조 (유해·위험기계·기구 안전방호장치)','"을"은 노동부령이 정하는 유해·위험기계·기구에 대하여 안전방호장치를 설치 후 작업하여야 한다.']];
+  const HQ_NAME='(주)아성다이소';
+  const PLAN_WORKS=[
+   ['HEIGHT','고소작업 (사다리·말비계·2m 이상)','추락','안전대 착용, 작업발판·난간 설치, 사다리 2인 1조',3,4,true,'사다리·말비계·이동식 비계'],
+   ['ELEC','전기작업 (배선·분전반)','감전','전원 차단·잠금장치(LOTO), 검전 후 작업, 절연장갑 착용',2,5,true,'분전반·전선·검전기'],
+   ['HOT','화기작업 (용접·절단·그라인더)','화재·화상','화기작업 허가, 소화기 비치, 불티 비산방지포, 화재감시자 배치',2,5,true,'용접기·절단기·그라인더'],
+   ['HEAVY','중량물 취급·운반','협착·요통','2인 1조 운반, 대차·운반구 사용, 이동 동선 통제',3,3,false,'대차·운반구'],
+   ['FORK','지게차·전동대차 운반','충돌·깔림','면허자 운전, 유도자 배치, 제한속도 준수, 작업구역 통제',2,5,false,'지게차·전동대차'],
+   ['TOOL','전동공구 사용','베임·끼임','방호덮개 확인, 보안경·장갑 착용, 사용 전 점검',3,3,false,'전동드릴·톱·그라인더'],
+   ['CHEM','유해물질 (도료·접착제·세제)','중독·화재','MSDS 비치·교육, 환기, 방독마스크 착용, 화기 엄금',2,3,false,'도료·접착제·세제'],
+   ['CONF','밀폐공간 작업','질식','산소·유해가스 측정, 환기, 감시인 배치',1,5,true,'가스측정기·송풍기'],
+   ['DEMO','철거·해체 작업','낙하·붕괴','작업구역 통제, 안전모 착용, 해체 순서 준수',2,4,false,'해체공구'],
+   ['KITCHEN','조리·주방 작업','화상·베임·미끄러짐','방열장갑·안전칼집 사용, 미끄럼방지화 착용, 바닥 물기 제거',3,3,false,'조리기구·튀김기·칼']];
+  const PLAN_INDUSTRY_WORKS={'입고도우미':['HEAVY','FORK','HEIGHT'],'재고조사':['HEIGHT','HEAVY'],'인테리어(마감)':['HEIGHT','TOOL','CHEM','HEAVY'],'사인':['HEIGHT','ELEC','TOOL'],'냉난방기':['HEIGHT','ELEC','HOT','HEAVY'],'집기':['HEAVY','TOOL','HEIGHT'],'본사 식당':['KITCHEN','CHEM']};
+  const PLAN_SCEN=[
+   ['FIRE','화재',[['상황전파','최초 발견자','"불이야"를 외쳐 주변에 알리고 119에 신고'],['초기소화','최초 발견자·주변 근로자','부상자를 안전한 곳으로 옮기고 소화기로 초기 소화'],['대피','현장대리인','작업 중지, 전기·가스 차단, 비상구로 전원 대피 후 인원 확인'],['현장인계','현장대리인','출동한 소방대에 현장 상황 보고, 진입로 확보'],['보고','현장대리인','다이소 담당자에게 즉시 보고, 재발방지 대책 수립']]],
+   ['SHOCK','감전',[['상황전파','최초 발견자','"감전 사고!"를 외치고 지휘계통에 통보'],['전원차단','현장대리인','해당 선로 차단 (맨손으로 사고자 접촉 금지)'],['응급조치','안전담당자','호흡 확인, 119 신고, 필요 시 심폐소생술·AED'],['보고','현장대리인','다이소 담당자에게 즉시 보고']]],
+   ['FALL','추락',[['상황전파','최초 발견자','주변에 알리고 119 신고'],['2차사고 방지','현장대리인','주변 작업 중지, 낙하물 위험 구역 통제'],['응급조치','안전담당자','사고자를 함부로 움직이지 않고 의식·호흡 확인, 출혈 지혈'],['보고','현장대리인','다이소 담당자에게 즉시 보고']]],
+   ['SICK','응급환자 (부상·심정지)',[['상황전파','최초 발견자','119 신고, 주변에 도움 요청'],['응급조치','안전담당자','의식·호흡 확인, 심폐소생술·AED, 상처 지혈'],['인계','현장대리인','구급대 도착 시 상황 설명, 병원 이송 동행'],['보고','현장대리인','다이소 담당자에게 즉시 보고']]]];
+  const PLAN_LAWS=[['산업안전보건법 제36조','위험성평가 실시','작업 시작 전 위험성평가 실시·기록 (본 계획서 Ⅱ-1)'],['산업안전보건법 제29조','근로자 안전보건교육','신규 채용 시·작업 전 교육 실시·기록 (본 계획서 Ⅱ-3)'],['산업안전보건법 제63조·제64조','도급인의 안전조치·협의체','협의체 참여, 순회점검 협조, 지적사항 즉시 시정'],['산업안전보건기준에 관한 규칙','위험작업 안전조치','고소·전기·화기 등 위험작업 시 안전조치·작업허가 (본 계획서 Ⅱ-4)']];
+  function planPolicy_(company){return [company+'은(는) 안전보건경영이 모든 경영활동의 최우선 가치임을 표명하고, 안전보건 책임과 의무를 성실하게 실행하기 위해 다음과 같이 안전보건경영 방침을 선언한다.',
+   '산업안전보건법 등 안전보건 관련 법규 및 제반 규정을 준수하여 쾌적하고 안전한 작업환경을 조성한다.','사업장 내 모든 유해·위험요인을 지속 개선하여 협력사를 포함한 모든 임직원과 이용고객의 안전과 건강을 지킨다.',
+   '안전보건에 관한 목표를 설정하고 이를 달성하기 위한 안전보건경영시스템을 구축하여 산업재해를 예방한다.','비상상황에 적극적으로 대응할 수 있는 비상 대응체계를 구축·운영한다.','전 임직원의 자율적인 안전보건활동 참여를 보장하고 안전한 일터 조성으로 사회적 책임을 다한다.'];}
+  /* @@v527-end */
 
   /* ---------- 준비 ---------- */
   const ok = !!(window.firebase && window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.projectId);
@@ -123,12 +180,71 @@
     if (b && b.status === 'OTP_PENDING') b.status = 'VERIFIED';  // 예전 인증번호 단계 → 바로 작성 가능
     return b;
   }
+  /* ---------- 계약 전 서류 공통 (기존 Code.gs와 같은 판단) ---------- */
+  const kst = (iso) => { try { return new Date(iso).toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' }); } catch (e) { return ''; } };  // yyyy-mm-dd (한국 시간)
+  const today = () => kst(new Date().toISOString());
+  const parse = (j, d) => { try { return JSON.parse(j || ''); } catch (e) { return d; } };
+  const docTypes = () => DOC_TYPE_SEED.map(([code, stage, order, name, cycle, owner, kind, required]) => ({ code, stage, order, name, cycle, owner, kind, required }))
+    .sort((x, y) => (DOC_STAGE_ORDER[x.stage] - DOC_STAGE_ORDER[y.stage]) || (x.order - y.order));
+  const vendorDocTypes = (stage) => docTypes().filter((t) => t.stage === stage && ['VENDOR', 'JOINT'].includes(t.owner) && t.kind !== 'EVALUATION');
+  const canExec = (b) => !!b && b.status === 'VERIFIED' && (b.submissionStatus === 'APPROVED' || !!b.renewAt);
+  function canUploadDoc(b, code) {
+    if (!b || b.status !== 'VERIFIED') return false;
+    const s = b.submissionStatus || 'DRAFT'; if (s === 'DRAFT') return true;
+    return s === 'CORRECTION' && parse(b.correctionKeys, []).includes('4:doc' + code);
+  }
+  const staleForm = (b, at) => !!(b && b.renewAt && b.renewMode === 'NEW' && String(at || '') < String(b.renewAt));
+  const infoFresh = (b) => !(b && b.renewAt && b.renewMode === 'NEW') || String(b.infoAt || '') >= String(b.renewAt);
+  /** 계약 전 평가 유효기간 1년 {from,until,expired,days} */
+  function contractValid(b) {
+    if (!b || b.status !== 'VERIFIED') return null;
+    const at = b.approvedAt || (b.submissionStatus === 'APPROVED' || b.renewAt ? b.submittedAt : ''); if (!at) return null;
+    const from = kst(at); if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) return null;
+    const d = new Date(from + 'T00:00:00Z'); d.setUTCFullYear(d.getUTCFullYear() + 1); d.setUTCDate(d.getUTCDate() - 1);
+    const until = d.toISOString().slice(0, 10), t = today();
+    return { from, until, expired: t > until, days: Math.round((new Date(until + 'T00:00:00Z') - new Date(t + 'T00:00:00Z')) / 86400000) };
+  }
+  const docUploads = (subs, code) => subs.filter((x) => x.docType === code).sort((x, y) => Number(y.version) - Number(x.version)).map((x) => ({ id: x.documentId, name: x.name, version: Number(x.version), uploadedAt: x.uploadedAt, status: x.status }));
+  function activeTemplates(list) { const m = {}; list.filter((x) => x.active === 'Y').forEach((x) => { if (!m[x.docType] || Number(x.version) > Number(m[x.docType].version)) m[x.docType] = x; }); return m; }
+  /** 업체 화면용: 계약 단계 제출서류 + 이후 단계 참고 양식 + 전체 표 */
+  function vendorDocBoard(b, tpl, subs) {
+    const own = (t) => DOC_OWNER[t.owner] || t.owner;
+    const contract = vendorDocTypes('CONTRACT').map((t) => ({ code: t.code, name: t.name, cycle: t.cycle, ownerLabel: own(t), required: t.required === 'Y',
+      template: tpl[t.code] ? { name: tpl[t.code].name, version: Number(tpl[t.code].version) } : null, uploads: docUploads(subs, t.code), canUpload: canUploadDoc(b, t.code) }));
+    const later = docTypes().filter((t) => t.stage !== 'CONTRACT' && tpl[t.code]).map((t) => ({ code: t.code, name: t.name, stageLabel: DOC_STAGE[t.stage], cycle: t.cycle, ownerLabel: own(t), template: { name: tpl[t.code].name, version: Number(tpl[t.code].version) } }));
+    const rows = docTypes().map((t) => {
+      const vendorDoc = ['VENDOR', 'JOINT'].includes(t.owner) && t.kind !== 'EVALUATION';
+      return { code: t.code, stage: t.stage, stageLabel: DOC_STAGE[t.stage], name: t.name, cycle: t.cycle, owner: t.owner, ownerLabel: own(t), kind: t.kind, required: t.required === 'Y', vendorDoc,
+        template: tpl[t.code] ? { version: Number(tpl[t.code].version) } : null, uploads: vendorDoc ? docUploads(subs, t.code) : [],
+        canUpload: vendorDoc && ((t.stage === 'CONTRACT' && canUploadDoc(b, t.code)) || (t.stage === 'EXECUTION' && canExec(b))) };
+    });
+    return { contract, later, rows };
+  }
+  const reviewDocBoard = (subs) => vendorDocTypes('CONTRACT').map((t) => ({ code: t.code, name: t.name, required: t.required === 'Y', uploads: docUploads(subs, t.code) }));
+  function planDefaults(b, p) {
+    const y = Number(today().slice(0, 4)), w = PLAN_INDUSTRY_WORKS[b.industry] || [];
+    return { policy: planPolicy_(b.company), goal: '무재해 달성 (산업재해 0건)',
+      kpis: [{ name: '순회점검 실시율 (2일 1회)', target: '100%' }, { name: '작업 전 TBM·안전교육 실시율', target: '100%' }, { name: '지적사항 즉시 시정률', target: '100%' }],
+      org: [{ role: '안전총괄책임자', name: b.representative || '', phone: b.phone || '' }, { role: '안전관리책임자 (현장대리인)', name: p.siteManager || '', phone: p.siteManagerPhone || '' }, { role: '안전담당자', name: p.safetyManager || '', phone: p.safetyPhone || '' }],
+      works: w.length ? w : ['HEIGHT', 'TOOL', 'HEAVY'], scen: ['FIRE'].concat(w.includes('ELEC') ? ['SHOCK'] : []).concat((w.length ? w : ['HEIGHT']).includes('HEIGHT') ? ['FALL'] : []),
+      hospital: '', years: [y - 3, y - 2, y - 1], accidents: ['', '', ''], evidence: [], practice: '' };
+  }
+  /** 업체 화면용: 앱 작성 서류 (규정 C01 · 계획서 C02) */
+  function contractFormsView(b, forms, files, p1) {
+    const fresh = (code) => { const f = forms.find((x) => x.code === code); return f && !staleForm(b, f.updatedAt) ? { f, d: parse(f.json, null) } : { f, d: null }; };
+    const r = fresh('C01'), p = fresh('C02'), D = planDefaults(b, p1); let d = p.d;
+    // 해가 바뀐 뒤 다시 작성하면 최근 3년이 달라짐 → 같은 연도 값만 옮김
+    if (d && Array.isArray(d.years) && JSON.stringify(d.years.map(Number)) !== JSON.stringify(D.years)) { const old = d.years.map(Number), ac = d.accidents || []; d.accidents = D.years.map((y) => { const i = old.indexOf(y); return i >= 0 ? String(ac[i] ?? '') : ''; }); d.years = D.years; }
+    const ev = ((d && d.evidence) || []).map((id) => { const x = files.find((y) => y.id === id); return x ? { id, name: x.name } : null; }).filter(Boolean);
+    return { today: today(), hq: HQ_NAME, hqRep: b.approverName || '', rule: { title: RULE_TITLE, text: RULE_TEXT }, C01: r.d ? { data: r.d, savedAt: r.f.updatedAt } : null,
+      plan: { works: PLAN_WORKS, scen: PLAN_SCEN.map((s) => [s[0], s[1]]), laws: PLAN_LAWS, defaults: D, C02: d ? { data: Object.assign(d, { evidenceFiles: ev }), savedAt: p.f.updatedAt } : null } };
+  }
   /** 화면에 보여 줄 업체 정보 (기존 publicCompany_와 같은 항목) */
   function publicCompany(b) {
     if (!b) return null;
     const o = {};
     ['id', 'email', 'company', 'regNo', 'representative', 'address', 'industry', 'contact', 'phone', 'contactEmail', 'status', 'createdAt', 'duplicate', 'reason', 'submissionStatus', 'submittedAt', 'correctionKeys', 'approverEmail', 'renewAt', 'renewMode', 'infoAt'].forEach((k) => o[k] = b[k] ?? '');
-    o.certMissing = !b.certFileId; o.valid = null; o.infoFresh = true;  // 계약 전 평가 유효기간은 F1.2에서
+    o.certMissing = !b.certFileId; o.valid = contractValid(b); o.infoFresh = infoFresh(b);
     return o;
   }
   /** 직원이 볼 수 있는 업체: 안전보건팀 = 전체 / 그 외 = 본인(로그인 계정·회사메일)이 승인 담당자인 업체 */
@@ -141,33 +257,47 @@
     snaps.forEach((s) => docs(s).forEach((x) => seen.set(x.id, x)));
     return [...seen.values()];
   }
-  /** 알림 숫자 (F1.1: 사업자 승인 대기만) */
+  /** 알림 숫자: 사업자 승인 대기 · 서류 검토 대기 · (안전보건팀) 안 읽은 참조 알림. 공사 관련 숫자는 F1.3부터 */
   async function badges(a, memo) {
-    const o = { admin: 0, review: 0, jobs: 0, newVendors: [], pendingAttend: 0 }, st = await staffOf(a, memo);
+    const o = { admin: 0, review: 0, jobs: 0, newVendors: [], pendingAttend: 0, notices: 0 }, st = await staffOf(a, memo);
     if (!st && !isInternalEmail(a.email)) return o;
-    o.admin = (await visibleCompanies(a, st, 'PENDING')).length;
+    const cs = await visibleCompanies(a, st);
+    o.admin = cs.filter((x) => x.status === 'PENDING').length;
+    if (st) o.review = cs.filter((x) => x.status === 'VERIFIED' && x.submissionStatus === 'SUBMITTED').length;
+    if (st && st.role === 'SAFETY') o.notices = docs(await db.collection('NOTICES').get()).filter((n) => !(n.readBy || []).includes(a.email)).length;
     return o;
   }
 
   /* ---------- 기능 (기존 Code.gs 이름 그대로) ---------- */
   const API = {};
   /** 첫 화면 정보 (기존 portalData와 같은 모양) */
+  /** 승인된 업체의 작성 자료 한꺼번에 (내 것만 읽도록 uid로 조회) */
+  async function vendorBundle(a, b) {
+    const mine = (col) => db.collection(col).where('uid', '==', a.uid).get().then(docs).then((l) => l.filter((x) => x.companyId === b.id));
+    const [profiles, files, subs, forms, tpls] = await Promise.all([mine('PROFILES'), mine('DOCUMENTS'), mine('DOC_SUBMISSIONS'), mine('CONTRACT_FORMS'), db.collection('TEMPLATES').where('active', '==', 'Y').get().then(docs)]);
+    return { profiles, files, subs, forms, tpl: activeTemplates(tpls) };
+  }
   API.portalData = async (a) => {
     const memo = {}, st = await staffOf(a, memo), b = await myCompany(a), verified = !!b && b.status === 'VERIFIED';
-    let isApprover = false;
-    if (isInternalEmail(a.email)) isApprover = !(await db.collection('COMPANIES').where('approverEmail', '==', a.email).limit(1).get()).empty;
-    let documents = [];
-    if (verified) documents = docs(await db.collection('DOCUMENTS').where('uid', '==', a.uid).get()).filter((x) => x.companyId === b.id).map((x) => ({ id: x.id, name: x.name, mime: x.mime }));
+    const [isApprover, V, bd] = await Promise.all([
+      isInternalEmail(a.email) ? db.collection('COMPANIES').where('approverEmail', '==', a.email).limit(1).get().then((s) => !s.empty) : false,
+      verified ? vendorBundle(a, b) : null, badges(a, memo)]);
+    let steps = [], documents = [], docBoard = null, forms = null;
+    if (V) {
+      steps = V.profiles.map((x) => ({ step: Number(x.step), data: staleForm(b, x.updatedAt) ? {} : (x.data || {}) }));
+      const linked = new Set(V.subs.map((x) => x.documentId));
+      documents = V.files.filter((x) => !linked.has(x.id)).map((x) => ({ id: x.id, name: x.name, mime: x.mime }));
+      docBoard = vendorDocBoard(b, V.tpl, V.subs);
+      forms = contractFormsView(b, V.forms, V.files, (steps.find((x) => x.step === 1) || {}).data || {});
+    }
     return {
-      email: a.email, isApprover, correctionNote: '', openJobs: verified ? 0 : null,
+      email: a.email, isApprover, correctionNote: b && b.submissionStatus === 'CORRECTION' ? b.correctionNote || '' : '', openJobs: verified ? 0 : null,  // 공사는 F1.3부터
       staff: st ? { name: st.name, role: st.role, roleLabel: (st.master ? '마스터 · ' : '') + (STAFF_ROLES[st.role] || st.role), master: !!st.master } : null,
       isMaster: isMaster(a), testSkipFiles: CFG.TEST_SKIP_FILES,
       company: publicCompany(b),
       role: st ? st.role : 'VENDOR', industries: CFG.INDUSTRIES, fields: FIELDS, stepNames: STEP_NAMES, industryFields: (b && INDUSTRY_FIELDS[b.industry]) || [],
-      steps: [], documents,
-      docBoard: verified ? { contract: [], later: [], rows: [] } : null,  // 계약 서류는 F1.2에서
-      forms: null, appVersion: VERSION, mode: a.mode,
-      badges: await badges(a, memo), loginUrl: location.origin + location.pathname,
+      steps, documents, docBoard, forms, appVersion: VERSION, mode: a.mode,
+      badges: bd, loginUrl: location.origin + location.pathname,
     };
   };
   /** [업체] 승인 대기 화면의 자동 확인용 (반려 포함 가장 최근 신청) */
@@ -193,8 +323,22 @@
   API.vendorList = async (a) => {
     const st = await staffOf(a);
     if (!st && !isInternalEmail(a.email)) fail('아성다이소 직원 계정만 볼 수 있습니다.');
-    // 계약 서류·공사·평가는 F1.2 이후에 채움
-    return { list: (await visibleCompanies(a, st)).sort(byNewest).map((b) => ({ ...publicCompany(b), docs: [], evidence: [], jobs: 0, contractEval: null, lastEval: null })) };
+    const list = (await visibleCompanies(a, st)).sort(byNewest);
+    // 승인된 업체: 제출 서류 · 계획서 증빙 · 계약 전 평가 결과 (직원 명단에 없는 승인 담당자는 보안 규칙상 못 봄 → 빈칸)
+    const detail = async (b) => {
+      if (b.status !== 'VERIFIED' || !st) return { docs: [], evidence: [], contractEval: null };
+      const by = (col) => db.collection(col).where('companyId', '==', b.id).get().then(docs);
+      try {
+        const [subs, forms, evs] = await Promise.all([by('DOC_SUBMISSIONS'), by('CONTRACT_FORMS'), by('EVALUATIONS')]);
+        const ids = (parse((forms.find((x) => x.code === 'C02') || {}).json, {}) || {}).evidence || [];
+        const files = ids.length ? await by('DOCUMENTS') : [];
+        const e = evs.filter((x) => x.result === 'APPROVED').sort((p, q) => String(p.evaluatedAt).localeCompare(String(q.evaluatedAt))).pop();
+        return { docs: reviewDocBoard(subs), evidence: ids.map((id) => { const x = files.find((y) => y.id === id); return x ? { id, name: x.name } : null; }).filter(Boolean),
+          contractEval: e ? { good: Number(e.good) || 0, normal: Number(e.normal) || 0, poor: Number(e.poor) || 0, at: e.evaluatedAt } : null };
+      } catch (e) { if (e.code !== 'permission-denied') throw e; return { docs: [], evidence: [], contractEval: null }; }
+    };
+    const more = await Promise.all(list.map(detail));
+    return { list: list.map((b, i) => ({ ...publicCompany(b), ...more[i], jobs: 0, lastEval: null })) };  // 공사·종료 평가는 F1.3 이후
   };
   /** [직원] 승인·반려 → 중계 서버가 처리하고 업체에 메일 */
   API.decideBusiness = async (a, id, decision, reason, ret) => {
@@ -211,6 +355,69 @@
   /** 파일 내려받기 (권한은 중계 서버가 다시 확인) */
   API.getInternalFile = async (a, companyId, docId) => relay('file', { companyId: String(companyId || ''), docId: String(docId || '') }, true);
   API.getMyFile = async (a, docId) => relay('file', { docId: String(docId || '') }, true);
+
+  /* ---------- F1.2 계약 전 서류 ---------- */
+  /** [업체] 사업장 정보 저장 (자동저장) — Firestore에 바로 씀. 상태·보완 항목은 보안 규칙이 다시 확인 */
+  API.saveStep = async (a, step, data) => {
+    const b = await myCompany(a), n = Number(step);
+    if (!b || b.status !== 'VERIFIED' || !FIELDS[n]) fail('작성 권한이 없습니다.');
+    const s = b.submissionStatus || 'DRAFT';
+    if (!['DRAFT', 'CORRECTION'].includes(s)) fail('제출 완료된 자료는 수정할 수 없습니다.');
+    if (s === 'CORRECTION') { const keys = parse(b.correctionKeys, []); if (Object.keys(data || {}).some((k) => !keys.includes(n + ':' + k))) fail('보완 요청받은 항목만 변경할 수 있습니다.'); }
+    const allowed = FIELDS[n].map((v) => v[0]); if (n === 3) allowed.push('industry1', 'industry2');
+    const id = b.id + '_' + n, cur = docs(await db.collection('PROFILES').where('uid', '==', a.uid).get()).find((x) => x.id === id);
+    const next = { ...(cur && !staleForm(b, cur.updatedAt) ? cur.data || {} : {}) };
+    for (const [k, v] of Object.entries(data || {})) { if (!allowed.includes(k)) fail('허용되지 않은 입력항목입니다.'); next[k] = tidy(v, 4000); }
+    await db.collection('PROFILES').doc(id).set({ companyId: b.id, uid: a.uid, step: n, data: next, updatedAt: now(), updatedBy: a.email });
+    return API.portalData(a);
+  };
+  /** [업체] 제출 전 누락 확인 · 최종 제출 (제출·검토 메일은 중계 서버) */
+  API.checkSubmission = async () => relay('check', {}, true);
+  API.submitProfile = async (a) => { const r = await relay('submit', {}); return r && r.ok ? { ok: true, portal: await API.portalData(a) } : r; };
+  /** [업체] 서류 파일 등록 (덮어쓰지 않고 새 버전) */
+  API.uploadContractDoc = async (a, code, f) => { await relay('contractDoc', { code: String(code || ''), f }); return API.portalData(a); };
+  API.uploadEvidence = async (a, f) => { await relay('evidence', { f }); return API.portalData(a); };
+  /** [업체] 규정·계획서 작성 완료 → 중계 서버가 서명 PDF를 만들어 제출서류로 등록 */
+  API.saveRuleDoc = async (a, d, sign) => { await relay('rule', { d: d || {}, sign: String(sign || '') }); return API.portalData(a); };
+  API.savePlanDoc = async (a, d, sign) => { await relay('plan', { d: d || {}, sign: String(sign || '') }); return API.portalData(a); };
+  API.uploadPlanFile = async (a, f) => relay('planFile', { f });
+  /** [업체] 내 공사 목록 — 공사 기능(F1.3) 전이라 아직 배정된 공사가 없음 */
+  API.myJobs = async (a) => {
+    const b = await myCompany(a);
+    if (!b || !(canExec(b) || CFG.TEST_SKIP_FILES)) fail('계약 전 검토가 승인된 업체만 사용할 수 있습니다.');
+    return { today: today(), company: b.company, jobs: [] };
+  };
+  /** [업체] 신규 작성(재평가) 시작 · 사업자 정보 수정 */
+  API.startRenewal = async (a, mode) => { await relay('renew', { renewMode: mode === 'NEW' ? 'NEW' : 'KEEP' }); return API.portalData(a); };
+  API.saveCompanyInfo = async (a, d, cert) => { await relay('companyInfo', { d: d || {}, cert: cert && cert.data ? cert : null }); return API.portalData(a); };
+
+  /* 표준양식 (샘플): 목록은 Firestore · 파일은 구글 드라이브(중계) */
+  API.getTemplate = async (a, code) => relay('template', { code: String(code || '') }, true);
+  API.templateAdminList = async (a) => {
+    if (!(await isSafety(a))) fail('안전보건팀만 표준양식을 관리할 수 있습니다.');
+    const all = docs(await db.collection('TEMPLATES').get());
+    return docTypes().map((t) => {
+      const cur = all.filter((x) => x.docType === t.code && x.active === 'Y').sort((x, y) => Number(y.version) - Number(x.version))[0];
+      return { code: t.code, stage: t.stage, stageLabel: DOC_STAGE[t.stage], name: t.name, cycle: t.cycle, ownerLabel: DOC_OWNER[t.owner] || t.owner, kind: t.kind, required: t.required === 'Y',
+        current: cur ? { name: cur.name, version: Number(cur.version), uploadedAt: cur.uploadedAt, uploadedBy: cur.uploadedBy } : null, history: all.filter((x) => x.docType === t.code).length };
+    });
+  };
+  API.uploadTemplate = async (a, code, f) => { await relay('tplUpload', { code: String(code || ''), f }); return API.templateAdminList(a); };
+  API.refreshTemplateFolders = async (a) => { const report = await relay('tplSync', {}); return { report, list: await API.templateAdminList(a) }; };
+
+  /* 참조 알림 (안전보건팀) */
+  API.noticeList = async (a) => {
+    if (!(await isSafety(a))) fail('안전보건팀만 볼 수 있습니다.');
+    const list = docs(await db.collection('NOTICES').get()).sort((x, y) => String(y.time).localeCompare(String(x.time))).slice(0, 100);
+    return { labels: NOTICE_LABEL, list: list.map((n) => ({ id: n.id, time: n.time, type: n.type, text: n.text, jobId: n.jobId, read: (n.readBy || []).includes(a.email) })) };
+  };
+  API.readNotices = async (a) => {
+    if (!(await isSafety(a))) fail('안전보건팀만 볼 수 있습니다.');
+    const s = await db.collection('NOTICES').get(), b = db.batch(); let n = 0;
+    s.docs.forEach((d) => { const r = d.data().readBy || []; if (!r.includes(a.email)) { b.update(d.ref, { readBy: r.concat(a.email) }); n++; } });
+    if (n) await b.commit();
+    return API.noticeList(a);
+  };
   /** 공사 목록: F1.0에서는 아직 공사 기능을 옮기지 않아 빈 목록 (공사 기능은 F1.2) */
   API.jobBoard = async (a) => {
     const st = await staffOf(a); if (!st) fail('아성다이소 직원 계정만 사용할 수 있습니다.');
@@ -259,7 +466,7 @@
   };
 
   /* ---------- 화면에서 쓰는 창구 ---------- */
-  const NEXT = { saveStep: 'F1.2', submitProfile: 'F1.2', checkSubmission: 'F1.2', uploadContractDoc: 'F1.2', uploadEvidence: 'F1.2', getTemplate: 'F1.2', saveRuleDoc: 'F1.2', savePlanDoc: 'F1.2', uploadPlanFile: 'F1.2', reviewList: 'F1.2', getReviewData: 'F1.2', reviewAction: 'F1.2', saveJob: 'F1.2', myJobs: 'F1.2', vendorJob: 'F1.2', addWorker: 'F1.2', workerCheckIn: 'F1.2', getPermit: 'F1.3', issuePermit: 'F1.3', submitInspection: 'F1.4', meetCheckIn: 'F1.5', createMeeting: 'F1.5', endJob: 'F1.6' };
+  const NEXT = { saveJob: 'F1.3', vendorJob: 'F1.3', addWorker: 'F1.3', workerCheckIn: 'F1.3', saveCrew: 'F1.3', getPermit: 'F1.4', issuePermit: 'F1.4', permitList: 'F1.4', submitInspection: 'F1.5', inspList: 'F1.5', meetCheckIn: 'F1.6', createMeeting: 'F1.6', extendJob: 'F1.7', endJob: 'F1.7', jobEvalList: 'F1.7' };
   async function call(fn, args) {
     const f = Object.prototype.hasOwnProperty.call(API, fn) ? API[fn] : null;
     if (!f) fail('아직 Firebase로 옮기지 않은 기능입니다 (' + fn + (NEXT[fn] ? ' · ' + NEXT[fn] + ' 예정' : '') + ').');
