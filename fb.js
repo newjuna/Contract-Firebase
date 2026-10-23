@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F1.7';
+  const VERSION = '26.10.24 F1.7e';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   const CFG = {
     INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
@@ -437,6 +437,8 @@
 
   /** [업체] 신규 작성(재평가) 시작 · 사업자 정보 수정 */
   API.startRenewal = async (a, mode) => { await relay('renew', { renewMode: mode === 'NEW' ? 'NEW' : 'KEEP' }); return API.portalData(a); };
+  /** F1.7e [업체] 신규 작성 취소 (제출 전만) → 시작 전 승인 상태로 */
+  API.cancelRenewal = async (a) => { await relay('renewCancel', {}); return API.portalData(a); };
   API.saveCompanyInfo = async (a, d, cert) => { await relay('companyInfo', { d: d || {}, cert: cert && cert.data ? cert : null }); return API.portalData(a); };
 
   /* 표준양식 (샘플): 목록은 Firestore · 파일은 구글 드라이브(중계) */
