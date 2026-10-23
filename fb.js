@@ -1,4 +1,4 @@
-/* 도급 안전관리 · Firebase 연결부 (F1.2: 로그인 · 직원 관리 · 사업자 등록/승인 · 계약 전 서류)
+/* 도급 안전관리 · Firebase 연결부 (F1.3: 로그인 · 직원 · 사업자 등록/승인 · 계약 전 서류 · 공사/작업자)
  * - 화면(app.js)은 예전처럼 api('기능이름', 인자) 로 부르고, 이 파일이 Firestore에서 바로 처리함
  *   (예전: 버튼마다 Apps Script 서버 왕복 → 느림 / 지금: 휴대폰이 Firestore를 직접 읽고 씀)
  * - 권한(업체는 자기 것만, 직원 관리는 안전보건팀만 등)은 Firebase 보안 규칙(firestore.rules)이 최종 확인
@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F1.2';
+  const VERSION = '26.10.24 F1.3';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   const CFG = {
     INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
@@ -265,6 +265,15 @@
     o.admin = cs.filter((x) => x.status === 'PENDING').length;
     if (st) o.review = cs.filter((x) => x.status === 'VERIFIED' && x.submissionStatus === 'SUBMITTED').length;
     if (st && st.role === 'SAFETY') o.notices = docs(await db.collection('NOTICES').get()).filter((n) => !(n.readBy || []).includes(a.email)).length;
+    if (st) {
+      // 계약 전 검토가 끝났는데 아직 어느 공사에도 배정 안 된 업체 + 종료 예정·종료일 지난 공사
+      const [jvs, ver, jobs] = await Promise.all([db.collection('JOB_VENDORS').get().then(docs), db.collection('COMPANIES').where('status', '==', 'VERIFIED').get().then(docs), db.collection('JOBS').get().then(docs)]);
+      const assigned = new Set(jvs.map((x) => x.companyId));
+      o.newVendors = ver.filter((x) => x.submissionStatus === 'APPROVED' && !assigned.has(x.id)).map((x) => ({ id: x.id, company: x.company, industry: x.industry }));
+      o.jobEnd = jobs.filter((j) => (st.role === 'SAFETY' || lower(j.hostEmail) === a.email) && ['SOON', 'OVER'].includes(jobEndInfo(j).state)).length;
+      o.permits = 0; o.insp = 0; o.evalDraft = 0;  // F1.4·F1.5·F1.7
+      o.jobs = o.newVendors.length + o.pendingAttend + o.jobEnd;
+    }
     return o;
   }
 
@@ -274,8 +283,11 @@
   /** 승인된 업체의 작성 자료 한꺼번에 (내 것만 읽도록 uid로 조회) */
   async function vendorBundle(a, b) {
     const mine = (col) => db.collection(col).where('uid', '==', a.uid).get().then(docs).then((l) => l.filter((x) => x.companyId === b.id));
-    const [profiles, files, subs, forms, tpls] = await Promise.all([mine('PROFILES'), mine('DOCUMENTS'), mine('DOC_SUBMISSIONS'), mine('CONTRACT_FORMS'), db.collection('TEMPLATES').where('active', '==', 'Y').get().then(docs)]);
-    return { profiles, files, subs, forms, tpl: activeTemplates(tpls) };
+    const [profiles, files, subs, forms, tpls, jvs] = await Promise.all([mine('PROFILES'), mine('DOCUMENTS'), mine('DOC_SUBMISSIONS'), mine('CONTRACT_FORMS'), db.collection('TEMPLATES').where('active', '==', 'Y').get().then(docs),
+      db.collection('JOB_VENDORS').where('vendorUid', '==', a.uid).get().then(docs).then((l) => l.filter((x) => x.companyId === b.id))]);
+    // 진행 중(종료 전) 공사 수 → 0이면 업체 메뉴에서 공사 업무를 숨김
+    const js = await Promise.all(jvs.map((v) => db.collection('JOBS').doc(v.jobId).get().then((s) => (s.exists ? s.data() : null)).catch(() => null)));
+    return { profiles, files, subs, forms, tpl: activeTemplates(tpls), openJobs: js.filter((j) => j && j.status !== 'ENDED').length };
   }
   API.portalData = async (a) => {
     const memo = {}, st = await staffOf(a, memo), b = await myCompany(a), verified = !!b && b.status === 'VERIFIED';
@@ -291,7 +303,7 @@
       forms = contractFormsView(b, V.forms, V.files, (steps.find((x) => x.step === 1) || {}).data || {});
     }
     return {
-      email: a.email, isApprover, correctionNote: b && b.submissionStatus === 'CORRECTION' ? b.correctionNote || '' : '', openJobs: verified ? 0 : null,  // 공사는 F1.3부터
+      email: a.email, isApprover, correctionNote: b && b.submissionStatus === 'CORRECTION' ? b.correctionNote || '' : '', openJobs: V ? V.openJobs : null,
       staff: st ? { name: st.name, role: st.role, roleLabel: (st.master ? '마스터 · ' : '') + (STAFF_ROLES[st.role] || st.role), master: !!st.master } : null,
       isMaster: isMaster(a), testSkipFiles: CFG.TEST_SKIP_FILES,
       company: publicCompany(b),
@@ -337,8 +349,8 @@
           contractEval: e ? { good: Number(e.good) || 0, normal: Number(e.normal) || 0, poor: Number(e.poor) || 0, at: e.evaluatedAt } : null };
       } catch (e) { if (e.code !== 'permission-denied') throw e; return { docs: [], evidence: [], contractEval: null }; }
     };
-    const more = await Promise.all(list.map(detail));
-    return { list: list.map((b, i) => ({ ...publicCompany(b), ...more[i], jobs: 0, lastEval: null })) };  // 공사·종료 평가는 F1.3 이후
+    const [more, jvs] = await Promise.all([Promise.all(list.map(detail)), st ? db.collection('JOB_VENDORS').get().then(docs) : []]);
+    return { list: list.map((b, i) => ({ ...publicCompany(b), ...more[i], jobs: jvs.filter((x) => x.companyId === b.id).length, lastEval: null })) };  // 종료 평가는 F1.7
   };
   /** [직원] 승인·반려 → 중계 서버가 처리하고 업체에 메일 */
   API.decideBusiness = async (a, id, decision, reason, ret) => {
@@ -381,12 +393,7 @@
   API.saveRuleDoc = async (a, d, sign) => { await relay('rule', { d: d || {}, sign: String(sign || '') }); return API.portalData(a); };
   API.savePlanDoc = async (a, d, sign) => { await relay('plan', { d: d || {}, sign: String(sign || '') }); return API.portalData(a); };
   API.uploadPlanFile = async (a, f) => relay('planFile', { f });
-  /** [업체] 내 공사 목록 — 공사 기능(F1.3) 전이라 아직 배정된 공사가 없음 */
-  API.myJobs = async (a) => {
-    const b = await myCompany(a);
-    if (!b || !(canExec(b) || CFG.TEST_SKIP_FILES)) fail('계약 전 검토가 승인된 업체만 사용할 수 있습니다.');
-    return { today: today(), company: b.company, jobs: [] };
-  };
+
   /** [업체] 신규 작성(재평가) 시작 · 사업자 정보 수정 */
   API.startRenewal = async (a, mode) => { await relay('renew', { renewMode: mode === 'NEW' ? 'NEW' : 'KEEP' }); return API.portalData(a); };
   API.saveCompanyInfo = async (a, d, cert) => { await relay('companyInfo', { d: d || {}, cert: cert && cert.data ? cert : null }); return API.portalData(a); };
@@ -417,11 +424,6 @@
     s.docs.forEach((d) => { const r = d.data().readBy || []; if (!r.includes(a.email)) { b.update(d.ref, { readBy: r.concat(a.email) }); n++; } });
     if (n) await b.commit();
     return API.noticeList(a);
-  };
-  /** 공사 목록: F1.0에서는 아직 공사 기능을 옮기지 않아 빈 목록 (공사 기능은 F1.2) */
-  API.jobBoard = async (a) => {
-    const st = await staffOf(a); if (!st) fail('아성다이소 직원 계정만 사용할 수 있습니다.');
-    return { me: { name: st.name, role: st.role }, kinds: { WORK: '공사', CONTRACT: '계약' }, meetKinds: { COUNCIL: '안전보건협의체 회의', JOINT: '합동안전보건점검' }, vendors: [], testMode: CFG.TEST_SKIP_FILES, jobs: [], notReady: true };
   };
 
   /* 직원 관리: 화면은 줄 번호(row)를 쓰므로 번호 ↔ 문서(로그인 Gmail)를 기억 */
@@ -465,8 +467,227 @@
     return API.staffList(a);
   };
 
+  /* ---------- F1.3 공사 · 업체 배정 · 작업자 · 오늘 인원 ----------
+   *  JOBS/{JOB-…}                 공사 (vendorUids = 배정 업체 대표 계정 → 업체가 자기 공사만 읽음)
+   *  JOB_VENDORS/{공사ID_업체ID}   배정 (workerToken = 작업자 등록 QR 값)
+   *  WORKERS/{WK-…}               작업자 명단 = 신규자 교육일지 (본인 QR 등록은 중계 서버가 씀)
+   *  CREW/{공사ID_업체ID_날짜}      오늘 작업 인원 = 그날 작업안전수칙 서명 */
+  const JOB_KINDS = { WORK: '매장 공사', CONTRACT: '계약 단위(입고도우미·재고조사 등)' };
+  const MEET_KINDS = { COUNCIL: '안전보건협의체 회의', JOINT: '합동안전보건점검' };
+  const WORK_RULES = ['작업에 적합한 단정한 복장을 착용한다.',
+    '안전화, 안전모 등 안전보호구를 착용하고, 작업에 따라 안전보호구를 선별하며 철저히 착용 후 관리자의 인가를 받고 작업한다.',
+    '사다리 포함 고소 작업 시에는 반드시 안전벨트를 착용하고 체결 후 작업한다.',
+    '관리감독자의 지시에 따라 올바른 순서로 작업한다.',
+    '작업 공구 및 기계는 반드시 안전점검 후 사용한다.',
+    '핸드그라인더, 고속절단기 등 유해위험 기계기구는 반드시 안전장치를 설치 후 사용한다.',
+    '전기 및 위험물을 취급 시에는 관계자의 지시에 따른다.',
+    '현장 내에서는 절대로 뛰어다니지 않는다.',
+    '사전 승인 없는 화기의 취급 및 절단, 용접은 엄금한다.',
+    '유해위험 작업 시 반드시 작업구역을 설정하고, 경계를 분명히 하여 작업 중 재해가 발생하지 않도록 주의한다.',
+    '작업중 음주 및 흡연은 엄금하고, 흡연은 정해진 장소에서만 한다.',
+    '작업이 끝나면 반드시 정리정돈을 실시하고, 관계자의 인가를 받고 작업을 종료한다.',
+    '관계자의 인가없이 작업을 끝낸 후 하자가 발생하면 공사업체 책임자가 책임을 진다.',
+    '업체 책임자 및 직원은 관계인의 연락처를 숙지하고, 긴급상황 등 이상 발생 시 즉시 연락을 취한다.'];
+  const WORK_PLEDGE = '작업자는 상기의 안전 작업 수칙을 교육 받고, 작업 시 안전 작업 수칙을 준수하며, 안전 작업 서약서에 서명 후 작업을 실시한다.';
+  const WORKER_ROLES = ['관리자', '근로자'], EDU_TYPE = '신규자 교육 (최초 1회)';
+  const INSP_ITEMS = ['정리정돈 실시상태', '소방설비 관리상태', '복장 및 보호구 착용상태', '안전장치 관리상태', '안전표지 부착', '유해위험작업관리', '안전수칙 준수', '관리감독 이행여부', '유해물질관리', '감전재해 예방관리', '인화성 가스 안전관리'];
+  const daysBetween = (x, y) => Math.round((new Date(y + 'T00:00:00Z') - new Date(x + 'T00:00:00Z')) / 86400000);
+  const rand8 = () => Array.from(crypto.getRandomValues(new Uint8Array(4)), (v) => v.toString(16).padStart(2, '0')).join('').toUpperCase();
+  const newToken = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), (v) => v.toString(16).padStart(2, '0')).join('');
+  const isDate = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
+  function jobEndInfo(j) {
+    if (j.status === 'ENDED') return { state: 'ENDED', endedAt: j.endedAt ? kst(j.endedAt) : '' };
+    if (!isDate(j.endDate)) return { state: 'OPEN' };
+    const left = daysBetween(today(), j.endDate); return { state: left < 0 ? 'OVER' : left <= 3 ? 'SOON' : 'OPEN', left };
+  }
+  const canSeeJob = (a, s, j) => !!j && (s.role === 'SAFETY' || lower(j.hostEmail) === a.email);
+  /** 공사 여러 개의 기록을 한꺼번에 (Firestore 'in'은 30개씩) */
+  async function byJobs(col, ids) {
+    const parts = []; for (let i = 0; i < ids.length; i += 30) parts.push(ids.slice(i, i + 30));
+    return (await Promise.all(parts.map((p) => db.collection(col).where('jobId', 'in', p).get().then(docs)))).flat();
+  }
+  /** 업체별 이행 현황 (작업허가서·순회점검은 F1.4·F1.5에서 채움) */
+  function vjStats(crew) {
+    const wd = new Set(crew.map((x) => x.date).filter(Boolean)).size;
+    return { workDays: wd, crewDays: crew.length, permitDays: 0, insp: 0, inspNeed: wd ? Math.max(1, Math.ceil(wd / 2)) : 0, openFindings: 0, findTotal: 0, todayPermit: false, inspToday: false, inspDue: true, lastInsp: '' };
+  }
+  /** 공사에 배정할 수 있는 업체 (재평가 중 포함 · 테스트 모드면 승인 전도) */
+  async function jobVendorChoices() {
+    return docs(await db.collection('COMPANIES').where('status', '==', 'VERIFIED').get()).filter((x) => canExec(x) || CFG.TEST_SKIP_FILES).map((x) => {
+      const v = contractValid(x);
+      return { id: x.id, uid: x.uid, company: x.company, industry: x.industry, approved: canExec(x), renewing: !!x.renewAt, renewStatus: x.renewAt ? x.submissionStatus : '', valid: v, expired: !!(v && v.expired), lastEval: null };
+    });
+  }
+  function jobView(j, jvs, wks, crews) {
+    const vs = jvs.filter((v) => v.jobId === j.id).sort((x, y) => String(x.addedAt).localeCompare(String(y.addedAt))), cr = crews.filter((c) => c.jobId === j.id);
+    return { id: j.id, title: j.title, storeName: j.storeName, storeCode: j.storeCode, address: j.address, kind: j.kind, kindLabel: JOB_KINDS[j.kind] || j.kind, startDate: j.startDate, endDate: j.endDate,
+      delegations: j.delegations || {}, hostName: j.hostName, hostEmail: j.hostEmail, status: j.status,
+      vendors: vs.map((v) => ({ companyId: v.companyId, company: v.company, trade: v.trade })),
+      workerCount: wks.filter((w) => w.jobId === j.id).length, permitWaiting: 0, permitTotal: 0, inspTotal: 0, inspUnchecked: 0, findOpen: 0,
+      vstats: vs.map((v) => Object.assign({ company: v.company, companyId: v.companyId }, vjStats(cr.filter((c) => c.companyId === v.companyId)))),
+      end: jobEndInfo(j), evalDone: 0, evalTotal: 0, crewDays: cr.length, meetings: [] };  // 미팅은 F1.6 · 종료 평가는 F1.7
+  }
+  async function staffOnly(a) { const s = await staffOf(a); if (!s) fail('아성다이소 직원 계정만 사용할 수 있습니다.'); return s; }
+  /** [직원] 공사 목록 + 배정 가능한 업체 */
+  API.jobBoard = async (a) => {
+    const s = await staffOnly(a);
+    const [choices, all] = await Promise.all([jobVendorChoices(), db.collection('JOBS').get().then(docs)]);
+    const jobs = all.filter((j) => canSeeJob(a, s, j)).sort((x, y) => String(y.createdAt).localeCompare(String(x.createdAt))), ids = jobs.map((j) => j.id);
+    const [jvs, wks, crews] = await Promise.all([byJobs('JOB_VENDORS', ids), byJobs('WORKERS', ids), byJobs('CREW', ids)]);
+    return { me: { name: s.name, role: s.role }, kinds: JOB_KINDS, meetKinds: MEET_KINDS, vendors: choices.map(({ uid, ...v }) => v), testMode: CFG.TEST_SKIP_FILES, jobs: jobs.map((j) => jobView(j, jvs, wks, crews)) };
+  };
+  /** [직원] 공사 만들기·수정 (참여 업체·위임장 정보 포함) */
+  API.saveJob = async (a, d) => {
+    const s = await staffOnly(a);
+    const title = tidy(d?.title, 120), storeName = tidy(d?.storeName, 80), storeCode = tidy(d?.storeCode, 30), address = tidy(d?.address, 200), kind = JOB_KINDS[d?.kind] ? d.kind : 'WORK', sd = tidy(d?.startDate, 10), ed = tidy(d?.endDate, 10);
+    const bad = []; if (!title) bad.push('공사명'); if (!storeName) bad.push('매장명(또는 계약명)'); if (!isDate(sd)) bad.push('시작일'); if (ed && !isDate(ed)) bad.push('종료일'); if (ed && sd && ed < sd) bad.push('종료일이 시작일보다 빠름');
+    if (bad.length) fail('다음 항목을 확인해 주세요:\n- ' + bad.join('\n- '));
+    const dl = {}; ['COUNCIL', 'JOINT'].forEach((k) => { const x = (d?.delegations || {})[k] || {}; dl[k] = { delegator: tidy(x.delegator, 60), delegatee: tidy(x.delegatee, 60), date: tidy(x.date, 10) }; });
+    const choices = await jobVendorChoices(), want = [...new Set((d?.vendorIds || []).map(String))], pick = want.filter((id) => choices.some((c) => c.id === id));
+    let id = tidy(d?.id, 40); const cur = id ? await db.collection('JOBS').doc(id).get() : null;
+    if (id && (!cur.exists || !canSeeJob(a, s, cur.data()))) fail('수정할 수 없는 공사입니다.');
+    const have = id ? docs(await db.collection('JOB_VENDORS').where('jobId', '==', id).get()) : [];
+    // 계약 전 평가 유효기간(1년)이 지난 업체는 새로 배정하지 않음 (이미 배정된 업체는 그대로)
+    const add = pick.filter((c) => !have.some((h) => h.companyId === c)).map((c) => choices.find((x) => x.id === c));
+    const exp = add.filter((v) => v.expired && !CFG.TEST_SKIP_FILES);
+    if (exp.length) fail('계약 전 평가 유효기간(1년)이 지난 업체는 새로 배정할 수 없습니다.\n업체가 계약 전 서류를 고쳐 다시 제출하고 승인받으면 배정할 수 있습니다:\n- ' + exp.map((v) => v.company + ' (유효기간 ~' + v.valid.until + ')').join('\n- '));
+    // 체크 해제한 업체 배정 취소 (그 업체의 작업자·작업 기록이 있으면 취소 불가)
+    const drop = have.filter((v) => !want.includes(v.companyId));
+    if (drop.length) {
+      const [w, c] = await Promise.all(['WORKERS', 'CREW'].map((n) => db.collection(n).where('jobId', '==', id).get().then(docs)));
+      const busy = drop.filter((v) => w.some((x) => x.companyId === v.companyId) || c.some((x) => x.companyId === v.companyId));
+      if (busy.length) fail('작업자·작업 기록이 있는 업체는 배정을 취소할 수 없습니다:\n- ' + busy.map((v) => v.company).join('\n- '));
+    }
+    if (!id) id = 'JOB-' + rand8();
+    const vendorUids = [...new Set(have.filter((v) => want.includes(v.companyId)).map((v) => v.vendorUid).concat(add.map((v) => v.uid)).filter(Boolean))];
+    const o = { title, storeName, storeCode, address, kind, startDate: sd, endDate: ed, delegations: dl, vendorUids }, b = db.batch(), ref = db.collection('JOBS').doc(id);
+    if (cur) b.update(ref, o); else b.set(ref, { id, ...o, hostEmail: a.email, hostName: s.name, status: 'OPEN', createdAt: now(), extensions: [], endedAt: '', endedBy: '' });
+    add.forEach((v) => b.set(db.collection('JOB_VENDORS').doc(id + '_' + v.id), { jobId: id, companyId: v.id, company: v.company, trade: v.industry, vendorUid: v.uid, addedBy: a.email, addedAt: now(), workerToken: '' }));
+    drop.forEach((v) => b.delete(db.collection('JOB_VENDORS').doc(v.id)));
+    await b.commit();
+    if (drop.length) audit(a, '', 'JOB_VENDOR_REMOVE', id + ' ' + drop.map((v) => v.company).join(', '));
+    audit(a, '', cur ? 'JOB_EDIT' : 'JOB_ADD', id + ' ' + title + ' 업체 ' + pick.length);
+    return API.jobBoard(a);
+  };
+  /** [직원] 공사 삭제 — 업체 배정·작업자·작업 인원 기록까지 함께 (삭제 내역은 접근및작업이력에) */
+  API.deleteJob = async (a, jobId) => {
+    const s = await staffOnly(a), id = tidy(jobId, 40), js = await db.collection('JOBS').doc(id).get(), j = js.exists ? js.data() : null;
+    if (!j || !canSeeJob(a, s, j)) fail('삭제할 수 없는 공사입니다.');
+    const lists = await Promise.all(['JOB_VENDORS', 'WORKERS', 'CREW'].map((n) => db.collection(n).where('jobId', '==', id).get()));
+    const b = db.batch(), cnt = {};
+    ['JOB_VENDORS', 'WORKERS', 'CREW'].forEach((n, i) => { cnt[n] = lists[i].docs.length; lists[i].docs.forEach((d) => b.delete(d.ref)); });
+    b.delete(js.ref); await b.commit();
+    audit(a, '', 'JOB_DELETE', id + ' ' + j.title + ' ' + JSON.stringify(cnt));
+    return API.jobBoard(a);
+  };
+
+  /* 업체: 내 공사 · 작업자 · 오늘 인원 */
+  async function execVendor(a) {
+    if (a.mode === 'STAFF') fail('다이소 담당자로 접속했습니다. 업체 업무는 로그인 화면에서 [협력업체]로 다시 로그인해 주세요.');
+    const b = await myCompany(a);
+    if (!b || b.status !== 'VERIFIED' || !(canExec(b) || CFG.TEST_SKIP_FILES)) fail('계약 전 검토가 승인된 업체 대표 계정만 사용할 수 있습니다.');
+    return b;
+  }
+  const myAssign = async (a, b) => docs(await db.collection('JOB_VENDORS').where('vendorUid', '==', a.uid).get()).filter((v) => v.companyId === b.id);
+  const mineOf = (col, a, jobId) => db.collection(col).where('vendorUid', '==', a.uid).where('jobId', '==', jobId).get().then(docs);
+  async function vendorJobOf(a, b, jobId, write) {
+    const id = tidy(jobId, 40), jv = (await myAssign(a, b)).find((v) => v.jobId === id);
+    if (!jv) fail('이 공사에 배정된 업체가 아닙니다.');
+    const js = await db.collection('JOBS').doc(id).get(); if (!js.exists) fail('이 공사에 배정된 업체가 아닙니다.');
+    const j = js.data(); if (write && j.status === 'ENDED') fail('종료된 공사입니다. 지난 기록은 볼 수만 있습니다.');
+    return { jv, j };
+  }
+  async function siteManagerOf(a, b) { const p = docs(await db.collection('PROFILES').where('uid', '==', a.uid).get()).find((x) => x.id === b.id + '_1'); return String(((p && p.data) || {}).siteManager || ''); }
+  /** 그날 수칙 서명 방식: 처음 등록한 날 본인 계정으로 서명 → SELF, 그 외(소장 체크·소장 등록) → MANAGER */
+  const crewSnap = (w, date) => ({ id: w.id, name: w.name, role: w.role, trade: w.trade || '', sign: (w.method === 'SELF' && kst(w.rulesAt) === date) ? 'SELF' : 'MANAGER' });
+  async function crewWrite(a, b, j, date, list, sm) {
+    const id = j.id + '_' + b.id + '_' + date;
+    await db.collection('CREW').doc(id).set({ id, jobId: j.id, companyId: b.id, vendorUid: a.uid, date, workers: list.map((w) => crewSnap(w, date)), count: list.length, siteManager: sm, savedBy: a.email, savedAt: now() });
+  }
+  /** 새로 등록한 작업자를 오늘 인원에 추가 (처음 온 날 = 그날 작업자) */
+  async function crewAppend(a, b, j, w, ws) {
+    const t = today(), cur = (await mineOf('CREW', a, j.id)).find((x) => x.date === t && x.companyId === b.id), ids = cur ? (cur.workers || []).map((x) => x.id) : [];
+    if (ids.includes(w.id)) return;
+    const act = ws.filter((x) => x.companyId === b.id && x.active !== 'N'), list = ids.map((id) => act.find((x) => x.id === id)).filter(Boolean).concat([w]);
+    await crewWrite(a, b, j, t, list, cur ? cur.siteManager : await siteManagerOf(a, b));
+  }
+  /** [업체] 내 공사 목록 */
+  API.myJobs = async (a) => {
+    const b = await execVendor(a), t = today(), jvs = (await myAssign(a, b)).sort((x, y) => String(y.addedAt).localeCompare(String(x.addedAt)));
+    const [jobs, wks, crews] = await Promise.all([
+      Promise.all(jvs.map((v) => db.collection('JOBS').doc(v.jobId).get().then((s) => (s.exists ? s.data() : null)).catch(() => null))),
+      db.collection('WORKERS').where('vendorUid', '==', a.uid).get().then(docs), db.collection('CREW').where('vendorUid', '==', a.uid).get().then(docs)]);
+    return { today: t, company: b.company, jobs: jvs.map((v, i) => {
+      const j = jobs[i]; if (!j) return null;
+      const cr = crews.filter((c) => c.jobId === j.id && c.companyId === b.id), c = cr.find((x) => x.date === t);
+      return { id: j.id, title: j.title, storeName: j.storeName, startDate: j.startDate, endDate: j.endDate, hostName: j.hostName, trade: v.trade, status: j.status,
+        workers: wks.filter((w) => w.jobId === j.id && w.companyId === b.id && w.active !== 'N').length, todayCount: c ? Number(c.count) : 0, todayDone: !!c, end: jobEndInfo(j), stats: vjStats(cr) };
+    }).filter(Boolean) };
+  };
+  async function jobPack(a, b, j, jv) {
+    const t = today(), [wks, crews, sm0] = await Promise.all([mineOf('WORKERS', a, j.id), mineOf('CREW', a, j.id), siteManagerOf(a, b)]);
+    const ws = wks.filter((w) => w.companyId === b.id && w.active !== 'N'), cr = crews.filter((c) => c.companyId === b.id).sort((x, y) => (x.date < y.date ? 1 : -1));
+    const day = (c) => ({ date: c.date, count: Number(c.count) || (c.workers || []).length, siteManager: c.siteManager, savedAt: c.savedAt, workers: c.workers || [] }), tc = cr.find((x) => x.date === t);
+    return { today: t, job: { id: j.id, title: j.title, storeName: j.storeName, address: j.address, startDate: j.startDate, endDate: j.endDate, hostName: j.hostName },
+      company: { id: b.id, company: b.company, trade: jv.trade }, link: location.origin + location.pathname + '?review=WRK-' + jv.workerToken,
+      workers: ws.map((w) => ({ id: w.id, name: w.name, role: w.role, trade: w.trade, method: w.method, eduAt: w.eduAt, email: w.email })),
+      todayCrew: tc ? day(tc) : null, history: cr.slice(0, 30).map(day), siteManager: tc ? tc.siteManager : sm0,
+      rules: WORK_RULES, pledge: WORK_PLEDGE, roles: WORKER_ROLES,
+      permits: [], insp: { items: INSP_ITEMS, type: '순회점검일지', last: '', todayDone: false, due: true, since: null, open: [], recent: [] },  // F1.4·F1.5
+      jobStatus: j.status, permitToday: null, evalResult: null };
+  }
+  /** [업체] 공사 화면 (처음 열 때 작업자 등록 QR 값 생성) */
+  API.vendorJob = async (a, jobId) => {
+    const b = await execVendor(a), { jv, j } = await vendorJobOf(a, b, jobId);
+    if (!jv.workerToken) { jv.workerToken = newToken(); await db.collection('JOB_VENDORS').doc(jv.id).update({ workerToken: jv.workerToken }); }
+    return jobPack(a, b, j, jv);
+  };
+  /** [업체] QR 새로 만들기 (링크가 외부로 퍼졌을 때) — 이전 QR은 바로 사용 불가 */
+  API.renewWorkerQr = async (a, jobId) => {
+    const b = await execVendor(a), { jv, j } = await vendorJobOf(a, b, jobId, true);
+    await db.collection('JOB_VENDORS').doc(jv.id).update({ workerToken: newToken() }); audit(a, b.id, 'WORKER_QR_RENEW', j.id);
+    return API.vendorJob(a, jobId);
+  };
+  /** [업체] Google 계정이 없는 작업자를 소장이 직접 등록 (교육 실시 확인 필수) */
+  API.addWorker = async (a, jobId, info, requestId) => {
+    const b = await execVendor(a), { j, jv } = await vendorJobOf(a, b, jobId, true);
+    const name = tidy(info?.name, 40), role = WORKER_ROLES.includes(info?.role) ? info.role : '', trade = tidy(info?.trade, 40) || jv.trade;
+    const bad = []; if (!name) bad.push('이름'); if (!role) bad.push('구분(관리자/근로자)'); if (!info?.agree) bad.push('교육 실시·수칙 설명 확인 체크');
+    if (bad.length) fail('다음 항목을 확인해 주세요:\n- ' + bad.join('\n- '));
+    const rid = String(requestId || '').toLowerCase(); if (rid && !/^[a-f0-9]{32}$/.test(rid)) fail('잘못된 요청 식별값입니다.');
+    const workerId = rid ? 'WK-' + rid.slice(0, 16).toUpperCase() : 'WK-' + rand8(), ws = await mineOf('WORKERS', a, j.id), ex = ws.find((x) => x.id === workerId);
+    if (ex) {  // 같은 요청을 다시 보낸 경우 (연결이 끊겼다 다시 보냄)
+      if (ex.companyId !== b.id || ex.name !== name || ex.role !== role || ex.trade !== trade) fail('등록 요청이 충돌했습니다. 화면을 새로고침해 주세요.');
+      await crewAppend(a, b, j, ex, ws);
+    } else {
+      const t = now(), w = { id: workerId, jobId: j.id, companyId: b.id, company: b.company, name, role, trade, email: '', uid: '', vendorUid: a.uid, method: 'MANUAL', eduType: EDU_TYPE,
+        eduContent: '작업 안전 수칙 ' + WORK_RULES.length + '개 항목', eduAt: t, rulesAt: t, addedBy: a.email, addedAt: t, active: 'Y' };
+      await db.collection('WORKERS').doc(workerId).set(w); await crewAppend(a, b, j, w, ws.concat([w]));
+      audit(a, b.id, 'WORKER_ADD_MANUAL', j.id + ' ' + name);
+    }
+    return { saved: true, workerId, jobId: j.id, companyId: b.id, name, role, trade, date: today() };
+  };
+  /** [업체] 작업자 명단에서 빼기 (기록은 남김) */
+  API.removeWorker = async (a, jobId, workerId) => {
+    const b = await execVendor(a), { j } = await vendorJobOf(a, b, jobId, true), w = (await mineOf('WORKERS', a, j.id)).find((x) => x.id === tidy(workerId, 40) && x.companyId === b.id);
+    if (!w) fail('작업자를 찾을 수 없습니다.');
+    await db.collection('WORKERS').doc(w.id).update({ active: 'N' }); audit(a, b.id, 'WORKER_REMOVE', j.id + ' ' + w.name);
+    return API.vendorJob(a, jobId);
+  };
+  /** [업체] 오늘 작업 인원 저장 = 그날 작업안전수칙 서명 (같은 날 다시 저장하면 덮어씀) */
+  API.saveCrew = async (a, jobId, ids, siteManager) => {
+    const b = await execVendor(a), { j } = await vendorJobOf(a, b, jobId, true), sm = tidy(siteManager, 40);
+    if (!sm) fail('현장책임자 이름을 입력해 주세요.');
+    const ws = (await mineOf('WORKERS', a, j.id)).filter((w) => w.companyId === b.id && w.active !== 'N'), pick = [...new Set((ids || []).map(String))].map((id) => ws.find((w) => w.id === id)).filter(Boolean);
+    if (!pick.length) fail('오늘 작업하는 사람을 한 명 이상 체크해 주세요.');
+    await crewWrite(a, b, j, today(), pick, sm); audit(a, b.id, 'CREW_SAVE', j.id + ' ' + today() + ' ' + pick.length + '명');
+    return API.vendorJob(a, jobId);
+  };
+  /** [작업자] QR 본인 등록 — QR 값 확인이 필요해 중계 서버가 처리. info 없이 부르면 입력 화면 정보 */
+  API.workerCheckIn = async (a, token, info) => relay('workerIn', { token: String(token || ''), info: info || null }, !info);
+
   /* ---------- 화면에서 쓰는 창구 ---------- */
-  const NEXT = { saveJob: 'F1.3', vendorJob: 'F1.3', addWorker: 'F1.3', workerCheckIn: 'F1.3', saveCrew: 'F1.3', getPermit: 'F1.4', issuePermit: 'F1.4', permitList: 'F1.4', submitInspection: 'F1.5', inspList: 'F1.5', meetCheckIn: 'F1.6', createMeeting: 'F1.6', extendJob: 'F1.7', endJob: 'F1.7', jobEvalList: 'F1.7' };
+  const NEXT = { getPermit: 'F1.4', issuePermit: 'F1.4', permitList: 'F1.4', submitInspection: 'F1.5', inspList: 'F1.5', meetCheckIn: 'F1.6', createMeeting: 'F1.6', extendJob: 'F1.7', endJob: 'F1.7', jobEvalList: 'F1.7' };
   async function call(fn, args) {
     const f = Object.prototype.hasOwnProperty.call(API, fn) ? API[fn] : null;
     if (!f) fail('아직 Firebase로 옮기지 않은 기능입니다 (' + fn + (NEXT[fn] ? ' · ' + NEXT[fn] + ' 예정' : '') + ').');
@@ -477,7 +698,11 @@
   async function login(mode, boot) {
     try { localStorage.setItem('fbMode', mode || ''); } catch (e) {}
     const a = await me(), data = { key: a.uid, email: a.email };
-    if (/^WRK-/.test(boot || '')) { data.bootError = '작업자 QR 등록은 아직 Firebase로 옮기지 않았습니다 (F1.2 예정).'; return data; }
+    if (/^WRK-[a-f0-9]{32}$/.test(boot || '')) {  // 작업자 등록 QR로 로그인: 등록 화면을 같이 돌려줌
+      data.appVersion = VERSION;
+      try { data.wk = await API.workerCheckIn(a, boot.slice(4), null); } catch (e) { data.bootError = nice(e).message; }
+      return data;
+    }
     try { data.portal = await API.portalData(a); } catch (e) { throw nice(e); }
     return data;
   }
