@@ -6,7 +6,7 @@
 let vmenu='dash',vSel='';
 const VMENU={dash:'대시보드',today:'오늘 현장 업무',meet:'협의체 및 합동점검 참여',drill:'비상대피훈련 등록',docs:'계약 서류'};
 /* F1.8a 작업자 등록·작업허가서·순회점검은 '오늘 현장 업무' 한 화면으로 합침 · 예전 이름으로 부르면 그 칸으로 바로 이동 */
-const VJUMP={workers:'crewCard',permit:'permitCard',insp:'inspCard'};
+const VJUMP={workers:'regCard',permit:'permitCard',insp:'inspCard'};
 /* v5.17 재평가 중(이전 승인 있음)이어도 수행 메뉴는 그대로 사용 */
 const isVendorApproved=()=>!!(state&&!state.staff&&state.company&&state.company.status==='VERIFIED'&&(state.company.submissionStatus==='APPROVED'||!!state.company.renewAt));
 /** 메뉴 버튼 보이기 (display 때마다) */
@@ -47,7 +47,6 @@ function ganttRow(j,t,staff){const s=j.startDate,e=j.endDate||j.startDate,ok=/^\
 function donut(rate,label,sub){const C=188.5,has=rate!=null,p=has?Math.max(0,Math.min(1,rate)):0,col=!has?'#e5e7eb':p>=0.9?'var(--ok)':p>=0.6?'#111827':'var(--accent)';
  return '<div class="dn"><svg viewBox="0 0 80 80" width="80" height="80" role="img" aria-label="'+escapeText(label+' '+(has?Math.round(p*100)+'%':'기록 없음'))+'"><circle cx="40" cy="40" r="30" fill="none" stroke="#e5e7eb" stroke-width="9"/>'+(has?'<circle cx="40" cy="40" r="30" fill="none" stroke="'+col+'" stroke-width="9" stroke-linecap="round" stroke-dasharray="'+(C*p).toFixed(1)+' '+C+'" transform="rotate(-90 40 40)"/>':'')+'<text x="40" y="45" text-anchor="middle" font-size="15" font-weight="700" fill="#111">'+(has?Math.round(p*100)+'%':'–')+'</text></svg><b>'+escapeText(label)+'</b><span class="muted">'+escapeText(sub)+'</span></div>'}
 function todoRows(j,t){const S=j.stats||{},inRange=j.startDate<=t&&(!j.endDate||t<=j.endDate),id=escapeText(j.id),list=[];
- if(inRange&&!j.todayDone)list.push(['workers','① 출근 체크 · 안전 수칙 서명','미체크']);
  if(inRange&&!S.todayPermit)list.push(['permit','② 작업허가서 (작업 있는 날)','미발행']);
  /* F1.8a 순회점검은 매일 (법정은 2일 1회 → 2일 넘으면 '기한 지남') */
  if(inRange&&!S.inspToday)list.push(['insp','③ 순회점검 (매일)',S.inspDue?(S.lastInsp?'기한 지남 · '+dayDiff(S.lastInsp,t)+'일 경과':'점검 기록 없음'):'오늘 점검 전']);
