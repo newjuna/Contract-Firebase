@@ -20,9 +20,9 @@ let pm=null;  // 지금 보고 있는 허가서 {mode:'new'|'progress'|'view'|'s
 const pv=(o,k,d='')=>o&&o[k]!==undefined&&o[k]!==null?o[k]:d;
 /* ---------- 업체: [오늘 할 일] ③ 카드 ---------- */
 function permitCardHtml(v){const list=v.permits||[],t=list.find(p=>p.date===v.today),past=list.filter(p=>p.date!==v.today),st=t?P_STATUS[t.status]||[t.status,'todo']:null;
- return '<div class="card" id="permitCard"><div class="vh-top"><h2 style="margin:0">② 작업허가서</h2>'+(t?'<span class="pill '+st[1]+'">'+escapeText(st[0])+'</span>':'<span class="pill todo">작업 있는 날 · 미발행</span>')+'</div>'
-  +(t?'<p class="desc">허가번호 '+escapeText(t.no)+' · '+escapeText(t.workName)+' · '+escapeText(t.start)+'~'+escapeText(t.end)+(t.completed?' · <b style="color:var(--ok)">작업완료 기록</b>':'')+'<br>발행했으니 작업을 진행하세요. 작업 중 확인·작업 완료는 아래 버튼에서 기록합니다.</p><button class="button" type="button" style="width:100%" onclick="openPermit(\''+escapeText(v.today)+'\')">진행 기록 (작업 중 확인 · 완료)</button>'
-   :'<p class="desc">작업 전에 필요한 것만 입력하고 <b>[발행]</b>하면 바로 작업할 수 있습니다. 결과는 작업허가서 양식으로 만들어집니다.'+(past.length?' 어제 내용이 미리 채워집니다.':'')+'</p><button class="button" type="button" style="width:100%" onclick="openPermit(\''+escapeText(v.today)+'\')">오늘 작업허가서 작성</button>')
+ return '<div class="card" id="permitCard"><div class="vh-top"><h2 style="margin:0">② 작업허가서</h2><span class="row" style="gap:6px"><button class="button ghost" type="button" id="gdPermit" style="padding:6px 10px;font-size:13px" onclick="startTour(\'permit\')">❔ 사용 가이드</button>'+(t?'<span class="pill '+st[1]+'">'+escapeText(st[0])+'</span>':'<span class="pill todo">작업 있는 날 · 미발행</span>')+'</span></div>'
+  +(t?'<p class="desc">허가번호 '+escapeText(t.no)+' · '+escapeText(t.workName)+' · '+escapeText(t.start)+'~'+escapeText(t.end)+(t.completed?' · <b style="color:var(--ok)">작업완료 기록</b>':'')+'<br>발행했으니 작업을 진행하세요. 작업 중 확인·작업 완료는 아래 버튼에서 기록합니다.</p><button class="button" type="button" id="btnPermit" style="width:100%" onclick="openPermit(\''+escapeText(v.today)+'\')">진행 기록 (작업 중 확인 · 완료)</button>'
+   :'<p class="desc">작업 전에 필요한 것만 입력하고 <b>[발행]</b>하면 바로 작업할 수 있습니다. 결과는 작업허가서 양식으로 만들어집니다.'+(past.length?' 어제 내용이 미리 채워집니다.':'')+'</p><button class="button" type="button" id="btnPermit" style="width:100%" onclick="openPermit(\''+escapeText(v.today)+'\')">오늘 작업허가서 작성</button>')
   +(past.length?'<details class="hist" style="margin-top:12px"><summary>지난 허가서 '+past.length+'건</summary>'+past.map(p=>'<div class="item"><div class="row" style="justify-content:space-between"><span>'+escapeText(p.date)+' · '+escapeText(p.workName)+' <span class="pill '+(P_STATUS[p.status]||['','todo'])[1]+'">'+escapeText((P_STATUS[p.status]||[p.status])[0])+'</span></span><button class="button ghost" type="button" onclick="openPermit(\''+escapeText(p.date)+'\')">보기</button></div></div>').join('')+'</details>':'')+'</div>'}
 /* v5.20 허가서는 공사 화면을 받을 때 오늘 것을 미리 받아 둠 → [작성]·[보기]를 누르면 로딩 없이 바로 열림
  *  (뒤에서 최신 내용을 확인해, 아직 아무것도 입력하지 않았을 때만 바꿔 줌. 로딩 창은 [최종 제출]·[저장] 때만) */
@@ -114,17 +114,17 @@ function pfHtml(){const f=pm.f,req=pfReq(f.types),SL=Object.fromEntries(PERMIT_S
  return '<div class="cwrap">'
   +'<div class="card"><h2>① 오늘 작업</h2>'+field('pf_work','작업명',f.work,{req:1,ph:'예: 천장 철거, 전기 배선'})+field('pf_place','작업 장소',f.place,{req:1,ph:'예: 매장 2층 창고'})
   +'<div class="split">'+field('pf_start','시작 시각',f.start,{req:1,type:'time'})+field('pf_end','종료 시각',f.end,{req:1,type:'time'})+'</div></div>'
-  +'<div class="card"><h2>② 오늘 하는 위험작업</h2><p class="desc">해당하는 것을 모두 누르세요. 없으면 누르지 않고 넘어가면 됩니다.</p><div style="display:flex;flex-wrap:wrap;gap:8px">'
+  +'<div class="card"><h2>② 오늘 하는 위험작업</h2><p class="desc">해당하는 것을 모두 누르세요. 없으면 누르지 않고 넘어가면 됩니다.</p><div id="pfTypes" style="display:flex;flex-wrap:wrap;gap:8px">'
   +PF_TYPES.concat(f.types.has('radiation')?[['radiation','방사선']]:[]).map(([k,l])=>'<button type="button" class="button'+(f.types.has(k)?'':' ghost')+'" aria-pressed="'+f.types.has(k)+'" onclick="pfType(\''+k+'\')">'+(f.types.has(k)?'✔ ':'')+escapeText(l)+'</button>').join('')+'</div>'
   +suppOn.filter(([,,s])=>(s.texts||[]).length).map(([k,l,s])=>'<div class="stage">'+escapeText(l)+' 작업 정보</div>'+(s.texts||[]).map(([t,tl])=>field('pft_'+k+'_'+t,tl.replace(/^차단기기 : /,'차단 위치 · '),f.texts[k+'.'+t],{ph:'선택'})).join('')).join('')+'</div>'
-  +'<div class="card" id="pfChecks"><div class="vh-top"><h2 style="margin:0">③ 안전조치 확인</h2><button class="button ghost" type="button" onclick="pfAllDone()">모두 조치함</button></div><p class="desc">작업 전에 조치했으면 체크하세요. 모두 체크해야 발행됩니다.</p>'
+  +'<div class="card" id="pfChecks"><div class="vh-top"><h2 style="margin:0">③ 안전조치 확인</h2><button class="button ghost" type="button" id="pfAll" onclick="pfAllDone()">모두 조치함</button></div><p class="desc">작업 전에 조치했으면 체크하세요. 모두 체크해야 발행됩니다.</p>'
   +req.map(k=>pfCk('pfs_'+k,'pfsd_'+k,f.done[k],SL[k],'pfreq')).join('')
   +suppOn.map(([k,l,s])=>(s.checks||[]).length?'<div class="stage">'+escapeText(l)+' 작업</div>'+(s.checks||[]).map(([c,cl])=>pfCk('pfc_'+k+'_'+c,'pfcd_'+k+'_'+c,f.sdone[k+'.'+c],cl,'pfreq')).join(''):'').join('')
   +'<details style="margin-top:10px"><summary class="muted">그 밖의 안전조치 추가 (선택)</summary><p class="muted">필요해서 조치한 것만 체크하세요.</p>'+others.map(([k,l])=>pfCk('pfxr_'+k,'pfx_'+k,f.extra.has(k),l)).join('')+'</details></div>'
   +(pm.mode==='new'&&typeof vjob!=='undefined'&&vjob&&vjob.workers?'<div class="card" id="pfCrew"><h2>④ 오늘 작업 인원</h2>'+(vjob.todayCrew?'<p class="muted">오늘 이미 '+vjob.todayCrew.count+'명 저장했습니다. 바뀌었으면 고치세요.</p>':'')+crewPickHtml(vjob,'pcw',pm.crew)+'</div>':'')
   +'<div class="card"><h2>'+(pm.mode==='new'?'⑤':'④')+' 확인자</h2>'+field('pf_sm','현장책임자 (신청·발급·확인)',f.sm,{req:1,ph:'예: 김소장'})+field('pf_wit','입회자 (선택)',f.wit)+field('pf_etc','기타 특별사항 (선택)',f.etc)
   +'<p class="muted">발행하면 작업허가서 양식에 그대로 채워집니다. 위 [결과지 미리보기]로 확인할 수 있습니다.</p></div>'
-  +'<div class="card roomfoot"><button class="button" type="button" style="width:100%" onclick="'+(pm.mode==='edit'?'editPermitNow()':'issuePermitNow()')+'">'+(pm.mode==='edit'?'수정 제출':'발행 (바로 작업 시작)')+'</button></div></div>'}
+  +'<div class="card roomfoot"><button class="button" type="button" id="pfIssue" style="width:100%" onclick="'+(pm.mode==='edit'?'editPermitNow()':'issuePermitNow()')+'">'+(pm.mode==='edit'?'수정 제출':'발행 (바로 작업 시작)')+'</button></div></div>'}
 /* ---- 발행 후 진행 기록 (작업 중 확인 · 가스 측정 · 작업 완료 · 연장) ---- */
 function pgInit(d){d=d||{};return {gas:(d.gas||[]).slice(),during:(d.during||[]).slice(),complete:{...(d.complete||{})},extend:{...(d.extend||{})},gasNote:d.gasNote||''}}
 function pgRead(){const g=pm.g;if(!g||!$('pgc_time'))return;g.complete={time:tv('pgc_time'),site:tv('pgc_site'),witness:tv('pgc_wit'),restore:tv('pgc_rest')};g.extend=tv('pge_from')||tv('pge_to')?{date:tv('pge_date')||pm.permit.date,from:tv('pge_from'),to:tv('pge_to'),by:tv('pge_by')||pgSm()}:{};/* 연장 시각이 없으면 연장 안 함 */if($('pgn_note'))g.gasNote=tv('pgn_note')}
@@ -142,15 +142,15 @@ function pgHtml(){const P=pm.permit,d=P.data||{},g=pm.g,f=pfInit(d),sm=pgSm(),cp
   +(canFix?'<div class="row"><button class="button ghost" type="button" onclick="startEditPermit()">내용 수정</button><button class="linkbtn" type="button" onclick="withdrawPermitNow()">발행 취소 (삭제)</button></div><p class="muted">도급인 승인 전이라 고칠 수 있습니다.</p>':P.status==='APPROVED'?'<p class="muted">도급인이 승인했습니다. 내용은 고칠 수 없고 아래 진행 기록만 적을 수 있습니다.</p>':'')+'</div>'
   +'<div class="card"><h2>작업 중 확인</h2><p class="desc">작업 중 현장을 둘러봤을 때 누르세요. (지금 시각 · '+escapeText(sm)+')</p>'
   +(g.during.map((x,i)=>'<div class="item"><div class="row" style="justify-content:space-between"><span>'+(i+1)+'회 · '+escapeText(x.time)+' · '+escapeText(x.by)+'</span><button class="button ghost" type="button" onclick="pgDrop(\'during\','+i+')" aria-label="'+(i+1)+'회 확인 빼기">✕</button></div></div>').join('')||'')
-  +'<button class="button" type="button" style="width:100%;margin-top:8px" onclick="pgDuring()">＋ 지금 확인 기록</button></div>'
+  +'<button class="button" type="button" id="pgDur" style="width:100%;margin-top:8px" onclick="pgDuring()">＋ 지금 확인 기록</button></div>'
   +(needGas?'<div class="card"><h2>가스농도 측정</h2><p class="desc">화기·밀폐공간 작업은 작업 전과 작업 중에 측정해서 적어 주세요.</p>'
    +(g.gas.map((x,i)=>'<div class="item"><div class="row" style="justify-content:space-between"><span>'+escapeText(x.time)+' · CO '+escapeText(x.co||'-')+' · H2S '+escapeText(x.h2s||'-')+' · LEL '+escapeText(x.lel||'-')+' · O2 '+escapeText(x.o2||'-')+' · '+escapeText(x.by)+'</span><button class="button ghost" type="button" onclick="pgDrop(\'gas\','+i+')" aria-label="측정값 빼기">✕</button></div></div>').join(''))
    +'<div class="split">'+fld('pgn_t','측정 시각',nowHM(),'time')+fld('pgn_co','CO (ppm)')+fld('pgn_h2s','H2S (ppm)')+fld('pgn_lel','LEL (%)')+fld('pgn_o2','O2 (%)')+fld('pgn_by','측정자',sm)+'</div>'
    +'<button class="button ghost" type="button" style="width:100%" onclick="pgGas()">＋ 측정값 추가</button>'+fld('pgn_note','비고 (선택)',g.gasNote)+'</div>':'')
-  +'<div class="card"><div class="vh-top"><h2 style="margin:0">작업 완료</h2><button class="button ghost" type="button" onclick="pgDone()">지금 완료</button></div><p class="desc">작업이 끝나면 [지금 완료]를 누르고 [저장]하세요.</p>'
+  +'<div class="card"><div class="vh-top"><h2 style="margin:0">작업 완료</h2><button class="button ghost" type="button" id="pgDoneBtn" onclick="pgDone()">지금 완료</button></div><p class="desc">작업이 끝나면 [지금 완료]를 누르고 [저장]하세요.</p>'
   +'<div class="split">'+fld('pgc_time','완료 시각',cp.time,'time')+fld('pgc_site','현장담당자',cp.site)+fld('pgc_wit','입회자 (선택)',cp.witness)+fld('pgc_rest','복원(조치) 상태',cp.restore)+'</div></div>'
   +'<details class="card"><summary><b>작업 연장 (정해진 시간보다 늦게 끝날 때)</b></summary><div class="split">'+fld('pge_date','연장일',ex.date||P.date,'date')+fld('pge_from','부터',ex.from,'time')+fld('pge_to','까지',ex.to,'time')+fld('pge_by','발급자 (비우면 현장책임자)',ex.by)+'</div></details>'
-  +'<div class="card roomfoot"><button class="button" type="button" style="width:100%" onclick="savePermitProgress()">저장</button></div></div>'}
+  +'<div class="card roomfoot"><button class="button" type="button" id="pgSave" style="width:100%" onclick="savePermitProgress()">저장</button></div></div>'}
 /** 종이 양식 미리보기: 입력 중인 내용으로 양식을 그림 (읽기 전용) */
 function pfPreviewHtml(){const keep={mode:pm.mode,permit:pm.permit};let data=pm.permit.data||{};
  if(pm.f&&(pm.mode==='new'||pm.mode==='edit')){pfRead();data=pfBuild()}else if(pm.g){pgRead();data={...data,...pm.g}}
@@ -163,7 +163,7 @@ function showSheet(){const P=pm.permit,M=pm.mode;
  return showPaper()}
 function showSimple(){const P=pm.permit,M=pm.mode,st=P_STATUS[P.status]||[P.status,'todo'];let o=$('psheet');if(!o){o=document.createElement('div');o.id='psheet';o.setAttribute('role','dialog');o.setAttribute('aria-modal','true');o.setAttribute('aria-label','안전작업허가서');document.body.appendChild(o)}
  const bar='<div class="pbar"><button class="button ghost" type="button" onclick="'+(pm.paper?'pfPaper(false)':M==='edit'?'cancelEditPermit()':'closePermit()')+'">'+(pm.paper?'← 입력 화면':M==='edit'?'수정 취소':'✕ 닫기')+'</button><div class="pbt"><b>작업허가서</b> <span class="pill '+st[1]+'">'+escapeText(st[0])+'</span></div>'
-  +(pm.paper?'<span style="width:64px"></span>':'<button class="button ghost" type="button" onclick="pfPaper(true)">결과지 미리보기</button>')+'</div>';
+  +(pm.paper?'<span style="width:64px"></span>':'<button class="button ghost" type="button" id="pfPrev" onclick="pfPaper(true)">결과지 미리보기</button>')+'</div>';
  const help=pm.paper?'<div class="phelp">입력한 내용이 들어간 작업허가서 양식입니다. (보기 전용 · 고치려면 [← 입력 화면])</div>'
   :M==='new'?'<div class="phelp">'+(pm.fromLast?escapeText(pm.fromLast)+' 허가서 내용으로 채웠습니다. <b>안전조치 체크만 다시 하고</b> 발행하세요.':'필요한 것만 위에서부터 채우고 <b>[발행]</b>을 누르면 바로 작업할 수 있습니다.')+'</div>'
   :M==='edit'?'<div class="phelp">내용을 고친 뒤 <b>[수정 제출]</b>을 누르세요. 허가번호는 그대로입니다.</div>':'';
