@@ -271,3 +271,12 @@ html,body{overscroll-behavior-y:none}
 .pickbg{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:60;display:none;align-items:flex-end;justify-content:center}
 .picksheet{background:#fff;width:100%;max-width:520px;border-radius:16px 16px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));max-height:80vh;overflow:auto}
 @media (prefers-reduced-motion:reduce){.vgo{transition:none}.vgo:active{transform:none}}
+/* ===== F1.8g 도급인 메인 · 현장 확인 · 이수증 보기 ===== */
+.vgo{position:relative}.vgo-n{position:absolute;top:6px;right:10px;min-width:40px;height:40px;padding:0 8px;border-radius:20px;background:var(--accent);color:#fff;font-size:17px;font-weight:700;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 3px #fff}
+.ckdone{margin-top:12px;background:rgba(17,24,39,.86);color:#fff;border-radius:12px;padding:22px 12px;text-align:center;font-size:20px;font-weight:800;letter-spacing:.5px}
+.certbg{position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:62;display:flex;flex-direction:column}
+.certtop{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;color:#fff;font-size:15px}
+.certx{width:44px;height:44px;border:0;border-radius:50%;background:rgba(255,255,255,.16);color:#fff;font-size:20px;cursor:pointer}
+.certbody{flex:1;display:flex;align-items:center;justify-content:center;padding:0 12px 16px;overflow:auto}
+.certbody img{max-width:100%;max-height:100%;object-fit:contain;border-radius:6px;background:#fff}
+.certpdf{background:#fff;border-radius:14px;padding:22px;text-align:center;max-width:320px;width:100%}

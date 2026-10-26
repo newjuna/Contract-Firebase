@@ -54,26 +54,34 @@ function meetAlertHtml(d){return (d.meets||[]).map(m=>'<button class="vmeet" typ
 /** 큰 동그라미 → 오늘 현장 업무 (공사가 2개 이상이면 고르기) */
 function dayStartHtml(act){return act.length?'<div class="vgo-wrap"><button class="vgo" type="button" onclick="dayStart()"><span class="vgo-ic" aria-hidden="true">▶</span><b>금일 작업<br>수행하기</b></button><div class="muted">신규자 등록 → 허가서 → 순회점검</div></div>':''}
 function dayStart(){const act=((vjobs&&vjobs.jobs)||[]).filter(j=>j.status!=='ENDED');if(act.length===1){vgo('today',act[0].id);return}
- let el=$('dsDlg');if(!el){el=document.createElement('div');el.id='dsDlg';el.className='pickbg';el.setAttribute('role','dialog');el.setAttribute('aria-modal','true');el.setAttribute('aria-labelledby','dsTitle');el.onclick=e=>{if(e.target===el)closeDayStart()};document.body.appendChild(el)}
- el.innerHTML='<div class="picksheet"><h2 id="dsTitle" style="margin:0 0 8px">어느 공사인가요?</h2>'+act.map(j=>'<button class="jobitem" type="button" onclick="closeDayStart();vgo(\'today\',\''+escapeText(j.id)+'\')"><div><b>'+escapeText(j.title)+'</b><div class="muted">'+escapeText(j.storeName)+'</div></div><span aria-hidden="true">›</span></button>').join('')+'<button class="button ghost" type="button" style="width:100%;margin-top:8px" onclick="closeDayStart()">닫기</button></div>';el.style.display='flex';setTimeout(()=>el.querySelector('.jobitem')?.focus(),30)}
+ jobPick('어느 공사인가요?',act.map(j=>['vgo(\'today\',\''+escapeText(j.id)+'\')',escapeText(j.title),escapeText(j.storeName)]))}
+/** F1.8g 현장 고르기 창 (업체·도급인 공용) · items = [[누르면 실행할 코드, 제목 HTML, 설명 HTML]] */
+function jobPick(title,items){let el=$('dsDlg');if(!el){el=document.createElement('div');el.id='dsDlg';el.className='pickbg';el.setAttribute('role','dialog');el.setAttribute('aria-modal','true');el.setAttribute('aria-labelledby','dsTitle');el.onclick=e=>{if(e.target===el)closeDayStart()};el.onkeydown=e=>{if(e.key==='Escape')closeDayStart()};document.body.appendChild(el)}
+ el.innerHTML='<div class="picksheet"><h2 id="dsTitle" style="margin:0 0 8px">'+escapeText(title)+'</h2>'+items.map(([fn,t,s])=>'<button class="jobitem" type="button" onclick="closeDayStart();'+fn+'"><div><b>'+t+'</b><div class="muted">'+s+'</div></div><span aria-hidden="true">›</span></button>').join('')+'<button class="button ghost" type="button" style="width:100%;margin-top:8px" onclick="closeDayStart()">닫기</button></div>';el.style.display='flex';setTimeout(()=>el.querySelector('.jobitem')?.focus(),30)}
 function closeDayStart(){const el=$('dsDlg');if(el)el.style.display='none'}
 /* 지적사항 조치: 기간(직접 · 1주 · 1달 · 전체) · 미조치 먼저 · 5줄씩 옆으로 넘김 */
 let fx={p:'all',from:'',to:''};const FX_PER=5;
 const fxShift=(t,n)=>new Date(Date.parse(t+'T00:00:00Z')-n*86400000).toISOString().slice(0,10);
-function fxList(){const d=vjobs||{},multi=(d.jobs||[]).length>1,all=[];(d.jobs||[]).forEach(j=>(j.findings||[]).forEach(f=>all.push(Object.assign({jobId:j.id,job:j.title},f))));
- const L=all.filter(f=>(!fx.from||f.foundDate>=fx.from)&&(!fx.to||f.foundDate<=fx.to)).sort((a,b)=>((a.status==='DONE')-(b.status==='DONE'))||(a.foundDate<b.foundDate?1:a.foundDate>b.foundDate?-1:0));return {all,L,multi}}
-function fxRow(f,multi){const open=f.status!=='DONE';return '<div class="fxrow'+(open?'':' done')+'"><div class="fxt"><div><b>'+mdw(f.foundDate)+'</b> · '+escapeText(f.memo||f.item)+'</div>'+(multi?'<div class="muted">'+escapeText(f.job)+'</div>':'')+'</div>'
- +(open?'<button class="button" type="button" onclick="dashFix(\''+escapeText(f.jobId)+'\',\''+escapeText(f.id)+'\')" aria-label="'+escapeText(mdw(f.foundDate)+' '+(f.memo||f.item))+' 조치하기">조치하기</button>':'<span class="fxdone">✔ 조치 완료</span>')+'</div>'}
-function fixBodyHtml(){const {L,multi}=fxList(),pages=[];for(let i=0;i<L.length;i+=FX_PER)pages.push(L.slice(i,i+FX_PER));
+/* F1.8g 업체 메인 · 도급인 메인 공용 (도급인 = 전체 공사 · 줄마다 업체명 · 조치 완료는 [보기]) */
+const fxStaff=()=>typeof isStaffUI==='function'&&isStaffUI();
+const fxSrc=()=>fxStaff()?{today:kstToday(),jobs:(jobData&&jobData.jobs)||[]}:{today:(vjobs&&vjobs.today)||'',jobs:(vjobs&&vjobs.jobs)||[]};
+function fxList(){const d=fxSrc(),st=fxStaff(),multi=st||d.jobs.length>1,all=[];d.jobs.forEach(j=>(j.findings||[]).forEach(f=>all.push(Object.assign({jobId:j.id,job:j.title,store:j.storeName},f))));
+ const L=all.filter(f=>(!fx.from||f.foundDate>=fx.from)&&(!fx.to||f.foundDate<=fx.to)).sort((a,b)=>((a.status==='DONE')-(b.status==='DONE'))||(a.foundDate<b.foundDate?1:a.foundDate>b.foundDate?-1:0));return {all,L,multi,st,today:d.today}}
+function fxRow(f,multi,st,t){const open=f.status!=='DONE',age=open&&t?dayDiff(f.foundDate,t):0,lab=escapeText(mdw(f.foundDate)+' '+(f.memo||f.item));
+ const sub=[st?f.company+(f.store?' · '+f.store:''):multi?f.job:''].filter(Boolean).map(escapeText).join('');
+ return '<div class="fxrow'+(open?'':' done')+'"><div class="fxt"><div><b>'+mdw(f.foundDate)+'</b> · '+escapeText(f.memo||f.item)+'</div>'+(sub||age>=3?'<div class="muted">'+sub+(age>=3?(sub?' · ':'')+'<span class="req">'+age+'일째 미조치</span>':'')+'</div>':'')+'</div>'
+  +(open?'<button class="button" type="button" onclick="'+(st?'dashFixS':'dashFix')+'(\''+escapeText(f.jobId)+'\',\''+escapeText(f.id)+'\')" aria-label="'+lab+' 조치하기">조치하기</button>'
+   :st&&f.inspId?'<button class="button ghost" type="button" onclick="dashViewS(\''+escapeText(f.jobId)+'\',\''+escapeText(f.inspId)+'\')" aria-label="'+lab+' 조치 전·후 보기">✔ 보기</button>':'<span class="fxdone">✔ 조치 완료</span>')+'</div>'}
+function fixBodyHtml(){const {L,multi,st,today}=fxList(),pages=[];for(let i=0;i<L.length;i+=FX_PER)pages.push(L.slice(i,i+FX_PER));
  if(!pages.length)return '<p class="muted" style="margin:12px 0 4px">이 기간에 지적사항이 없습니다.</p>';
- return '<div class="fxpages" id="fxPages" onscroll="fxScroll()" tabindex="0" aria-label="지적사항 목록 (옆으로 넘기기)">'+pages.map((p,i)=>'<div class="fxpage" aria-label="'+(i+1)+' / '+pages.length+' 쪽">'+p.map(f=>fxRow(f,multi)).join('')+'</div>').join('')+'</div>'
+ return '<div class="fxpages" id="fxPages" onscroll="fxScroll()" tabindex="0" aria-label="지적사항 목록 (옆으로 넘기기)">'+pages.map((p,i)=>'<div class="fxpage" aria-label="'+(i+1)+' / '+pages.length+' 쪽">'+p.map(f=>fxRow(f,multi,st,today)).join('')+'</div>').join('')+'</div>'
   +(pages.length>1?'<div class="fxnav"><button type="button" onclick="fxPage(-1)" aria-label="이전 쪽">‹</button><span id="fxNo" aria-live="polite">1 / '+pages.length+'</span><button type="button" onclick="fxPage(1)" aria-label="다음 쪽">›</button></div>':'')}
-function fixCardHtml(){const {all}=fxList();if(!all.length)return '';const open=all.filter(f=>f.status!=='DONE').length,chip=(k,l)=>'<button type="button" class="fxchip'+(fx.p===k?' on':'')+'" aria-pressed="'+(fx.p===k)+'" onclick="fxPreset(\''+k+'\')">'+l+'</button>';
- return '<div class="card" id="fxCard"><div class="vh-top" style="align-items:center"><h2 style="margin:0">지적사항 조치</h2>'+(open?'<span class="pill bad">미조치 '+open+'</span>':'<span class="pill ok">미조치 없음</span>')+'</div>'
+function fixCardHtml(){const {all,st}=fxList();if(!all.length)return '';const open=all.filter(f=>f.status!=='DONE').length,chip=(k,l)=>'<button type="button" class="fxchip'+(fx.p===k?' on':'')+'" aria-pressed="'+(fx.p===k)+'" onclick="fxPreset(\''+k+'\')">'+l+'</button>';
+ return '<div class="card" id="fxCard"><div class="vh-top" style="align-items:center"><h2 style="margin:0">'+(st?'지적사항 · 시정조치':'지적사항 조치')+'</h2>'+(open?'<span class="pill bad">미조치 '+open+'</span>':'<span class="pill ok">미조치 없음</span>')+'</div>'
   +'<div class="fxbar"><input type="date" id="f_fxFrom" value="'+escapeText(fx.from)+'" aria-label="시작일" onchange="fxDate()"><span aria-hidden="true">~</span><input type="date" id="f_fxTo" value="'+escapeText(fx.to)+'" aria-label="끝일" onchange="fxDate()">'+chip('w','1주')+chip('m','1달')+chip('all','전체')+'</div>'
   +'<div id="fxBody">'+fixBodyHtml()+'</div></div>'}
 function fxRedraw(){const c=$('fxCard');if(c)c.outerHTML=fixCardHtml()}
-function fxPreset(k){const t=(vjobs&&vjobs.today)||'';fx={p:k,from:k==='w'?fxShift(t,6):k==='m'?fxShift(t,29):'',to:k==='all'?'':t};fxRedraw()}
+function fxPreset(k){const t=fxSrc().today;fx={p:k,from:k==='w'?fxShift(t,6):k==='m'?fxShift(t,29):'',to:k==='all'?'':t};fxRedraw()}
 function fxDate(){fx={p:'',from:value('fxFrom'),to:value('fxTo')};if(fx.from&&fx.to&&fx.from>fx.to)fx.to=fx.from;fxRedraw()}
 function fxScroll(){const b=$('fxPages'),n=$('fxNo');if(!b||!n)return;const i=Math.round(b.scrollLeft/Math.max(1,b.clientWidth));n.textContent=(i+1)+' / '+b.children.length}
 function fxPage(d){const b=$('fxPages');if(b)b.scrollBy({left:d*b.clientWidth,behavior:'smooth'})}
@@ -82,6 +90,12 @@ async function dashFix(jobId,fid){let v=cacheGet('vendorJob',[jobId]);
  if(!v||!((v.insp&&v.insp.open)||[]).some(f=>f.id===fid)){try{v=await call('vendorJob',jobId)}catch(e){showErr('조치 화면을 열지 못했습니다',e);return}}
  if(!((v.insp&&v.insp.open)||[]).some(f=>f.id===fid)){vjobsAt=0;msg('이미 조치된 지적사항입니다.');loadMyJobs();return}
  vSel=jobId;vjob=v;openResolve(fid,'vendor','dash');window.scrollTo(0,0)}
+/** F1.8g 도급인 [조치하기] → 같은 조치 등록 화면 (조치 내용 · 조치일 · 조치 후 사진) → 끝나면 메인으로 */
+async function dashFixS(jobId,fid){try{inspJob=await call('inspList',jobId)}catch(e){return}
+ if(!(inspJob.findings||[]).some(f=>f.id===fid&&f.status!=='DONE')){jobAt=0;msg('이미 조치된 지적사항입니다.');sgo('dash');return}
+ jobsMode='insp';openResolve(fid,'staff','dash');window.scrollTo(0,0)}
+/** 도급인 [✔ 보기] → 그날 순회점검일지 (지적 내용 · 조치 전·후 사진) */
+async function dashViewS(jobId,inspId){try{inspJob=await call('inspList',jobId)}catch(e){return}jobsMode='insp';openInspSheet(inspId,'staff')}
 function renderDash(){const el=$('execArea');if(!el||!vjobs)return;
  // v5.18 공사 화면 미리 받기는 5분에 한 번만 (예전: 대시보드를 그릴 때마다 3번씩 → 다음 버튼과 겹쳐 느려짐)
  /* v4: 대시보드가 상세자료 3건을 자동으로 요청하던 동작 제거. 상세는 공사 선택 시에만 요청. */clearTimeout(window.__pf);vjob=null;clearInterval(wkTimer);const d=vjobs,t=d.today,act=d.jobs.filter(j=>j.status!=='ENDED'),ended=d.jobs.filter(j=>j.status==='ENDED');

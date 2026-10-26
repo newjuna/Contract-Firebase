@@ -71,7 +71,7 @@ async function submitInspNow(){ins.name=value('inName');const miss=[];if(!ins.tb
 let rs=null;
 /* F1.8f from='dash': 메인 화면 [조치하기]에서 열었으면 돌아가기·등록 후 메인으로 */
 function openResolve(id,who,from){const list=who==='staff'?inspJob.findings:vjob.insp.open,f=list.find(x=>x.id===id);if(!f)return;rs={f,who,photos:[],from:from||''};renderResolve()}
-const rsBack=()=>rs&&rs.from==='dash'?'rs=null;vgo(\'dash\')':rs&&rs.who==='staff'?'renderInspList()':'renderVJob()';
+const rsBack=()=>rs&&rs.from==='dash'?(rs.who==='staff'?'rs=null;sgo(\'dash\')':'rs=null;vgo(\'dash\')'):rs&&rs.who==='staff'?'renderInspList()':'renderVJob()';
 function renderResolve(){const f=rs.f,staff=rs.who==='staff',t=new Date(Date.now()+9*3600e3).toISOString().slice(0,10),area=staff?$('jobs'):$('execArea');
  area.innerHTML='<div class="card"><button class="button ghost" type="button" onclick="'+rsBack()+'">← 돌아가기</button><h2 style="margin-top:12px">지적사항 조치 등록</h2><table class="rtable"><tr><th>항목</th><td>'+f.no+'. '+escapeText(f.item)+'</td></tr><tr><th>업체</th><td>'+escapeText(f.company)+'</td></tr><tr><th>지적일</th><td>'+escapeText(f.foundDate)+'</td></tr><tr><th>지적 내용</th><td>'+escapeText(f.memo)+'</td></tr><tr><th>조치 전</th><td>'+(thumbs(f.before,'')||'<span class="muted">사진 없음</span>')+'</td></tr></table></div>'
   +'<div class="card"><div class="field"><label for="f_rsMemo">조치 내용 <span class="req">*</span></label><input id="f_rsMemo" placeholder="예) 통로 자재 정리 완료, 적치구역 지정"></div>'
@@ -84,7 +84,9 @@ async function addRsPhoto(){const memo=value('rsMemo'),date=value('rsDate'),name
 async function resolveNow(){const d={memo:value('rsMemo'),date:value('rsDate'),name:value('rsName'),photos:rs.photos},miss=[];if(!d.memo)miss.push('f_rsMemo');if(!d.date)miss.push('f_rsDate');if(rs.who!=='staff'&&!d.name)miss.push('f_rsName');if(!d.photos.length)miss.push('rsPh');
  if(miss.length){inspFlag(miss,'빨간 칸을 채워 주세요 (조치 후 사진 필수)');return}if(!await askOk('조치 완료 등록',d.date+' 조치 완료로 등록할까요?','등록'))return;
  const fid=rs.f.id,dash=rs.from==='dash';
- try{if(rs.who==='staff'){inspJob=await call('resolveFinding',fid,d);renderInspList()}
+ try{if(rs.who==='staff'){inspJob=await call('resolveFinding',fid,d);rs=null;
+   if(dash){/* F1.8g 도급인 메인에서 연 조치 → 메인 목록 바로 '조치 완료' */((jobData&&jobData.jobs)||[]).forEach(j=>{(j.findings||[]).forEach(f=>{if(f.id===fid){f.status='DONE';f.actionDate=d.date}});if(j.findings)j.findOpen=j.findings.filter(f=>f.status!=='DONE').length});jobAt=0;sgo('dash')}
+   else renderInspList()}
   else{vjob=await call('resolveFinding',fid,d);rs=null;
    if(dash){/* F1.8f 메인 목록도 바로 '조치 완료'로 바꾸고 메인으로 */((vjobs&&vjobs.jobs)||[]).forEach(j=>(j.findings||[]).forEach(f=>{if(f.id===fid){f.status='DONE';f.actionDate=d.date}}));((vjobs&&vjobs.jobs)||[]).forEach(j=>{if(j.stats&&j.findings)j.stats.openFindings=j.findings.filter(f=>f.status!=='DONE').length});vjobsAt=0;vgo('dash')}
    else{renderVJob();$('inspCard')?.scrollIntoView({block:'start'})}}
