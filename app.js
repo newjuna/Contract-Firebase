@@ -68,7 +68,7 @@ function text(id,label,value='',disabled=false){return `<div class="field"><labe
 function value(id){return $('f_'+id)?.value?.trim()||''}
 function switchTab(which){tab=which;toggleMenu(false);stopScan();if($(which+'Tab'))$('pageTitle').textContent=$(which+'Tab').textContent;clearInterval(roomTimer);clearInterval(wkTimer);for(const n of ['my','admin','review','tpl','staff','jobs','notice','vendors']){$(n).classList.toggle('hidden',n!==which);$(n+'Tab').classList.toggle('active',n===which)}if(which==='admin')loadAdmin();if(which==='review')loadReview();if(which==='tpl')loadTemplates();if(which==='staff')loadStaff();if(which==='jobs')loadJobs();if(which==='notice')loadNotices();if(which==='vendors')loadVendors();}
 // ★ 화면 버전: 여기 한 줄만 고침 (GitHub만 올리면 로그인 화면·앱 화면·메뉴에 모두 반영, Code.gs 수정 불필요)
-const UI_VERSION='26.10.24 F1.7e';
+const UI_VERSION='26.10.24 F1.7f';
 function showVer(){document.querySelectorAll('.verTxt').forEach(x=>x.textContent=UI_VERSION)}
 /** v4.1 ⚙ 마스터 설정: 직원 관리로 바로 이동 (마스터 계정만 보임) */
 function openMaster(){if(!state||!state.isMaster)return;sgo('staff')}
@@ -100,7 +100,13 @@ async function checkReview(){try{const s=await callQuiet('myStatus');if(s&&s.sub
 function showApprovedOnce(b){const key='approvedSeen:'+b.id;let seen=false;try{seen=localStorage.getItem(key)==='1'}catch(e){}if(seen||window.__approvedShown)return;window.__approvedShown=true;popup('계약 전 검토가 완료되었습니다','본사 담당자 검토를 통과했습니다.\n첫 화면에서 공사 일정과 오늘 할 일을 확인하고, ☰ 메뉴에서 작업자 등록·작업허가서·순회점검을 진행해 주세요.','시작하기',()=>{try{localStorage.setItem(key,'1')}catch(e){}window.scrollTo(0,0)})}
 /* ---------- 승인 대기 자동 확인 + 안내 팝업 ---------- */
 let pollTimer=null;
-function popup(title,body,btn,onOk,onLater){$('modalTitle').textContent=title;$('modalBody').textContent=body;$('modalBtn').textContent=btn;$('modal').style.display='flex';const c=$('modalCancel');c.hidden=!onLater;$('modalBtn').onclick=()=>{$('modal').style.display='none';onOk&&onOk()};c.onclick=()=>{$('modal').style.display='none';onLater&&onLater()};$('modalBtn').focus()}
+function popup(title,body,btn,onOk,onLater,laterLabel){$('modalTitle').textContent=title;$('modalBody').textContent=body;$('modalBtn').textContent=btn;$('modal').style.zIndex='65';/* F1.7f 작성 화면(계획서·허가서, 40) 위에 뜨게 */$('modal').style.display='flex';const c=$('modalCancel');c.hidden=!onLater;c.textContent=laterLabel||'나중에';$('modalBtn').onclick=()=>{$('modal').style.display='none';onOk&&onOk()};c.onclick=()=>{$('modal').style.display='none';onLater&&onLater()};$('modalBtn').focus()}
+/* F1.7f 확인·오류 창을 브라우저 confirm/alert 대신 화면 안 창으로
+ *  (일부 휴대폰·앱 안 브라우저는 confirm/alert를 말없이 막아서 "눌러도 아무 반응 없음"이 됨) */
+function askOk(title,body,okLabel){return new Promise(res=>popup(title,body,okLabel||'확인',()=>res(true),()=>res(false),'취소'))}
+/** 응답만 사라졌을 수 있는 오류 (서버는 처리했을 수 있음 → 다시 받아서 확인) */
+const LOST_RE=/응답을 받지 못했|응답이 늦습니다|연결하지 못했|응답을 읽을 수 없/;
+function showErr(title,e){popup(title,(e&&e.message)||String(e||'처리에 실패했습니다.'),'확인')}
 /* ---------- v4.3 알림: 메뉴 옆 숫자 + 새 소식 팝업 (1분마다 확인) ---------- */
 let badgeTimer=null;
 function setBadge(el,n){if(!el)return;if(n>0)el.dataset.n=n>99?'99+':String(n);else delete el.dataset.n}
@@ -592,7 +598,9 @@ async function saveStaffForm(e,row){e.preventDefault();const d={row,name:value('
  *  → 종류가 비었거나 이름이 사진이면 일단 사진으로 열어 보고, 열리면 JPEG로 다시 만듦 (HEIC·WEBP도 JPEG로) */
 function shrinkImage(f,o){o=o||{};const MX=o.max||2000,Q=o.q||0.82,t=String(f.type||'').toLowerCase(),okType=/^image\/(jpeg|png)$/.test(t);
  const maybe=!t||t==='application/octet-stream'||/^image\//.test(t)||/\.(jpe?g|png|heic|heif|webp)$/i.test(f.name||'');
- return new Promise(res=>{if(!maybe||(!o.max&&okType&&f.size<=1.5*1024*1024))return res(f);const url=URL.createObjectURL(f),img=new Image();
+ return new Promise(res0=>{if(!maybe||(!o.max&&okType&&f.size<=1.5*1024*1024))return res0(f);const url=URL.createObjectURL(f),img=new Image();
+  /* F1.7f 일부 휴대폰·앱 안 브라우저는 사진을 열다가 아무 응답이 없음 → 15초 지나면 원본 그대로 (예전: 끝없이 멈춤) */
+  let done=false;const res=x=>{if(done)return;done=true;clearTimeout(tm);res0(x)},tm=setTimeout(()=>{try{URL.revokeObjectURL(url)}catch(e){}res(f)},15000);
   img.onload=()=>{const s=Math.min(1,MX/Math.max(img.width,img.height)),cv=document.createElement('canvas');cv.width=Math.round(img.width*s);cv.height=Math.round(img.height*s);cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);URL.revokeObjectURL(url);
    const base=(String(f.name||'').replace(/\.[^.]+$/,'')||'photo_'+Date.now());
    cv.toBlob(b=>res(b&&(!okType||b.size<f.size)?new File([b],base+'.jpg',{type:'image/jpeg'}):f),'image/jpeg',Q)};
@@ -683,12 +691,12 @@ async function onGoogleLogin(r){if(!r||!r.credential)return;const st=$('loginSta
  bootUI(wk?['구글 계정 확인','서버 로그인 · 등록 화면 준비']:mt?['구글 계정 확인','서버 로그인 · 참석 화면 준비','화면 열기']:['구글 계정 확인','서버 로그인 · 내 정보 불러오기','공사 목록 준비','화면 열기']);
  bootSet(0,'done');bootSet(1,'run');bootSkip(()=>location.reload(),'처음부터 다시');
  let d;try{d=await FB.login(wk?'':loginMode(),wk||mt?LINK_REVIEW:'1')}catch(e){bootEnd();st.textContent='로그인 실패: '+e.message;return}
- SESSION=d.key;sessSave(SESSION);setCUser(String(d.email||'').toLowerCase()+'|'+(wk?'':loginMode()));
+ SESSION=d.key;sessSave(SESSION);if(!wk)setCUser(String(d.email||'').toLowerCase()+'|'+loginMode());  // F1.7f 작업자 QR은 이 기기 저장 화면을 지우지 않음
  bootSet(1,'done');showApp();
  if(wk){bootEnd();if(d.wk||d.bootError)workerBoot(d);else bootApp();return}
  if(!d.portal){bootEnd();bootApp();return}  // 서버(Code.gs)가 아직 예전 버전이면 예전 방식
- try{await bootRest(d.portal,mt?-1:2)}catch(e){bootEnd();msg(e.message||'화면을 열지 못했습니다.');return}
- if(mt){if(d.meet){showCheckIn(d.meet);switchTab('my');$('my').scrollIntoView()}else meetCheckIn();return}
+ try{await bootRest(d.portal,mt?-1:2)}catch(e){bootEnd();/* F1.7f 빈 화면 대신 안내 + 다시 시도 */$('my').innerHTML='<div class="card"><h2>화면을 열지 못했습니다</h2><p class="desc">'+escapeText(e.message||'')+'</p><button class="button" type="button" onclick="location.reload()">다시 시도</button></div>';if(mt){try{meetCheckIn()}catch(x){}}return}
+ if(mt){try{if(d.meet)showCheckIn(d.meet);else await meetCheckIn()}catch(e){$('my').innerHTML='<div class="card"><h2>참석 화면을 열지 못했습니다</h2><p class="desc">'+escapeText(e.message||'')+'</p><button class="button" type="button" onclick="meetCheckIn()">다시 시도</button></div>'}switchTab('my');$('my').scrollIntoView();return}
  if(LINK_REVIEW&&(['ADMIN','SAFETY'].includes(state.role)||state.isApprover))switchTab('admin')}
 /** 로그아웃: 저장된 로그인 정보 지우고 처음 화면으로 (주소창의 링크값도 정리) */
 const fbOut=()=>Promise.resolve(window.FB&&FB.ok?FB.signOut():0).catch(()=>{});
@@ -748,8 +756,14 @@ function initLogin(){
  loginHelp();inAppBox();
  // 버전 표시: 위쪽 UI_VERSION
  $('loginVer').textContent=UI_VERSION;
+ /* F1.7f 휴대폰이 예전 파일을 기억하고 있어 화면 파일 버전이 섞인 경우 → 한 번만 자동 새로 고침, 그래도 다르면 안내 */
+ if(window.FB&&FB.version&&FB.version!==UI_VERSION){$('loginVer').textContent=UI_VERSION+' / '+FB.version+' (버전이 섞여 있음)';
+  let tried=false;try{tried=sessionStorage.getItem('verReload')===UI_VERSION+FB.version;sessionStorage.setItem('verReload',UI_VERSION+FB.version)}catch(e){tried=true}
+  if(!tried){location.reload();return}}
  let note='';try{note=sessionStorage.getItem('loginNote')||'';sessionStorage.removeItem('loginNote')}catch(e){}
  if(!EXEC_OK){showLogin('config.js의 Firebase 설정값 또는 Firebase 연결을 불러오지 못했습니다. 새로 고침해 주세요.');return}
+ /* F1.7f 로그인 확인이 끝나지 않으면 빈 화면으로 멈춰 있던 문제 → 15초 지나도 아무 화면이 없으면 로그인 화면 + 안내 */
+ setTimeout(()=>{if($('loginView').hidden&&$('appView').hidden&&!BOOT){sessClear();SESSION='';showLogin('로그인 확인이 늦어지고 있습니다. 아래 버튼으로 다시 로그인해 주세요.\n계속 안 되면 크롬·사파리 앱으로 이 주소를 열어 주세요.')}},15000);
  /* F1.0 구글 로그인 화면 이동 방식으로 돌아온 경우 → 이어서 로그인 처리 */
  FB.redirectResult().then(r=>{if(r===true){showLogin('');onGoogleLogin({credential:'firebase'});return}
   if(typeof r==='string')note=r;
