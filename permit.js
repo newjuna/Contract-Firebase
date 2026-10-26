@@ -88,7 +88,7 @@ function pfInit(d){d=d||{};const s=d.safety||{},u=d.supp||{},types=new Set();
  PERMIT_SUPP.forEach(([k,,x])=>{(x.checks||[]).forEach(([c])=>sdone[k+'.'+c]=!!(((u[k]||{}).checks||{})[c]||{}).done);(x.texts||[]).forEach(([t])=>texts[k+'.'+t]=(u[k]||{})[t]||'')});
  return {work:d.workName||'',place:d.place||'',start:pv(d.period,'start','08:00'),end:pv(d.period,'end','17:00'),sm:pv(d.applicant,'name')||pv(d.confirm,'manager')||pv(d.issuer,'name'),wit:pv(d.confirm,'witness'),etc:d.etc||'',types,extra,done,sdone,texts}}
 /** 화면 → 간편 입력 상태 (다시 그리기 전에 입력값을 잃지 않게) */
-function pfRead(){const f=pm.f;if(!f||!$('pf_work'))return;const cw=typeof vjob!=='undefined'?crewPicked(vjob,'pcw'):null;if(cw)pm.crew=cw;f.work=tv('pf_work');f.place=tv('pf_place');f.start=tv('pf_start');f.end=tv('pf_end');f.sm=tv('pf_sm');f.wit=tv('pf_wit');f.etc=tv('pf_etc');
+function pfRead(){const f=pm.f;if(!f||!$('pf_work'))return;f.work=tv('pf_work');f.place=tv('pf_place');f.start=tv('pf_start');f.end=tv('pf_end');f.sm=tv('pf_sm');f.wit=tv('pf_wit');f.etc=tv('pf_etc');
  PERMIT_SAFETY.forEach(([k])=>{if($('pfsd_'+k))f.done[k]=ck('pfsd_'+k);if($('pfx_'+k)){if(ck('pfx_'+k))f.extra.add(k);else f.extra.delete(k)}});
  PERMIT_SUPP.forEach(([k,,s])=>{(s.checks||[]).forEach(([c])=>{if($('pfcd_'+k+'_'+c))f.sdone[k+'.'+c]=ck('pfcd_'+k+'_'+c)});(s.texts||[]).forEach(([t])=>{if($('pft_'+k+'_'+t))f.texts[k+'.'+t]=tv('pft_'+k+'_'+t)})})}
 /** 간편 입력 → 허가서 내용 (종이 양식과 같은 모양 · 첨부서류·위험성평가 등은 이전 값 또는 기본값) */
@@ -121,8 +121,7 @@ function pfHtml(){const f=pm.f,req=pfReq(f.types),SL=Object.fromEntries(PERMIT_S
   +req.map(k=>pfCk('pfs_'+k,'pfsd_'+k,f.done[k],SL[k],'pfreq')).join('')
   +suppOn.map(([k,l,s])=>(s.checks||[]).length?'<div class="stage">'+escapeText(l)+' 작업</div>'+(s.checks||[]).map(([c,cl])=>pfCk('pfc_'+k+'_'+c,'pfcd_'+k+'_'+c,f.sdone[k+'.'+c],cl,'pfreq')).join(''):'').join('')
   +'<details style="margin-top:10px"><summary class="muted">그 밖의 안전조치 추가 (선택)</summary><p class="muted">필요해서 조치한 것만 체크하세요.</p>'+others.map(([k,l])=>pfCk('pfxr_'+k,'pfx_'+k,f.extra.has(k),l)).join('')+'</details></div>'
-  +(pm.mode==='new'&&typeof vjob!=='undefined'&&vjob&&vjob.workers?'<div class="card" id="pfCrew"><h2>④ 오늘 작업 인원</h2>'+(vjob.todayCrew?'<p class="muted">오늘 이미 '+vjob.todayCrew.count+'명 저장했습니다. 바뀌었으면 고치세요.</p>':'')+crewPickHtml(vjob,'pcw',pm.crew)+'</div>':'')
-  +'<div class="card"><h2>'+(pm.mode==='new'?'⑤':'④')+' 확인자</h2>'+field('pf_sm','현장책임자 (신청·발급·확인)',f.sm,{req:1,ph:'예: 김소장'})+field('pf_wit','입회자 (선택)',f.wit)+field('pf_etc','기타 특별사항 (선택)',f.etc)
+  +'<div class="card"><h2>④ 확인자</h2>'+field('pf_sm','현장책임자 (신청·발급·확인)',f.sm,{req:1,ph:'예: 김소장'})+field('pf_wit','입회자 (선택)',f.wit)+field('pf_etc','기타 특별사항 (선택)',f.etc)
   +'<p class="muted">발행하면 작업허가서 양식에 그대로 채워집니다. 위 [결과지 미리보기]로 확인할 수 있습니다.</p></div>'
   +'<div class="card roomfoot"><button class="button" type="button" id="pfIssue" style="width:100%" onclick="'+(pm.mode==='edit'?'editPermitNow()':'issuePermitNow()')+'">'+(pm.mode==='edit'?'수정 제출':'발행 (바로 작업 시작)')+'</button></div></div>'}
 /* ---- 발행 후 진행 기록 (작업 중 확인 · 가스 측정 · 작업 완료 · 연장) ---- */
@@ -204,9 +203,8 @@ function flagMissing(ids,text){document.querySelectorAll('.miss').forEach(x=>x.c
 function permitDraft(){if(pm.f&&$('pf_work')){pfRead();const m=pfMissing();if(m.length){flagMissing(m,m.some(x=>/^pf[sc]_/.test(x))?'안전조치를 확인하고 체크해 주세요 ('+m.length+'개)':'빨간 칸을 채워 주세요');return null}return pfBuild()}
  const d={...permitCollect(),...progressCollect()},m=permitMissing(d);if(m.length){flagMissing(m,'확인할 칸 '+m.length+'개 · 빨간 칸을 확인해 주세요 (필요 항목은 조치 완료 체크)');return null}return d}
 async function issuePermitNow(){const d=permitDraft();if(!d)return;
- if(!await askOk('작업허가서 발행','발행하면 바로 작업할 수 있고, 도급인 담당자에게 승인 요청이 갑니다.'+(pm.crew&&pm.crew.size?'\n오늘 작업 인원 '+pm.crew.size+'명도 안전 수칙 서명으로 저장합니다.':'')+'\n발행 뒤에는 작업 중 확인·작업 완료만 기록합니다. (도급인 승인 전까지는 수정 가능)','발행'))return;
- const crew=pm.crew&&pm.crew.size?{ids:[...pm.crew],sm:pm.f?pm.f.sm:''}:null;  // F1.8a 오늘 인원도 같이 저장
- try{const r=await call('issuePermit',vjob.job.id,d,crew);if(crew){vjob.todayCrew={date:r.today,count:crew.ids.length,workers:vjob.workers.filter(w=>pm.crew.has(w.id)),siteManager:crew.sm,savedAt:new Date().toISOString()};vjob.crewDefault=crew.ids}pmSaved(r);pm={mode:'progress',permit:r.permit,today:r.today};vjob.permits=[{...r.permit}].concat((vjob.permits||[]).filter(p=>p.date!==r.permit.date));showSheet();popup('작업허가서 발행 완료','허가번호 '+r.permit.no+'\n작업을 시작하세요. 작업이 끝나면 이 화면에서 [작업 완료]를 기록해 주세요.','확인')}catch(e){showErr('발행하지 못했습니다',e)}}
+ if(!await askOk('작업허가서 발행','발행하면 바로 작업할 수 있고, 도급인 담당자에게 승인 요청이 갑니다.\n발행 뒤에는 작업 중 확인·작업 완료만 기록합니다. (도급인 승인 전까지는 수정 가능)','발행'))return;
+ try{const r=await call('issuePermit',vjob.job.id,d);pmSaved(r);pm={mode:'progress',permit:r.permit,today:r.today};vjob.permits=[{...r.permit}].concat((vjob.permits||[]).filter(p=>p.date!==r.permit.date));showSheet();popup('작업허가서 발행 완료','허가번호 '+r.permit.no+'\n작업을 시작하세요. 작업이 끝나면 이 화면에서 [작업 완료]를 기록해 주세요.','확인')}catch(e){showErr('발행하지 못했습니다',e)}}
 /* v4.9 승인 전 수정·제출 취소 (업체) */
 function startEditPermit(){pm.prevMode=pm.mode;pm.mode='edit';pm.f=null;pm.paper=false;showSheet()}
 function cancelEditPermit(){pm.mode=pm.prevMode||'progress';pm.paper=false;showSheet()}

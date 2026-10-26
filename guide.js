@@ -8,16 +8,16 @@ const TOUR_STEPS={
  reg:[
   {scr:'today',sel:'#regCard',text:'처음 온 작업자는 여기서 한 번만 등록합니다. 다음 날부터는 다시 등록하지 않아도 됩니다.'},
   {scr:'today',sel:'#btnQr',tap:1,text:'작업자가 구글 계정(휴대폰)이 있으면 [QR 보여주기]를 누르세요. 화면에 QR이 나옵니다.'},
-  {scr:'today',sel:'#btnQr',text:'작업자가 자기 휴대폰 카메라로 QR을 찍고 → 본인 구글 계정으로 로그인 → 이름 적고 → 안전 수칙을 읽고 서명하면 끝입니다.'},
-  {scr:'today',sel:'#btnAdd',tap:1,text:'휴대폰·구글 계정이 없는 사람은 [직접 등록]을 눌러 소장님이 대신 등록합니다. (수칙 교육 확인 체크 필수)'},
-  {scr:'today',sel:'#wkGrid',alt:'#regCard .stage',text:'등록한 사람은 여기에 카드로 하나씩 쌓입니다. ✔ 표시는 오늘 일한 사람입니다.'}],
+  {scr:'today',sel:'#btnQr',text:'작업자가 자기 휴대폰 카메라로 QR을 찍고 → 본인 구글 계정으로 로그인 → 이름 적고 → 기초안전보건교육 이수증 사진을 찍고 → 안전 수칙을 읽고 서명하면 끝입니다.'},
+  {scr:'today',sel:'#btnAdd',tap:1,text:'휴대폰·구글 계정이 없는 사람은 [직접 등록]을 눌러 소장님이 대신 등록합니다. 이수증 사진도 같이 올리고, 수칙 교육 확인에 체크합니다.'},
+  {scr:'today',sel:'#wkGrid',alt:'#regCard .stage',text:'이수증을 안 가져온 사람은 "이수증 미제출"로 표시되고 업체 평가에 반영됩니다. 나중에 가져오면 카드의 [📷 이수증 올리기]를 누르세요.'},
+  {scr:'today',sel:'#wkGrid',alt:'#regCard .stage',text:'등록한 사람은 여기에 카드로 하나씩 쌓입니다. ✔ 표시는 오늘 새로 등록한 사람입니다. 등록할 때 신규자 교육일지와 작업 안전 수칙 서명이 같이 만들어집니다 (처음 1회).'}],
  permit:[
   {scr:'today',sel:'#btnPermit',tap:1,text:'작업 전에 [오늘 작업허가서 작성]을 누르세요. (이미 발행했으면 [진행 기록])'},
   {scr:'permit',sel:'#pf_work',text:'① 작업명과 작업 장소를 적습니다. 시간은 08:00~17:00이 기본입니다. 어제 허가서가 있으면 미리 채워져 있습니다.'},
   {scr:'permit',sel:'#pfTypes',tap:1,text:'② 오늘 하는 위험작업 버튼을 모두 누르세요. (화기·고소·정전 등) 없으면 누르지 않고 넘어갑니다.'},
   {scr:'permit',sel:'#pfAll',tap:1,text:'③ 작업 전에 안전조치를 했으면 [모두 조치함]을 누르세요. 고른 위험작업에 필요한 조치만 나옵니다.'},
-  {scr:'permit',sel:'#pfCrew',text:'④ 오늘 일하는 사람을 체크합니다. 발행할 때 오늘 안전 수칙 서명으로 자동 저장됩니다.'},
-  {scr:'permit',sel:'#pfIssue',tap:1,text:'⑤ 현장책임자 이름을 확인하고 [발행]을 누르면 바로 작업할 수 있습니다.'},
+  {scr:'permit',sel:'#pfIssue',tap:1,text:'④ 현장책임자 이름을 확인하고 [발행]을 누르면 바로 작업할 수 있습니다.'},
   {scr:'permit',sel:'#pfPrev',tap:1,text:'[결과지 미리보기]를 누르면 작업허가서 양식으로 어떻게 나오는지 볼 수 있습니다.'},
   {scr:'permit',sel:'#pgDur',tap:1,text:'발행한 뒤에는: 작업 중 현장을 둘러볼 때마다 [지금 확인 기록]을 누릅니다.'},
   {scr:'permit',sel:'#pgDoneBtn',tap:1,text:'작업이 끝나면 [지금 완료]를 누르고'},
@@ -27,7 +27,6 @@ const TOUR_STEPS={
   {scr:'insp0',sel:'#tbmCard',tap:1,text:'먼저 TBM(작업 전 안전 미팅) 사진을 📷 찍어서 올립니다.'},
   {scr:'insp',sel:'#inItems',text:'사진이 올라가면 점검표가 열립니다. 우리 업체 계획서 위험성평가에 맞춘 항목이 나옵니다.'},
   {scr:'insp',sel:'#ii_1 .jm',tap:1,text:'전 항목이 [양호]로 미리 체크되어 있습니다. 문제가 있는 항목만 [불량]을 누르고 사진과 내용을 적으세요.'},
-  {scr:'insp',sel:'#inCrew',text:'오늘 일하는 사람을 확인합니다. 제출할 때 오늘 안전 수칙 서명으로 자동 저장됩니다.'},
   {scr:'insp',sel:'#inSubmit',tap:1,text:'점검자 이름을 확인하고 [순회점검 제출]을 누르면 끝입니다.'}]};
 TOUR_STEPS.day=[{scr:'today',sel:'#gdDay',text:'오늘 현장 업무 사용 가이드입니다. 위에서부터 ① 신규자 등록 → ② 작업허가서 → ③ 순회점검 순서로 하면 됩니다.'}]
  .concat(TOUR_STEPS.reg,TOUR_STEPS.permit.filter(s=>!/^#pg/.test(s.sel)),TOUR_STEPS.insp,[{scr:'today',sel:'#gdDay',text:'끝! 모를 때는 각 칸의 [❔ 사용 가이드]를 누르면 그 부분만 다시 볼 수 있습니다.'}]);
