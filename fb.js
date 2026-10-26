@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F1.8d';
+  const VERSION = '26.10.24 F1.8e';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   const CFG = {
     INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
@@ -265,7 +265,8 @@
       kpis: [{ name: '순회점검 실시율 (2일 1회)', target: '100%' }, { name: '작업 전 TBM·안전교육 실시율', target: '100%' }, { name: '지적사항 즉시 시정률', target: '100%' }],
       org: [{ role: '안전총괄책임자', name: b.representative || '', phone: b.phone || '' }, { role: '안전관리책임자 (현장대리인)', name: p.siteManager || '', phone: p.siteManagerPhone || '' }, { role: '안전담당자', name: p.safetyManager || '', phone: p.safetyPhone || '' }],
       works: w.length ? w : ['HEIGHT', 'TOOL', 'HEAVY'], scen: ['FIRE'].concat(w.includes('ELEC') ? ['SHOCK'] : []).concat((w.length ? w : ['HEIGHT']).includes('HEIGHT') ? ['FALL'] : []),
-      hospital: '', years: [y - 3, y - 2, y - 1], accidents: ['', '', ''], evidence: [], practice: '' };
+      hospital: '', years: [y - 3, y - 2, y - 1], accidents: ['', '', ''], evidence: [], practice: '',
+      drill: { route: '', assembly: '', equip: '', manager: p.siteManager || '', items: ['NEW', 'EVAC', 'FIRE'] } };  // F1.8c 비상대피훈련 계획 (중계 서버 planDefaults_와 같게)
   }
   /** 업체 화면용: 앱 작성 서류 (규정 C01 · 계획서 C02) */
   function contractFormsView(b, forms, files, p1) {
