@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F1.8e';
+  const VERSION = '26.10.24 F1.8f';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   const CFG = {
     INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
@@ -691,14 +691,22 @@
   API.myJobs = async (a) => {
     const b = await execVendor(a), t = today(), jvs = (await myAssign(a, b)).sort((x, y) => String(y.addedAt).localeCompare(String(x.addedAt)));
     const mineAll = (col) => db.collection(col).where('vendorUid', '==', a.uid).get().then(docs);
-    const [jobs, wks, crews, pms, inss, fds] = await Promise.all([
-      Promise.all(jvs.map((v) => db.collection('JOBS').doc(v.jobId).get().then((s) => (s.exists ? s.data() : null)).catch(() => null))), mineAll('WORKERS'), mineAll('CREW'), mineAll('PERMITS'), mineAll('INSPECTIONS'), mineAll('FINDINGS')]);
-    return { today: t, company: b.company, jobs: jvs.map((v, i) => {
+    const [jobs, wks, crews, pms, inss, fds, nts, ats] = await Promise.all([
+      Promise.all(jvs.map((v) => db.collection('JOBS').doc(v.jobId).get().then((s) => (s.exists ? s.data() : null)).catch(() => null))), mineAll('WORKERS'), mineAll('CREW'), mineAll('PERMITS'), mineAll('INSPECTIONS'), mineAll('FINDINGS'),
+      // F1.8f 메인 화면 📢 미팅 알림 (도급인이 만든 협의체·합동점검) · 보안 규칙을 아직 안 올렸으면 알림만 빠짐
+      db.collection('MEET_NOTICES').where('v.' + a.uid, '==', true).get().then(docs).catch(() => []),
+      db.collection('ATTEND').where('uid', '==', a.uid).get().then(docs).catch(() => [])]);
+    const jobIds = new Set(jvs.map((v) => v.jobId)), went = new Set(ats.filter((x) => x.status !== 'REJECTED').map((x) => x.meetingId));
+    const meets = nts.filter((m) => m.done !== 'Y' && m.date >= t && jobIds.has(m.jobId)).sort((x, y) => (x.date + x.time < y.date + y.time ? -1 : 1))
+      .map((m) => ({ id: m.id, jobId: m.jobId, title: m.title, store: m.store, date: m.date, time: m.time || '', place: m.place || '', kinds: (m.kinds || []).map((k) => MEET_KINDS[k]).filter(Boolean), attended: went.has(m.id) }));
+    return { today: t, company: b.company, meets, jobs: jvs.map((v, i) => {
       const j = jobs[i]; if (!j) return null;
       const cr = crews.filter((c) => c.jobId === j.id && c.companyId === b.id), c = cr.find((x) => x.date === t);
       return { id: j.id, title: j.title, storeName: j.storeName, startDate: j.startDate, endDate: j.endDate, hostName: j.hostName, trade: v.trade, status: j.status,
         workers: wks.filter((w) => w.jobId === j.id && w.companyId === b.id && w.active !== 'N').length, todayCount: c ? Number(c.count) : 0, todayDone: !!c, end: jobEndInfo(j),
-        stats: vjStats(cr, ...[pms, inss, fds].map((l) => l.filter((x) => x.jobId === j.id && x.companyId === b.id))) };
+        stats: vjStats(cr, ...[pms, inss, fds].map((l) => l.filter((x) => x.jobId === j.id && x.companyId === b.id))),
+        // F1.8f 메인 화면 '지적사항 조치' 목록 (미조치 + 조치 완료)
+        findings: fds.filter((f) => f.jobId === j.id && f.companyId === b.id).map((f) => ({ id: f.id, no: Number(f.no), item: f.item, memo: f.memo, foundDate: f.foundDate, status: f.status, actionDate: f.actionDate || '' })) };
     }).filter(Boolean) };
   };
   async function jobPack(a, b, j, jv) {
@@ -1039,6 +1047,12 @@
     return { m, j };
   }
   const jobVendorsOf = async (jobId) => docs(await db.collection('JOB_VENDORS').where('jobId', '==', jobId).get()).map((v) => ({ companyId: v.companyId, company: v.company, trade: v.trade }));
+  /** F1.8f 협력업체 메인 화면 📢 알림용 미팅 요약 (QR 값은 넣지 않음 → 현장 QR로만 참석)
+   *  MEET_NOTICES/{미팅ID} · v = 공사에 배정된 업체 계정 {uid:true} · 만들기·방 열기·실시 완료·완료 취소 때 새로 씀 · 실패해도 미팅 기능은 그대로 */
+  const meetNotice = (m, store, done) => db.collection('JOB_VENDORS').where('jobId', '==', m.jobId).get().then(docs).then((vs) => {
+    const v = {}; vs.forEach((x) => { if (x.vendorUid) v[x.vendorUid] = true; });
+    return db.collection('MEET_NOTICES').doc(m.id).set({ id: m.id, jobId: m.jobId, title: m.title, store: store || '', date: m.date, time: m.time || '', place: m.place || '', kinds: m.kinds || [], done: done ? 'Y' : 'N', v, at: now() });
+  }).catch((e) => console.warn('미팅 알림 저장 실패 (firestore.rules 확인)', e && e.message));
   /** [직원] 미팅 방 화면 (QR·참석자·점검표·회의록) */
   API.meetingDetail = async (a, id) => {
     const s = await staffOnly(a), { m, j } = await meetingOf(a, s, id);
@@ -1061,6 +1075,7 @@
     B.set(db.collection('MEETINGS').doc(id), m);
     B.set(db.collection('MEET_LINKS').doc(token), { token, meetingId: id, jobId: j.id, title: m.title, store: j.storeName, date, place: m.place, open: 'N', vendors: vs });
     await B.commit(); audit(a, '', 'MEETING_ADD', id + ' ' + j.id);
+    await meetNotice(m, j.storeName, false);
     relay('meetMail', { meetingId: id }).catch(() => {});
     return API.meetingDetail(a, id);
   };
@@ -1072,6 +1087,7 @@
     B.update(db.collection('MEETINGS').doc(m.id), open ? { open: 'Y', openedAt: now() } : { open: 'N', closedAt: now() });
     B.update(db.collection('MEET_LINKS').doc(m.token), { open: open ? 'Y' : 'N', vendors: vs });
     await B.commit(); audit(a, '', open ? 'MEETING_OPEN' : 'MEETING_CLOSE', m.id);
+    await meetNotice(m, j.storeName, !!m.doneAt);  // 그 사이 배정된 업체도 알림을 받도록 다시 씀
     return API.meetingDetail(a, id);
   };
   /** [직원] 확인 대기 참석자 확인/제외 */
@@ -1087,6 +1103,7 @@
     const s = await staffOnly(a), { m } = await meetingOf(a, s, meetingId), at = await db.collection('ATTEND').where('meetingId', '==', m.id).get();
     const B = db.batch(); at.docs.forEach((d) => B.delete(d.ref)); B.delete(db.collection('MEET_LINKS').doc(m.token)); B.delete(db.collection('MEETINGS').doc(m.id));
     await B.commit(); audit(a, '', 'MEETING_DELETE', m.id + ' ' + m.jobId + ' 참석 ' + at.docs.length);
+    await db.collection('MEET_NOTICES').doc(m.id).delete().catch(() => {});
     return API.jobBoard(a);
   };
   /** [직원] 점검표·회의록 임시 저장 */
@@ -1097,7 +1114,7 @@
   };
   /** [직원] 실시 완료: 협력업체 참석 · 확인 대기 없음 · 점검표 26항목 · 불량 메모 → 방 닫고 확정 */
   API.completeMeeting = async (a, id, d) => {
-    const s = await staffOnly(a), { m } = await meetingOf(a, s, id); if (m.doneAt) fail('이미 실시 완료된 미팅입니다.');
+    const s = await staffOnly(a), { m, j } = await meetingOf(a, s, id); if (m.doneAt) fail('이미 실시 완료된 미팅입니다.');
     const kinds = m.kinds || [], x = meetDocs(d), bad = [], at = docs(await db.collection('ATTEND').where('meetingId', '==', m.id).get()), okk = at.filter((r) => r.status === 'OK');
     if (!okk.some((r) => r.side === 'VENDOR')) bad.push('참석한 협력업체가 없습니다 (QR 참석 체크 필요)');
     if (at.some((r) => r.status === 'PENDING')) bad.push('확인 대기 참석자가 있습니다 ([확인] 또는 [제외])');
@@ -1111,12 +1128,14 @@
     B.update(db.collection('MEETINGS').doc(m.id), { joint: x.joint, minutes: x.minutes, open: 'N', closedAt: m.closedAt || now(), doneAt: now(), doneBy: s.name + ' ' + a.email });
     B.update(db.collection('MEET_LINKS').doc(m.token), { open: 'N' });
     await B.commit(); audit(a, '', 'MEETING_DONE', m.id + ' 참석 ' + okk.length);
+    await meetNotice(m, j.storeName, true);  // 실시 완료 → 업체 메인 화면 알림 사라짐
     return API.meetingDetail(a, id);
   };
   /** [직원] 실시 완료 취소 (내용 수정용) */
   API.reopenMeetingDocs = async (a, id) => {
-    const s = await staffOnly(a), { m } = await meetingOf(a, s, id); if (!m.doneAt) fail('실시 완료 상태가 아닙니다.');
+    const s = await staffOnly(a), { m, j } = await meetingOf(a, s, id); if (!m.doneAt) fail('실시 완료 상태가 아닙니다.');
     await db.collection('MEETINGS').doc(m.id).update({ doneAt: '', doneBy: '' }); audit(a, '', 'MEETING_REOPEN', m.id);
+    await meetNotice(m, j.storeName, false);
     return API.meetingDetail(a, id);
   };
   /** [직원] 합동점검 불량 항목 사진 → 문서ID (구글 드라이브) */
