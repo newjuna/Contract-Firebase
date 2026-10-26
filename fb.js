@@ -18,7 +18,8 @@
   const STAFF_SEED = [['박OO', 'gerrard08@daiso.co.kr', 'gerrardbak08@gmail.com'], ['강OO', 'sky5224122@daiso.co.kr', 'sky5224122@gmail.com'], ['유OO', 'junha.yoo@daiso.co.kr', 'zxcv6309@gmail.com'], ['서OO', 'ymoo09@daiso.co.kr', 'sds4436@gmail.com'], ['박OO', 'younha.park@daiso.co.kr', 'kong6866@gmail.com'], ['윤OO', 'jeongin.yoon@daiso.co.kr', 'dndjekrl@gmail.com']];
   const STEP_NAMES = ['기본정보', '안전보건 조직', '안전관리계획', '증빙자료', '최종확인'];
   const FIELDS = {
-    1: [['majorWork', '주요 수급업무'], ['employeeCount', '상시 근로자 수(명)'], ['siteAddress', '사업장 소재지'], ['siteManager', '현장대리인(현장 책임자)'], ['siteManagerPhone', '현장대리인 연락처'], ['safetyManager', '안전보건 담당자'], ['safetyPhone', '안전보건 담당자 연락처'], ['note', '비고 (선택)']],
+    // F1.8a 사업장 정보는 3칸만 (현장대리인 성명 · 연락처 · 사업장 소재지) — 중계 서버 FIELDS1_과 같게
+    1: [['siteManager', '현장대리인 성명'], ['siteManagerPhone', '현장대리인 연락처'], ['siteAddress', '사업장 소재지 (주소)']],
     2: [['safetyManager', '안전보건 담당자'], ['safetyPhone', '담당자 연락처'], ['orgPolicy', '안전보건 조직 및 역할']],
     3: [['riskFactors', '주요 위험요인'], ['prevention', '안전조치 및 예방대책'], ['emergency', '사고보고·비상대응 절차']],
     4: [['training', '안전보건교육 현황'], ['protective', '보호구 및 장비 관리'], ['otherDocuments', '추가 증빙자료 설명']],
@@ -536,6 +537,16 @@
   const WORK_PLEDGE = '작업자는 상기의 안전 작업 수칙을 교육 받고, 작업 시 안전 작업 수칙을 준수하며, 안전 작업 서약서에 서명 후 작업을 실시한다.';
   const WORKER_ROLES = ['관리자', '근로자'], EDU_TYPE = '신규자 교육 (최초 1회)';
   const INSP_ITEMS = ['정리정돈 실시상태', '소방설비 관리상태', '복장 및 보호구 착용상태', '안전장치 관리상태', '안전표지 부착', '유해위험작업관리', '안전수칙 준수', '관리감독 이행여부', '유해물질관리', '감전재해 예방관리', '인화성 가스 안전관리'];
+  /* F1.8a 순회점검표 = 공통 5항목 + 안전보건관리계획서 위험성평가에서 고른 위험작업별 안전대책
+   *  (계획서에 위험작업이 없으면 예전 11항목) · 점검마다 항목 이름을 같이 저장(labels) → 나중에 계획서가 바뀌어도 그날 점검표 그대로 */
+  const INSP_BASE = ['정리정돈 실시상태', '소방설비 관리상태', '복장 및 보호구 착용상태', '안전표지 부착', '안전수칙 준수'];
+  const inspItemsFor = (works) => { const w = PLAN_WORKS.filter((x) => (works || []).includes(x[0])); return w.length ? INSP_BASE.concat(w.map((x) => x[1].replace(/ \(.*\)$/, '') + ' — ' + x[3] + ' (' + x[2] + ' 예방)')) : INSP_ITEMS.slice(); };
+  /** 업체의 계획서(C02)에서 고른 위험작업 → 점검 항목 */
+  async function inspItemsOf(a, b) {
+    const f = docs(await db.collection('CONTRACT_FORMS').where('uid', '==', a.uid).get().catch(() => ({ docs: [] }))).find((x) => x.companyId === b.id && x.code === 'C02');
+    return inspItemsFor((parse(f && f.json, {}) || {}).works);
+  }
+  const inspLabels = (x) => (Array.isArray(x && x.labels) && x.labels.length ? x.labels : INSP_ITEMS);
   const daysBetween = (x, y) => Math.round((new Date(y + 'T00:00:00Z') - new Date(x + 'T00:00:00Z')) / 86400000);
   const rand8 = () => Array.from(crypto.getRandomValues(new Uint8Array(4)), (v) => v.toString(16).padStart(2, '0')).join('').toUpperCase();
   const newToken = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), (v) => v.toString(16).padStart(2, '0')).join('');
@@ -664,6 +675,14 @@
     const act = ws.filter((x) => x.companyId === b.id && x.active !== 'N'), list = ids.map((id) => act.find((x) => x.id === id)).filter(Boolean).concat([w]);
     await crewWrite(a, b, j, t, list, cur ? cur.siteManager : await siteManagerOf(a, b));
   }
+  /** F1.8a 허가서 발행·순회점검 제출 때 같이 보낸 오늘 인원 → 오늘 작업 안전 수칙 서명으로 저장 (인원 저장 버튼을 따로 누르지 않아도 됨)
+   *  crew = { ids: [작업자ID…], sm: 현장책임자 } · 비었으면 건너뜀 */
+  async function crewWith(a, b, j, crew) {
+    if (!crew || !Array.isArray(crew.ids) || !crew.ids.length) return;
+    const ws = (await mineOf('WORKERS', a, j.id)).filter((w) => w.companyId === b.id && w.active !== 'N'), pick = [...new Set(crew.ids.map(String))].map((id) => ws.find((w) => w.id === id)).filter(Boolean);
+    if (!pick.length) return;
+    await crewWrite(a, b, j, today(), pick, tidy(crew.sm, 40) || await siteManagerOf(a, b)); audit(a, b.id, 'CREW_SAVE', j.id + ' ' + today() + ' ' + pick.length + '명 (자동)');
+  }
   /** [업체] 내 공사 목록 */
   API.myJobs = async (a) => {
     const b = await execVendor(a), t = today(), jvs = (await myAssign(a, b)).sort((x, y) => String(y.addedAt).localeCompare(String(x.addedAt)));
@@ -679,8 +698,8 @@
     }).filter(Boolean) };
   };
   async function jobPack(a, b, j, jv) {
-    const t = today(), [wks, crews, sm0, pms, inss, fds, evs] = await Promise.all([mineOf('WORKERS', a, j.id), mineOf('CREW', a, j.id), siteManagerOf(a, b), mineOf('PERMITS', a, j.id), mineOf('INSPECTIONS', a, j.id), mineOf('FINDINGS', a, j.id),
-      j.status === 'ENDED' ? mineOf('JOB_EVALS', a, j.id).catch(() => []) : []]);
+    const t = today(), [wks, crews, sm0, pms, inss, fds, evs, LB] = await Promise.all([mineOf('WORKERS', a, j.id), mineOf('CREW', a, j.id), siteManagerOf(a, b), mineOf('PERMITS', a, j.id), mineOf('INSPECTIONS', a, j.id), mineOf('FINDINGS', a, j.id),
+      j.status === 'ENDED' ? mineOf('JOB_EVALS', a, j.id).catch(() => []) : [], inspItemsOf(a, b)]);
     const ev = evs.find((e) => e.companyId === b.id && e.status === 'DONE');
     const ws = wks.filter((w) => w.companyId === b.id && w.active !== 'N'), cr = crews.filter((c) => c.companyId === b.id).sort((x, y) => (x.date < y.date ? 1 : -1));
     const day = (c) => ({ date: c.date, count: Number(c.count) || (c.workers || []).length, siteManager: c.siteManager, savedAt: c.savedAt, workers: c.workers || [] }), tc = cr.find((x) => x.date === t);
@@ -688,8 +707,10 @@
       company: { id: b.id, company: b.company, trade: jv.trade }, link: location.origin + location.pathname + '?review=WRK-' + jv.workerToken,
       workers: ws.map((w) => ({ id: w.id, name: w.name, role: w.role, trade: w.trade, method: w.method, eduAt: w.eduAt, email: w.email })),
       todayCrew: tc ? day(tc) : null, history: cr.slice(0, 30).map(day), siteManager: tc ? tc.siteManager : sm0,
+      // F1.8a 오늘 인원 기본 체크: 오늘 저장한 인원 → 없으면 가장 최근 날 인원 → 없으면 등록된 전원
+      crewDefault: ((tc || cr[0]) ? ((tc || cr[0]).workers || []).map((w) => w.id) : ws.map((w) => w.id)).filter((id) => ws.some((w) => w.id === id)),
       rules: WORK_RULES, pledge: WORK_PLEDGE, roles: WORKER_ROLES,
-      permits: pms.filter((p) => p.companyId === b.id).sort((x, y) => (x.date < y.date ? 1 : -1)).slice(0, 30).map(permitSummary), insp: inspPack(inss.filter((x) => x.companyId === b.id), fds.filter((x) => x.companyId === b.id)),
+      permits: pms.filter((p) => p.companyId === b.id).sort((x, y) => (x.date < y.date ? 1 : -1)).slice(0, 30).map(permitSummary), insp: inspPack(inss.filter((x) => x.companyId === b.id), fds.filter((x) => x.companyId === b.id), LB),
       jobStatus: j.status, permitToday: null, evalResult: ev ? { total: Number(ev.total), grade: ev.grade, comment: ev.comment, date: ev.evaluatedAt ? kst(ev.evaluatedAt) : '' } : null };
   }
   /** [업체] 공사 화면 (처음 열 때 작업자 등록 QR 값 생성) */
@@ -795,12 +816,13 @@
     return permitPack(a, b, j, jv, isDate(date) ? date : today());
   };
   /** [업체] 발행 (매일 1회) → 바로 작업 가능 · 도급인에게 승인 요청 메일(중계 서버, 기다리지 않음) */
-  API.issuePermit = async (a, jobId, data) => {
+  API.issuePermit = async (a, jobId, data, crew) => {
     const b = await execVendor(a), { j, jv } = await vendorJobOf(a, b, jobId, true), d = permitClean(data || {}) || {}, bad = permitCheck(d);
     if (bad.length) fail('발행 전에 확인해 주세요:\n- ' + bad.join('\n- '));
     const raw = JSON.stringify(d); if (raw.length > 30000) fail('허가서 내용이 너무 깁니다.');
     const t = today(), id = j.id + '_' + b.id + '_' + t;
     if ((await mineOf('PERMITS', a, j.id)).some((x) => x.id === id)) fail('오늘 허가서는 이미 발행했습니다. 연장 작업은 허가서의 [작업허가 연장]에 적어 주세요.');
+    await crewWith(a, b, j, crew);  // F1.8a 오늘 인원(수칙 서명)도 같이 저장
     const seq = Math.max(0, (j.vendorUids || []).indexOf(a.uid)) + 1;  // 같은 공사·같은 날 업체마다 다른 번호
     const no = j.id.replace('JOB-', '') + '-' + t.replace(/-/g, '').slice(2) + '-' + ('0' + seq).slice(-2);
     await db.collection('PERMITS').doc(id).set({ id, no, jobId: j.id, companyId: b.id, company: b.company, vendorUid: a.uid, date: t, data: raw, progress: '{}', status: 'ISSUED',
@@ -876,14 +898,14 @@
    *  지적사항 조치: 업체·도급인 누구나 (조치 내용·조치일·조치 후 사진) · 도급인이 일지를 [확인]
    *  INSPECTIONS/{공사ID_업체ID_날짜} (하루 1장) · FINDINGS/{FD-…} · 사진은 구글 드라이브(중계 서버) */
   const photoIds = (v, max) => (Array.isArray(v) ? v : []).map((x) => tidy(x, 60)).filter((x) => /^[A-Za-z0-9-]+$/.test(x)).slice(0, max || 5);
-  const inspView = (x) => ({ id: x.id, date: x.date, company: x.company, companyId: x.companyId, items: x.items || {}, tbm: photoIds(x.tbm, 5), submittedName: x.submittedName, submittedAt: x.submittedAt,
+  const inspView = (x) => ({ id: x.id, date: x.date, company: x.company, companyId: x.companyId, items: x.items || {}, labels: inspLabels(x), tbm: photoIds(x.tbm, 5), submittedName: x.submittedName, submittedAt: x.submittedAt,
     checkedBy: x.checkedBy || '', checkedAt: x.checkedAt || '', bad: Object.values(x.items || {}).filter((v) => v === 'BAD').length });
   const findView = (f) => ({ id: f.id, inspId: f.inspId, company: f.company, companyId: f.companyId, no: Number(f.no), item: f.item, memo: f.memo, before: photoIds(f.before), foundDate: f.foundDate, status: f.status,
     actionMemo: f.actionMemo || '', after: photoIds(f.after), actionDate: f.actionDate || '', actionBy: f.actionBy || '', actionAt: f.actionAt || '' });
   /** 업체 화면용 요약: 마지막 점검일 · 2일 경과 여부 · 미조치 지적사항 · 최근 기록 */
-  function inspPack(ins, fs) {
+  function inspPack(ins, fs, items) {
     const t = today(); ins = ins.slice().sort((p, q) => (p.date < q.date ? 1 : -1)); const last = ins[0] ? ins[0].date : '';
-    return { items: INSP_ITEMS, type: '순회점검일지', last, todayDone: last === t, due: !last || daysBetween(last, t) >= 2, since: last ? daysBetween(last, t) : null,
+    return { items: items || INSP_ITEMS, type: '순회점검일지', last, todayDone: last === t, due: !last || daysBetween(last, t) >= 2, since: last ? daysBetween(last, t) : null,
       open: fs.filter((f) => f.status !== 'DONE').map(findView), recent: ins.slice(0, 30).map(inspView) };
   }
   const isPhoto = (f) => /^image\/(jpeg|png)$/.test(String(f && f.mime || ''));
@@ -909,16 +931,17 @@
   API.submitInspection = async (a, jobId, d) => {
     const b = await execVendor(a), { j } = await vendorJobOf(a, b, jobId, true), t = today();
     const tbm = photoIds(d?.tbm, 5); if (!tbm.length) fail('TBM 실시 사진을 1장 이상 올려 주세요.');
-    const items = {}, bad = [];
-    INSP_ITEMS.forEach((_, i) => { const v = String((d?.items || {})[i + 1] || ''); if (!['OK', 'BAD', 'NA'].includes(v)) bad.push((i + 1) + '번 결과'); items[i + 1] = v; });
-    INSP_ITEMS.forEach((_, i) => { if (items[i + 1] === 'BAD' && !tidy(((d?.notes || {})[i + 1] || {}).memo, 500)) bad.push((i + 1) + '번 지적 내용'); });
+    const LB = await inspItemsOf(a, b), items = {}, bad = [];  // F1.8a 계획서 위험작업에 맞춘 점검표
+    LB.forEach((_, i) => { const v = String((d?.items || {})[i + 1] || ''); if (!['OK', 'BAD', 'NA'].includes(v)) bad.push((i + 1) + '번 결과'); items[i + 1] = v; });
+    LB.forEach((_, i) => { if (items[i + 1] === 'BAD' && !tidy(((d?.notes || {})[i + 1] || {}).memo, 500)) bad.push((i + 1) + '번 지적 내용'); });
     const name = tidy(d?.name, 40); if (!name) bad.push('점검자 이름');
     if (bad.length) fail('제출 전에 확인해 주세요:\n- ' + bad.join('\n- '));
     const id = j.id + '_' + b.id + '_' + t;
     if ((await mineOf('INSPECTIONS', a, j.id)).some((x) => x.id === id)) fail('오늘 이행점검은 이미 제출했습니다.');
+    await crewWith(a, b, j, d?.crew);  // F1.8a 오늘 인원(수칙 서명)도 같이 저장
     const B = db.batch(), at = now();
-    B.set(db.collection('INSPECTIONS').doc(id), { id, jobId: j.id, companyId: b.id, company: b.company, vendorUid: a.uid, date: t, tbm, items, submittedBy: a.email, submittedName: name, submittedAt: at, checkedBy: '', checkedAt: '' });
-    INSP_ITEMS.forEach((it, i) => {
+    B.set(db.collection('INSPECTIONS').doc(id), { id, jobId: j.id, companyId: b.id, company: b.company, vendorUid: a.uid, date: t, tbm, items, labels: LB, submittedBy: a.email, submittedName: name, submittedAt: at, checkedBy: '', checkedAt: '' });
+    LB.forEach((it, i) => {
       const n = i + 1; if (items[n] !== 'BAD') return; const nt = (d.notes || {})[n] || {}, fid = 'FD-' + rand8();
       B.set(db.collection('FINDINGS').doc(fid), { id: fid, inspId: id, jobId: j.id, companyId: b.id, company: b.company, vendorUid: a.uid, no: n, item: it, memo: tidy(nt.memo, 500), before: photoIds(nt.photos, 5),
         foundDate: t, status: 'OPEN', actionMemo: '', after: [], actionDate: '', actionBy: '', actionAt: '' });
