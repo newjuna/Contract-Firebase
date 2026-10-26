@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F1.8a';
+  const VERSION = '26.10.24 F1.8b';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   const CFG = {
     INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
@@ -705,7 +705,7 @@
     const day = (c) => ({ date: c.date, count: Number(c.count) || (c.workers || []).length, siteManager: c.siteManager, savedAt: c.savedAt, workers: c.workers || [] }), tc = cr.find((x) => x.date === t);
     return { today: t, job: { id: j.id, title: j.title, storeName: j.storeName, address: j.address, startDate: j.startDate, endDate: j.endDate, hostName: j.hostName },
       company: { id: b.id, company: b.company, trade: jv.trade }, link: location.origin + location.pathname + '?review=WRK-' + jv.workerToken,
-      workers: ws.map((w) => ({ id: w.id, name: w.name, role: w.role, trade: w.trade, method: w.method, eduAt: w.eduAt, email: w.email })),
+      workers: ws.map((w) => ({ id: w.id, name: w.name, role: w.role, trade: w.trade, method: w.method, eduAt: w.eduAt, email: w.email, certDoc: w.certDoc || '' })),
       todayCrew: tc ? day(tc) : null, history: cr.slice(0, 30).map(day), siteManager: tc ? tc.siteManager : sm0,
       // F1.8a 오늘 인원 기본 체크: 오늘 저장한 인원 → 없으면 가장 최근 날 인원 → 없으면 등록된 전원
       crewDefault: ((tc || cr[0]) ? ((tc || cr[0]).workers || []).map((w) => w.id) : ws.map((w) => w.id)).filter((id) => ws.some((w) => w.id === id)),
@@ -762,6 +762,11 @@
   };
   /** [작업자] QR 본인 등록 — QR 값 확인이 필요해 중계 서버가 처리. info 없이 부르면 입력 화면 정보 */
   API.workerCheckIn = async (a, token, info) => relay('workerIn', { token: String(token || ''), info: info || null }, !info);
+  /** F1.8b [업체] 작업자 기초안전보건교육 이수증 올리기 (직접 등록한 사람 · 나중에 가져온 사람) */
+  API.uploadWorkerCert = async (a, jobId, workerId, f) => {
+    if (!f || !/^(image\/(jpeg|png)|application\/pdf)$/.test(String(f.mime || ''))) fail('이수증은 사진(JPG·PNG) 또는 PDF만 올릴 수 있습니다.');
+    await relay('workerCert', { jobId: tidy(jobId, 40), workerId: tidy(workerId, 40), f }); return API.vendorJob(a, jobId);
+  };
 
   /* ---------- F1.4 안전작업허가서 (매일 1회 · 업체 발행 → 바로 작업 · 도급인 나중 승인) ----------
    *  PERMITS/{공사ID_업체ID_날짜}  data = 허가서 내용(JSON 글자) · progress = 발행 후 진행 기록(가스측정·작업중 확인·완료·연장)
@@ -1166,7 +1171,11 @@
     if (!wd) [5, 7, 8].forEach((n) => { o[n] = { lv: '', why: '작업 기록 없음 · 직접 판단', auto: false }; });
     else {
       const need = Math.max(1, Math.ceil(wd / 2)), r5 = ins.length / need; o[5] = { lv: lvRate(r5), why: '순회점검 ' + ins.length + '회 / 필요 ' + need + '회 (작업일 ' + wd + '일 ÷ 2) = ' + pct(r5), auto: true };
-      const r7 = crew.length / wd; o[7] = { lv: lvRate(r7), why: '일일 인원·안전수칙 서명 ' + crew.length + '일 / 작업일 ' + wd + '일 = ' + pct(r7) + ' · 신규자 교육 등록 ' + wk.length + '명', auto: true };
+      /* F1.8a 신규자 교육·작업 안전 수칙 서명은 등록 때 1회 → 등록 인원 기준 (F1.8b에서 이수증·교육훈련과 비교 예정) */
+      /* F1.8b 등록한 작업자 중 기초안전보건교육 이수증을 낸 비율 (안 낸 사람 = 교육 없이 투입된 증빙) · 우수 90% 이상 · 보통 60% 이상 */
+      const nc = wk.filter((w) => !w.certDoc), r7 = wk.length ? (wk.length - nc.length) / wk.length : 0;
+      o[7] = wk.length ? { lv: lvRate(r7), why: '기초안전보건교육 이수증 ' + (wk.length - nc.length) + ' / 등록 ' + wk.length + '명 = ' + pct(r7) + (nc.length ? ' · 미제출: ' + nc.slice(0, 10).map((w) => w.name).join(', ') + (nc.length > 10 ? ' 외 ' + (nc.length - 10) + '명' : '') : ''), auto: true }
+        : { lv: 'P', why: '등록한 작업자 없음 (신규자 교육·이수증 확인 기록 없음)', auto: true };
       const r8 = pm.length / wd, ap = pm.filter((x) => x.status === 'APPROVED').length; o[8] = { lv: lvRate(r8), why: '작업허가서 ' + pm.length + '일 / 작업일 ' + wd + '일 = ' + pct(r8) + ' · 도급인 승인 ' + ap + '건', auto: true };
     }
     const done = fd.filter((f) => f.status === 'DONE'), open = fd.length - done.length, avg = done.length ? done.reduce((s, f) => s + Math.max(0, daysBetween(f.foundDate, f.actionDate)), 0) / done.length : 0;
