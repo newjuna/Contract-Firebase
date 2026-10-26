@@ -25,6 +25,7 @@ const TOUR_STEPS={
  insp:[
   {scr:'today',sel:'#btnInsp',alt:'#inspCard',tap:1,text:'순회점검은 매일 합니다. [오늘 순회점검 작성]을 누르세요.'},
   {scr:'insp0',sel:'#tbmCard',tap:1,text:'먼저 TBM(작업 전 안전 미팅) 사진을 📷 찍어서 올립니다.'},
+  {scr:'insp',sel:'#drillCard',tap:1,text:'오늘 비상대피·CPR·소화기 훈련이나 안전교육을 했으면 종류를 고르고 사진을 올립니다. 안 한 날은 그냥 넘어가면 됩니다. (업체 평가 비상대책에 반영)'},
   {scr:'insp',sel:'#inItems',text:'사진이 올라가면 점검표가 열립니다. 우리 업체 계획서 위험성평가에 맞춘 항목이 나옵니다.'},
   {scr:'insp',sel:'#ii_1 .jm',tap:1,text:'전 항목이 [양호]로 미리 체크되어 있습니다. 문제가 있는 항목만 [불량]을 누르고 사진과 내용을 적으세요.'},
   {scr:'insp',sel:'#inSubmit',tap:1,text:'점검자 이름을 확인하고 [순회점검 제출]을 누르면 끝입니다.'}]};

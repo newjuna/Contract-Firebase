@@ -70,7 +70,8 @@ function renderDash(){const el=$('execArea');if(!el||!vjobs)return;
   +(!rn&&act.length&&ended.length?newContractCard():'')  // 진행 중 공사가 있으면 맨 아래
   :'<div class="card"><div class="note">아직 배정된 공사가 없습니다.<br>도급인 담당자가 공사에 업체를 배정하면 여기에 나타납니다.</div></div>')}
 /* ---------- 비상대피훈련 · 계약 서류 ---------- */
-function renderVDrill(){const el=$('execArea');if(el)el.innerHTML='<div class="card"><div class="vh-top"><h2 style="margin:0">비상대피훈련 등록</h2><span class="pill todo">준비 중</span></div><p class="desc">공사마다 1회 훈련을 실시하고 결과를 등록하는 화면입니다.</p><div class="note">등록 화면은 준비 중입니다. 열리면 이 메뉴에서 바로 등록할 수 있습니다.</div></div>'}
+/* F1.8b 비상대응훈련·교육 사진은 순회점검 화면(TBM 사진 다음)에서 올림 */
+function renderVDrill(){const el=$('execArea');if(el)el.innerHTML='<div class="card"><h2 style="margin:0">비상대응훈련 · 교육 사진</h2><p class="desc">비상대피·CPR·소화기 훈련이나 안전교육을 한 날은 <b>오늘 현장 업무 → ③ 순회점검</b>에서 TBM 사진 다음 칸에 종류를 고르고 사진을 올립니다.<br>공사 중 비상대응훈련을 1번 이상 하면 업체 평가(비상대책)에 반영됩니다.</p><button class="button" type="button" style="width:100%" onclick="vgo(\'insp\')">순회점검으로 가기</button></div>'}
 function renderVDocs(){const el=$('execArea');if(!el)return;const b=state.company,rows=((state.docBoard&&state.docBoard.rows)||[]).filter(r=>r.stage==='CONTRACT'&&r.vendorDoc);
  // v5.17 재평가 중: 계약 전 화면(사업장 정보·규정·계획서·제출)을 그대로 보여 줌
  if(b.renewAt){el.innerHTML='<div class="card"><div class="vh-top"><h2 style="margin:0">신규 작성 · 다음 계약 준비</h2><span class="pill lock">'+(b.renewMode==='NEW'?'처음부터 작성':'이전 정보 불러옴')+'</span></div><p class="desc">진행 중인 공사 업무는 그대로 할 수 있습니다. 아래를 작성해 제출하면 본사 담당자가 다시 검토합니다.</p>'+validNote(b)
