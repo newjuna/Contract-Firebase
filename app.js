@@ -14,7 +14,7 @@ let state=null,activeStep=1,saveTimer=null,dirty=false,tab='my',reviewing=null;
 const $=id=>document.getElementById(id),escapeText=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function msg(t){$('toast').textContent=t;$('toast').style.display='block';setTimeout(()=>$('toast').style.display='none',4500)}
 /* 로딩 창 문구 (서버는 실제 진행률을 알려주지 않음) */
-const LOAD_MSG={portalData:'화면을 불러오는 중',registerBusiness:'신청서를 접수하는 중',uploadContractDoc:'파일을 올리는 중',uploadEvidence:'파일을 올리는 중',getTemplate:'샘플 양식을 내려받는 중',getMyFile:'파일을 내려받는 중',saveStep:'저장하는 중',submitProfile:'최종 제출하는 중',checkSubmission:'누락 항목을 확인하는 중',uploadTemplate:'양식을 등록하는 중',refreshTemplateFolders:'Drive 폴더를 확인하는 중',saveJob:'공사를 저장하는 중',jobBoard:'공사 목록을 불러오는 중',createMeeting:'미팅 방을 만드는 중',deleteJob:'공사를 삭제하는 중',deleteMeeting:'미팅 방을 삭제하는 중',meetingDetail:'미팅 방을 여는 중',vendorJob:'공사 화면을 여는 중',saveCrew:'오늘 인원을 저장하는 중',addWorker:'작업자를 등록하는 중',workerCheckIn:'등록하는 중',meetCheckIn:'참석을 확인하는 중',saveMeetingDocs:'점검표·회의록을 저장하는 중',completeMeeting:'미팅 실시 완료를 확정하는 중',reopenMeetingDocs:'완료를 취소하는 중',uploadMeetingPhoto:'사진을 올리는 중',getMeetingPhoto:'사진을 불러오는 중',getPermit:'작업허가서를 여는 중',issuePermit:'작업허가서를 발행하는 중',updatePermitProgress:'진행 기록을 저장하는 중',permitList:'작업허가서 목록을 불러오는 중',permitDetail:'작업허가서를 여는 중',approvePermit:'승인하는 중',editPermit:'수정 제출하는 중',withdrawPermit:'제출을 취소하는 중',uploadInspPhoto:'사진을 올리는 중',uploadInspPhotoStaff:'사진을 올리는 중',submitInspection:'순회점검을 제출하는 중',resolveFinding:'조치 결과를 등록하는 중',inspList:'순회점검일지를 불러오는 중',checkInspections:'확인 처리하는 중',inspMine:'일지를 불러오는 중',approvePermits:'허가서를 승인하는 중',vendorList:'업체 현황을 불러오는 중',saveRuleDoc:'서명이 들어간 규정 문서를 만드는 중',savePlanDoc:'안전보건관리계획서를 만드는 중',uploadPlanFile:'증빙을 올리는 중',extendJob:'공사를 연장하는 중',endJob:'공사를 종료하고 평가서를 만드는 중',jobEvalList:'종료 평가를 불러오는 중',saveJobEval:'평가를 저장하는 중',reopenJobEval:'확정을 푸는 중',uploadWorkerCert:'이수증을 올리는 중',cancelRenewal:'신규 작성을 취소하는 중',jobEvalFile:'활동내역 ZIP + 원본파일 ZIP을 만드는 중 (처음 한 번은 1~3분)',noticeList:'참조 알림을 불러오는 중',readNotices:'읽음 처리하는 중'};
+const LOAD_MSG={portalData:'화면을 불러오는 중',registerBusiness:'신청서를 접수하는 중',uploadContractDoc:'파일을 올리는 중',uploadEvidence:'파일을 올리는 중',getTemplate:'샘플 양식을 내려받는 중',getMyFile:'파일을 내려받는 중',saveStep:'저장하는 중',submitProfile:'최종 제출하는 중',checkSubmission:'누락 항목을 확인하는 중',uploadTemplate:'양식을 등록하는 중',refreshTemplateFolders:'Drive 폴더를 확인하는 중',saveJob:'공사를 저장하는 중',jobBoard:'공사 목록을 불러오는 중',createMeeting:'미팅 방을 만드는 중',deleteJob:'공사를 삭제하는 중',deleteMeeting:'미팅 방을 삭제하는 중',meetingDetail:'미팅 방을 여는 중',vendorJob:'공사 화면을 여는 중',saveCrew:'오늘 인원을 저장하는 중',addWorker:'작업자를 등록하는 중',workerCheckIn:'등록하는 중',meetCheckIn:'참석을 확인하는 중',saveMeetingDocs:'점검표·회의록을 저장하는 중',completeMeeting:'미팅 실시 완료를 확정하는 중',reopenMeetingDocs:'완료를 취소하는 중',uploadMeetingPhoto:'사진을 올리는 중',getMeetingPhoto:'사진을 불러오는 중',getPermit:'작업허가서를 여는 중',issuePermit:'작업허가서를 발행하는 중',updatePermitProgress:'진행 기록을 저장하는 중',permitList:'작업허가서 목록을 불러오는 중',permitDetail:'작업허가서를 여는 중',approvePermit:'승인하는 중',editPermit:'수정 제출하는 중',withdrawPermit:'제출을 취소하는 중',uploadInspPhoto:'사진을 올리는 중',uploadInspPhotoStaff:'사진을 올리는 중',submitInspection:'순회점검을 제출하는 중',resolveFinding:'조치 결과를 등록하는 중',inspList:'순회점검일지를 불러오는 중',checkInspections:'확인 처리하는 중',inspMine:'일지를 불러오는 중',approvePermits:'허가서를 승인하는 중',vendorList:'업체 현황을 불러오는 중',saveRuleDoc:'서명이 들어간 규정 문서를 만드는 중',savePlanDoc:'안전보건관리계획서를 만드는 중',uploadPlanFile:'증빙을 올리는 중',extendJob:'공사를 연장하는 중',endJob:'공사를 종료하고 평가서를 만드는 중',jobEvalList:'종료 평가를 불러오는 중',saveJobEval:'평가를 저장하는 중',reopenJobEval:'확정을 푸는 중',uploadWorkerCert:'이수증을 올리는 중',undoWorker:'등록을 취소하는 중',cancelInspection:'제출을 취소하는 중',cancelRenewal:'신규 작성을 취소하는 중',jobEvalFile:'활동내역 ZIP + 원본파일 ZIP을 만드는 중 (처음 한 번은 1~3분)',noticeList:'참조 알림을 불러오는 중',readNotices:'읽음 처리하는 중'};
 /* v5.20 가짜 %(92%에서 멈춰 보이던 것) 대신 '움직이는 막대 + 지난 초' — 멈춘 게 아니라 기다리는 중이라는 것을 그대로 보여 줌 */
 let loadTimer=null,loadCount=0,coverTimer=null;
 function loadStart(name){loadCount++;if(loadCount>1)return;const rd=READS.has(name);$('loadMsg').textContent=(LOAD_MSG[name]||'처리하는 중')+'입니다';$('loadHint').textContent='잠시만 기다려 주세요';$('loadSec').textContent='';/* v4.2 0.4초 안에 끝나면 로딩 화면 안 띄움 */clearTimeout(coverTimer);coverTimer=setTimeout(()=>{if(loadCount)$('cover').style.display='flex'},400);const t0=Date.now();clearInterval(loadTimer);
@@ -68,7 +68,7 @@ function text(id,label,value='',disabled=false){return `<div class="field"><labe
 function value(id){return $('f_'+id)?.value?.trim()||''}
 function switchTab(which){tab=which;toggleMenu(false);stopScan();if($(which+'Tab'))$('pageTitle').textContent=$(which+'Tab').textContent;clearInterval(roomTimer);clearInterval(wkTimer);for(const n of ['my','admin','review','tpl','staff','jobs','notice','vendors']){$(n).classList.toggle('hidden',n!==which);$(n+'Tab').classList.toggle('active',n===which)}if(which==='admin')loadAdmin();if(which==='review')loadReview();if(which==='tpl')loadTemplates();if(which==='staff')loadStaff();if(which==='jobs')loadJobs();if(which==='notice')loadNotices();if(which==='vendors')loadVendors();}
 // ★ 화면 버전: 여기 한 줄만 고침 (GitHub만 올리면 로그인 화면·앱 화면·메뉴에 모두 반영, Code.gs 수정 불필요)
-const UI_VERSION='26.10.24 F1.8c';
+const UI_VERSION='26.10.24 F1.8d';
 function showVer(){document.querySelectorAll('.verTxt').forEach(x=>x.textContent=UI_VERSION)}
 /** v4.1 ⚙ 마스터 설정: 직원 관리로 바로 이동 (마스터 계정만 보임) */
 function openMaster(){if(!state||!state.isMaster)return;sgo('staff')}
@@ -509,10 +509,10 @@ function todayHtml(v){
   +'<div class="vh-top"><h2 style="margin:0;font-size:16px">① 신규자 등록</h2><button class="button ghost" type="button" id="gdReg" style="padding:4px 8px;font-size:12px" onclick="startTour(\'reg\')">❔ 사용 가이드</button></div>'
   +'<div class="row" style="margin-top:8px;gap:6px"><button class="button" type="button" id="btnQr" style="flex:1;'+sb+'" onclick="toggleQr()">'+(showQr?'QR 닫기':'QR 보여주기')+'</button><button class="button ghost" type="button" id="btnAdd" style="flex:1;'+sb+'" onclick="toggleAdd()">'+(showAdd?'직접 등록 닫기':'직접 등록')+'</button></div>'
   +(showQr?'<div style="text-align:center;margin:12px 0 4px"><img src="'+escapeText(qr)+'" alt="작업자 등록 QR 코드" width="220" height="220" style="border:1px solid var(--line);border-radius:12px"><div class="row" style="justify-content:center;margin-top:6px"><button class="button ghost" type="button" style="'+sb+'" onclick="copyLink(\''+escapeText(v.link)+'\')">등록 링크 복사</button><button class="button ghost" type="button" style="'+sb+'" onclick="renewQr()">QR 새로 만들기</button></div></div>':'')
-  +(showAdd?'<form class="subbox" onsubmit="addWorkerForm(event)"><div class="split">'+input('wName','이름','','text',false,'예: 홍길동')+'<div class="field"><label for="f_wRole">구분</label><select id="f_wRole">'+v.roles.map(r=>'<option '+(r==='근로자'?'selected':'')+'>'+escapeText(r)+'</option>').join('')+'</select></div>'+input('wTrade','공정명 (선택)','','text',false,'예: 목공, 전기')+'</div>'+certFieldHtml('wCert')+'<label class="desc"><input type="checkbox" id="wAgree"> 작업 안전 수칙 '+v.rules.length+'개 항목을 교육하고 서약을 받았습니다.</label><button class="button" type="submit" style="width:100%;margin-top:10px">작업자 등록</button></form>':'')
+  +(showAdd?'<form class="subbox" onsubmit="addWorkerForm(event)"><div style="display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:6px">'+input('wName','이름','','text',false,'홍길동')+'<div class="field"><label for="f_wRole">구분</label><select id="f_wRole">'+v.roles.map(r=>'<option '+(r==='근로자'?'selected':'')+'>'+escapeText(r)+'</option>').join('')+'</select></div>'+input('wTrade','공정명','','text',false,'목공')+'</div>'+certFieldHtml('wCert')+'<label class="desc"><input type="checkbox" id="wAgree"> 작업 안전 수칙 '+v.rules.length+'개 항목을 교육하고 서약을 받았습니다.</label><button class="button" type="submit" style="width:100%;margin-top:10px">작업자 등록</button></form>':'')
   /* 오늘 등록한 사람만 표로 (전체 명단·지난 사람 이수증은 ☰ 신규교육 현황) */
-  +'<div id="regToday" style="margin-top:10px">'+(todayW.length?'<table class="rtable"><tr><th>이름</th><th>구분·공정</th><th style="width:84px">이수증</th></tr>'+todayW.map(w=>'<tr><td><b>'+escapeText(w.name)+'</b></td><td>'+escapeText(w.role)+(w.trade?' · '+escapeText(w.trade):'')+'</td><td>'+certCell(w)+'</td></tr>').join('')+'</table>'
-   :'<div class="row" style="justify-content:space-between"><span class="muted">오늘 등록한 사람 없음</span>'+(v.jobStatus!=='ENDED'&&!noNew?'<button class="button ghost" type="button" id="btnNoNew" style="padding:4px 8px;font-size:12px" onclick="setNoNew()">오늘 신규자 없음</button>':'')+'</div>')+'</div></div>';
+  +'<div id="regToday" style="margin-top:10px">'+(todayW.length?'<table class="rtable"><tr><th>이름</th><th>구분·공정</th><th style="width:72px">이수증</th><th style="width:44px"></th></tr>'+todayW.map(w=>'<tr><td><b>'+escapeText(w.name)+'</b></td><td>'+escapeText(w.role)+(w.trade?' · '+escapeText(w.trade):'')+'</td><td>'+certCell(w)+'</td><td><button class="linkbtn" type="button" style="font-size:12px" onclick="undoWorker(\''+escapeText(w.id)+'\')" aria-label="'+escapeText(w.name)+' 등록 취소">취소</button></td></tr>').join('')+'</table>'
+   :'<div class="row" style="justify-content:space-between"><span class="muted">오늘 등록한 사람 없음'+(noNew?' · [오늘 신규자 없음] 표시함':'')+'</span>'+(noNew?'<button class="button ghost" type="button" style="padding:4px 8px;font-size:12px" onclick="clearNoNew()">취소</button>':'')+(v.jobStatus!=='ENDED'&&!noNew?'<button class="button ghost" type="button" id="btnNoNew" style="padding:4px 8px;font-size:12px" onclick="setNoNew()">오늘 신규자 없음</button>':'')+'</div>')+'</div></div>';
  return reg+permitCardHtml(v)+inspCardHtml(v);
 }
 /** 오늘 등록한 사람 (등록하면 그날 작업 안전 수칙 서명 기록에 들어감) */
@@ -526,7 +526,7 @@ function doneMask(label){return '<div class="doneMask" role="button" tabindex="0
  +'<span style="border:3px solid #fff;color:#fff;border-radius:10px;padding:6px 16px;font-size:20px;font-weight:800;transform:rotate(-8deg)">✔ 오늘 완료</span><span style="color:#fff;font-size:12px">눌러서 열기</span></div>'}
 /** 이수증 칸: 있으면 보기 · 없으면 바로 올리기 */
 function certCell(w){return w.certDoc?'<button class="linkbtn" type="button" style="font-size:12px;color:var(--ok)" onclick="viewFile(\''+escapeText(w.certDoc)+'\')">✔ 보기</button>'
- :'<label class="linkbtn req" for="wc_'+escapeText(w.id)+'" style="font-size:12px;cursor:pointer">📷 올리기</label><input class="hidefile" type="file" id="wc_'+escapeText(w.id)+'" accept="image/*,.pdf" onchange="uploadCertFor(\''+escapeText(w.id)+'\')" aria-label="'+escapeText(w.name)+' 이수증 사진 선택">'}
+ :'<button class="linkbtn req" type="button" style="font-size:12px" onclick="pickCertFor(\''+escapeText(w.id)+'\')" aria-label="'+escapeText(w.name)+' 이수증 사진 넣기">📷 올리기</button>'}
 /** F1.8b ☰ 신규교육 현황: 이 공사에 등록한 전체 명단 · 이수증 놓친 사람 나중에 올리기 · 작업 안전 수칙 서명 기록 */
 function eduHtml(v){const W=v.workers.slice().sort((x,y)=>String(y.eduAt||'').localeCompare(String(x.eduAt||''))),ok=W.filter(w=>w.certDoc).length,method=w=>w.method==='SELF'?'본인':'소장';
  const rules=v.history.length?'<details class="hist" style="margin-top:12px"><summary>작업 안전 수칙 서명 기록 '+v.history.length+'일 (등록한 날)</summary>'+v.history.map(h=>'<div class="item"><div class="row" style="justify-content:space-between"><span>'+escapeText(h.date)+' · '+h.count+'명</span><button class="button ghost" type="button" onclick="showRules(\''+escapeText(h.date)+'\')">보기</button></div></div>').join('')+'</details>':'';
@@ -569,7 +569,7 @@ async function addWorkerForm(e){
  if(!d.name){markMissing([{key:'wName'}]);return}
  if(!d.agree){msg('교육 실시·서약 확인에 체크해 주세요.');return}
  /* F1.8b 이수증: 있으면 등록 직후 올림 · 없으면 확인 후 '미제출'로 등록 */
- const cf=$('wCert')&&$('wCert').files[0];let cert=null;
+ const cf=certPick.wCert;let cert=null;
  if(cf){try{cert=await readFile(cf,PHOTO_DEFAULT)}catch(x){showErr('이수증 사진을 읽지 못했습니다',x);return}}
  else if(!await askOk('이수증 없이 등록할까요?',d.name+' 님의 건설업 기초안전보건교육 이수증이 없으면 "미제출"로 등록됩니다.\n교육 없이 투입된 것으로 보고 업체 평가에 반영됩니다. (나중에 작업자 카드에서 올릴 수 있습니다)','이수증 없이 등록'))return;
  const jobId=vjob.job.id,mark=[jobId,d.name,d.role,d.trade].join('|');
@@ -582,7 +582,7 @@ async function addWorkerForm(e){
  try{
   const r=await call('addWorker',jobId,d,workerPending.id);
   if(!r?.saved||!r.workerId)throw Error('등록 결과를 확인할 수 없습니다.');
-  workerPending=null;
+  workerPending=null;certPick.wCert=null;
   workerApplyReceipt(r,d);showAdd=false;renderVJob();
   msg(d.name+' 님이 등록됐습니다.');
   if(cert){try{vjob=await call('uploadWorkerCert',jobId,r.workerId,cert);renderVJob();msg(d.name+' 님 등록 · 이수증까지 올렸습니다.');return}catch(x){showErr('등록은 됐지만 이수증을 올리지 못했습니다',{message:(x.message||'')+'\n작업자 카드의 [이수증 올리기]로 다시 올려 주세요.'})}}
@@ -621,15 +621,41 @@ function showWk(r){const head='<div class="card"><small class="muted">'+escapeTe
  $('my').innerHTML=head+body+'</div>'}
 async function sendWk(e){e.preventDefault();const info={name:value('kName'),role:$('f_kRole').value,trade:value('kTrade'),agree:$('kAgree').checked};if(!info.name){markMissing([{key:'kName'}]);return}if(!info.agree){popup('확인해 주세요','작업 안전 수칙 교육 확인·서약에 체크해 주세요.','확인');return}
  // F1.8b 기초안전보건교육 이수증 (없으면 '미제출'로 등록 · 소장님이 나중에 올릴 수 있음)
- const cf=$('kCert')&&$('kCert').files[0];if(cf){try{info.cert=await readFile(cf,PHOTO_DEFAULT)}catch(x){showErr('이수증 사진을 읽지 못했습니다',x);return}}
+ const cf=certPick.kCert;if(cf){try{info.cert=await readFile(cf,PHOTO_DEFAULT)}catch(x){showErr('이수증 사진을 읽지 못했습니다',x);return}}
  else if(!await askOk('이수증 없이 등록할까요?','건설업 기초안전보건교육 이수증이 없으면 "미제출"로 등록됩니다.\n교육을 받지 않고 투입된 것으로 보고 업체 평가에 반영됩니다.\n\n이수증을 가져왔으면 [취소]를 누르고 사진을 찍어 주세요.','이수증 없이 등록'))return;
- await wkCheckIn(info)}
-/** F1.8b 이수증 사진 칸 (본인 등록·소장 직접 등록 공용) */
-function certFieldHtml(id){return '<div class="field" id="'+id+'Box"><label for="'+id+'">건설업 기초안전보건교육 이수증 사진 <span class="req">*</span></label><input type="file" id="'+id+'" accept="image/*,.pdf" capture="environment" aria-describedby="'+id+'Help">'
- +'<p class="muted" id="'+id+'Help" style="margin:4px 0 0">이수증(카드·증서)을 사진으로 찍어 올려 주세요. 없으면 "미제출"로 등록되고 업체 평가에 반영됩니다.<br>이수증의 이름·생년월일은 교육 이수 확인에만 쓰이며, 다이소 담당자와 소속 업체만 볼 수 있습니다.</p></div>'}
-/** F1.8b [업체] 작업자 카드에서 이수증 올리기 (나중에 가져온 사람) */
-async function uploadCertFor(wid){const inp=$('wc_'+wid),f0=inp&&inp.files[0];if(!f0)return;const w=vjob.workers.find(x=>x.id===wid);
+ await wkCheckIn(info);certPick.kCert=null}
+/* F1.8c 사진 넣기: 아래에서 올라오는 창 [📷 촬영] [🖼 앨범·파일] (뒤 화면은 어둡게) → 고른 파일을 cb로 */
+function pickPhoto(cb,opt){opt=opt||{};closePick();
+ if(!$('pickCss')){const s=document.createElement('style');s.id='pickCss';s.textContent='@keyframes pickUp{from{transform:translateY(100%)}to{transform:none}}#pickSheet .pk{animation:pickUp .22s ease-out}@media (prefers-reduced-motion:reduce){#pickSheet .pk{animation:none}}';document.head.appendChild(s)}
+ const bg=document.createElement('div');bg.id='pickSheet';bg.setAttribute('role','dialog');bg.setAttribute('aria-modal','true');bg.setAttribute('aria-label',opt.title||'사진 넣기');
+ bg.style.cssText='position:fixed;inset:0;z-index:66;background:rgba(15,23,42,.55);display:flex;align-items:flex-end;justify-content:center';
+ bg.innerHTML='<div class="pk" style="background:#fff;width:100%;max-width:520px;border-radius:16px 16px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom))"><b style="display:block;margin-bottom:12px;font-size:15px">'+escapeText(opt.title||'사진 넣기')+'</b>'
+  +'<div style="display:grid;gap:8px"><button class="button" type="button" id="pkCam">📷 촬영</button><button class="button ghost" type="button" id="pkGal">🖼 앨범 · 파일</button><button class="button ghost" type="button" id="pkNo">취소</button></div></div>';
+ document.body.appendChild(bg);
+ const run=cap=>{const i=document.createElement('input');i.type='file';i.accept=opt.accept||'image/*';i.dataset.gal='1';if(cap)i.setAttribute('capture','environment');i.style.display='none';
+  i.onchange=()=>{const f=i.files&&i.files[0];i.remove();if(f)cb(f)};document.body.appendChild(i);closePick();i.click()};
+ $('pkCam').onclick=()=>run(true);$('pkGal').onclick=()=>run(false);$('pkNo').onclick=closePick;bg.onclick=e=>{if(e.target===bg)closePick()};bg.onkeydown=e=>{if(e.key==='Escape')closePick()};setTimeout(()=>$('pkCam')?.focus(),30)}
+function closePick(){$('pickSheet')?.remove()}
+/** F1.8b·c 이수증 사진 칸 (본인 등록·소장 직접 등록 공용): 제목 | 📷 버튼 → 촬영·앨범 창 · 고른 사진은 certPick에 보관 */
+const certPick={};
+function certFieldHtml(id){return '<div class="field" id="'+id+'Box"><div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:nowrap"><span style="font-size:14px"><b>건설업 기초안전보건교육 이수증 사진</b> <span class="req">*</span></span>'
+ +'<button class="button ghost" type="button" id="'+id+'Btn" style="padding:8px 14px;font-size:18px;flex:none" onclick="pickCert(\''+id+'\')" aria-label="이수증 사진 넣기 (촬영 또는 앨범)">📷</button></div>'
+ +'<div id="'+id+'Prev" style="font-size:12px;margin-top:4px">'+certPrev(id)+'</div><p class="muted" style="font-size:11px;margin:4px 0 0">이름·생년월일은 교육 이수 확인에만 쓰이며 다이소 담당자와 소속 업체만 봅니다.</p></div>'}
+function certPrev(id){const f=certPick[id];return f?'<span style="color:var(--ok)">✔ '+escapeText(f.name||'사진')+'</span> <button class="linkbtn" type="button" onclick="certDrop(\''+id+'\')">빼기</button>':'<span class="muted">없으면 "미제출"로 등록되고 업체 평가에 반영됩니다.</span>'}
+function certDrop(id){certPick[id]=null;const p=$(id+'Prev');if(p)p.innerHTML=certPrev(id)}
+function pickCert(id){pickPhoto(f=>{certPick[id]=f;const p=$(id+'Prev');if(p)p.innerHTML=certPrev(id)},{title:'이수증 사진 넣기',accept:'image/*,.pdf'})}
+/** F1.8b [업체] 작업자 이수증 올리기 (오늘 등록 표 · 신규교육 현황) */
+function pickCertFor(wid){const w=vjob&&vjob.workers.find(x=>x.id===wid);pickPhoto(f=>uploadCertFile(wid,f),{title:(w?w.name+' 님 ':'')+'이수증 사진 넣기',accept:'image/*,.pdf'})}
+async function uploadCertFile(wid,f0){const w=vjob.workers.find(x=>x.id===wid);
  try{const f=await readFile(f0,PHOTO_DEFAULT);vjob=await call('uploadWorkerCert',vjob.job.id,wid,f);const y=window.scrollY;renderVJob();window.scrollTo(0,y);msg((w?w.name+' 님 ':'')+'이수증을 올렸습니다.')}catch(e){showErr('이수증을 올리지 못했습니다',e)}}
+async function uploadCertFor(wid){const inp=$('wc_'+wid),f0=inp&&inp.files[0];if(f0)await uploadCertFile(wid,f0)}
+/** F1.8c 잘못 누른 것 되돌리기 */
+async function undoWorker(wid){const w=vjob.workers.find(x=>x.id===wid);if(!w)return;
+ if(!await askOk('등록 취소',w.name+' 님 등록을 취소할까요?\n신규자 교육일지와 오늘 작업 안전 수칙 서명에서도 빠집니다. (잘못 등록했을 때만)','등록 취소'))return;
+ try{vjob=await call('undoWorker',vjob.job.id,wid);const y=window.scrollY;renderVJob();window.scrollTo(0,y);msg(w.name+' 님 등록을 취소했습니다.')}catch(e){showErr('등록을 취소하지 못했습니다',e)}}
+function clearNoNew(){try{localStorage.removeItem(noNewKey(vjob))}catch(e){}const y=window.scrollY;renderVJob();window.scrollTo(0,y);msg('[오늘 신규자 없음]을 취소했습니다.')}
+async function cancelInspToday(){if(!await askOk('순회점검 제출 취소','오늘 낸 순회점검을 취소하고 다시 작성할까요?\n오늘 점검일지와 지적사항이 지워집니다. (도급인 확인 전에만)','제출 취소'))return;
+ try{vjob=await call('cancelInspection',vjob.job.id);renderVJob();$('inspCard')?.scrollIntoView({block:'start'});msg('순회점검 제출을 취소했습니다. 다시 작성해 주세요.')}catch(e){showErr('제출을 취소하지 못했습니다',e)}}
 /* ---------- v2.8 직원 관리 (안전보건팀) ---------- */
 let staffData=null;
 async function loadStaff(){const old=staffData?JSON.stringify(staffData):'';if(staffData)renderStaff();try{const x=await fetcher('staff')('staffList');staffData=x;if(tab==='staff'&&JSON.stringify(x)!==old)renderStaff()}catch(e){}}
@@ -769,7 +795,8 @@ function inAppBox(){const n=inAppName();if(!n)return;const box=document.createEl
  *  대시보드에서 한 번 더 누르면 "한 번 더 누르면 나갑니다" 안내 후 2.5초 안에 다시 누를 때만 나감 */
 function backAction(){
  if(BOOT)return null;
- if(typeof tour!=='undefined'&&tour)return ()=>endTour();  // F1.8a 사용 가이드 중이면 가이드만 끝냄
+ if(typeof tour!=='undefined'&&tour)return ()=>endTour();
+ if($('pickSheet'))return closePick;  // F1.8c 사진 넣기 창  // F1.8a 사용 가이드 중이면 가이드만 끝냄
  const md=$('modal');if(md&&md.style.display==='flex')return ()=>{const c=$('modalCancel');(c&&!c.hidden?c:$('modalBtn')).click()};
  const nc=$('ncDlg');if(nc&&nc.style.display==='flex')return closeNewContract;
  if(loadCount)return ()=>msg('처리 중입니다. 잠시만 기다려 주세요.');
