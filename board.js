@@ -132,3 +132,35 @@ function renderInspList(){const d=inspJob,t=kstToday(),L=d.list,open=d.findings.
 async function inCheck(all){const ids=all?[]:[...document.querySelectorAll('.inck:checked')].map(x=>x.value),n=all?inspJob.list.filter(x=>!x.checkedAt).length:ids.length;if(!n){msg('확인할 일지를 체크해 주세요.');return}
  if(!confirm('순회점검일지 '+n+'건을 확인할까요?\n일지에 "도급인 확인: '+(state.staff?state.staff.name:'')+'"이 남습니다.'))return;
  try{inspJob=await call('checkInspections',inspJob.job.id,ids);renderInspList();msg(n+'건 확인했습니다.');refreshBadges();const j=jobData&&jobData.jobs.find(x=>x.id===inspJob.job.id);if(j)j.inspUnchecked=inspJob.list.filter(x=>!x.checkedAt).length}catch(e){}}
+/* ---------- F1.8i [마스터] 데이터 관리: 현황 · 지우기 (Firebase 콘솔에 안 들어가도 됨) ----------
+ *  지우기 순서: 대상 고르기 → [미리보기](지울 개수) → '삭제' 입력 → [지우기] · 많으면 자동으로 이어서 요청 */
+let admData=null,admPv=null;
+const ADM_GROUP=[['업체 · 계약 전 서류',['COMPANIES','DOCUMENTS','DOC_SUBMISSIONS','CONTRACT_FORMS','PROFILES','EVALUATIONS','REVIEWS','RENEW_BACKUP']],['공사 · 현장',['JOBS','JOB_VENDORS','WORKERS','CREW','PERMITS','INSPECTIONS','FINDINGS','MEETINGS','MEET_LINKS','MEET_NOTICES','ATTEND','JOB_EVALS']],['이력',['NOTICES','AUDIT','MAIL_LOG']],['남기는 것',['STAFF','TEMPLATES']]];
+function sData(){jobsMode='admin';setTimeout(()=>admData?admRender():admLoad(),0);return '<div id="admBox"><div class="card"><p class="desc">데이터 현황을 불러오는 중입니다…</p></div></div>'}
+async function admLoad(){try{admData=await call('adminStats');admRender()}catch(e){const b=$('admBox');if(b)b.innerHTML='<div class="card"><p class="desc">'+escapeText(e.message||'불러오지 못했습니다.')+'</p><button class="button" type="button" onclick="admLoad()">다시 시도</button></div>'}}
+function admRender(){const b=$('admBox');if(!b||!admData)return;const d=admData,C={};d.counts.forEach(x=>C[x.col]=x);const dr=d.drive||{};
+ const opt=(L,ph)=>'<option value="">'+ph+'</option>'+L.map(x=>'<option value="'+escapeText(x.id)+'">'+escapeText(x.name)+(x.status==='ENDED'?' · 종료':x.status&&x.status!=='OPEN'&&x.status!=='VERIFIED'?' · '+escapeText(x.status):'')+(x.at?' ('+escapeText(x.at)+')':'')+'</option>').join('');
+ b.innerHTML='<div class="card"><div class="vh-top" style="align-items:center"><h2 style="margin:0">데이터 현황</h2><button class="button ghost" type="button" onclick="admLoad()">새로고침</button></div>'
+  +'<div class="dns" style="grid-template-columns:repeat(2,1fr)"><div class="dn"><b style="font-size:22px">'+d.total.toLocaleString()+'</b><span class="muted">Firestore 기록 (문서 수)</span></div><div class="dn"><b style="font-size:22px">'+dr.mb+' MB</b><span class="muted">드라이브 증빙 파일 '+dr.files+'개'+(dr.cut?' 이상':'')+'</span></div></div>'
+  +'<p class="muted" style="margin:8px 0 0">구글 드라이브 계정 전체 '+dr.usedGb+' GB / '+dr.limitGb+' GB · Firebase 무료 한도: 저장 1GB · 하루 읽기 5만 · 쓰기 2만 · 삭제 2만</p>'
+  +ADM_GROUP.map(([g,cols])=>'<details class="hist"'+(g==='남기는 것'?'':' open')+'><summary><b>'+g+'</b> · '+cols.reduce((s,c)=>s+((C[c]||{}).n||0),0).toLocaleString()+'건</summary><table class="rtable">'+cols.map(c=>'<tr><td>'+escapeText((C[c]||{}).label||c)+'</td><td style="text-align:right;width:80px">'+((C[c]||{}).n||0).toLocaleString()+'</td></tr>').join('')+'</table></details>').join('')+'</div>'
+  +'<div class="card"><h2>업체 1곳 지우기</h2><p class="muted">업체 정보 · 계약 전 서류 · 평가 · 그 업체의 작업자·허가서·점검·종료 평가 · 드라이브 업체 폴더</p><select id="f_admCo" class="vjsel" aria-label="지울 업체">'+opt(d.companies,'업체 고르기 ('+d.companies.length+'곳)')+'</select><button class="button ghost" type="button" style="width:100%;margin-top:8px" onclick="admAsk(\'company\')">미리보기</button></div>'
+  +'<div class="card"><h2>공사 1건 지우기</h2><p class="muted">공사 · 배정 · 작업자 · 허가서 · 순회점검 · 지적사항 · 협의체·합동점검 · 종료 평가 · 드라이브 공사 폴더</p><select id="f_admJob" class="vjsel" aria-label="지울 공사">'+opt(d.jobs,'공사 고르기 ('+d.jobs.length+'건)')+'</select><button class="button ghost" type="button" style="width:100%;margin-top:8px" onclick="admAsk(\'job\')">미리보기</button></div>'
+  +'<div class="card"><h2>오래된 이력 지우기</h2><p class="muted">사용 이력(AUDIT) · 메일 이력만 지웁니다. 업무 기록은 그대로입니다.</p><div class="row" style="align-items:center"><input id="f_admDays" type="number" min="7" max="3650" value="90" style="width:90px;padding:10px;border:1px solid var(--line);border-radius:10px;font:inherit" aria-label="며칠 지난 이력"><span>일 지난 이력</span><button class="button ghost" type="button" style="margin-left:auto" onclick="admAsk(\'logs\')">미리보기</button></div></div>'
+  +'<div class="card alertcard"><h2>테스트 데이터 전체 지우기</h2><p class="muted">직원 명단 · 표준양식만 남기고 업체 · 서류 · 공사 · 기록을 모두 지웁니다. 드라이브 증빙 파일은 휴지통으로 (30일 안에 복구 가능). 로그인 계정은 남습니다.</p><button class="button ghost danger" type="button" style="width:100%" onclick="admAsk(\'all\')">미리보기</button></div>'
+  +'<div id="admPv"></div>'}
+/** [미리보기] 지울 개수 보여 주고 확인 칸 열기 */
+async function admAsk(kind){const p={kind};if(kind==='company'){p.id=$('f_admCo').value;if(!p.id){msg('지울 업체를 골라 주세요.');return}}if(kind==='job'){p.id=$('f_admJob').value;if(!p.id){msg('지울 공사를 골라 주세요.');return}}if(kind==='logs')p.days=Number($('f_admDays').value)||90;
+ try{admPv=await call('adminPreview',p)}catch(e){return}const v=admPv,el=$('admPv');if(!el)return;
+ el.innerHTML='<div class="card alertcard"><h2>지울 내용 · '+escapeText(v.title)+'</h2>'+(v.total||v.drive?'<table class="rtable">'+v.items.map(x=>'<tr><td>'+escapeText(x.label)+'</td><td style="text-align:right;width:80px">'+(x.n>=1000?'1000+':x.n)+'</td></tr>').join('')+(v.drive?'<tr><td>드라이브 폴더 (휴지통으로)</td><td style="text-align:right">'+v.drive+'</td></tr>':'')+'</table>'
+  +'<p class="desc" style="margin-top:10px">기록 <b>'+v.total.toLocaleString()+'건</b>은 되돌릴 수 없습니다. 지우려면 아래 칸에 <b>삭제</b>라고 적어 주세요. (10분 안에)</p><input id="f_admOk" autocomplete="off" placeholder="삭제" aria-label="확인 글자 (삭제)" style="width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;font:inherit;font-size:16px">'
+  +'<div class="row" style="margin-top:10px"><button class="button ghost" type="button" style="flex:1" onclick="admCancel()">취소</button><button class="button" type="button" style="flex:1" onclick="admRun()">지우기</button></div>':'<p class="muted">지울 기록이 없습니다.</p><button class="button ghost" type="button" onclick="admCancel()">닫기</button>')+'</div>';
+ el.scrollIntoView({behavior:'smooth',block:'start'});setTimeout(()=>$('f_admOk')?.focus({preventScroll:true}),400)}
+function admCancel(){admPv=null;const el=$('admPv');if(el)el.innerHTML=''}
+/** [지우기] 50초씩 나눠서 끝날 때까지 이어서 요청 */
+async function admRun(){if(!admPv)return;if(value('admOk')!=='삭제'){inspFlag(['f_admOk'],'확인 칸에 "삭제"라고 적어 주세요');return}
+ const tk=admPv.token,title=admPv.title;let n=0,tr=0;
+ try{for(let i=0;i<40;i++){const r=await call('adminDelete',tk);n+=r.deleted;tr+=r.trashed||0;if(!r.more)break;msg('지우는 중… '+n.toLocaleString()+'건 (계속)')}}
+ catch(e){admPv=null;admLoad();return}
+ admPv=null;cacheClear();jobData=null;jobAt=0;if(typeof svData!=='undefined')svData=null;
+ popup('지우기 완료',title+'\n\n기록 '+n.toLocaleString()+'건'+(tr?'\n드라이브 폴더 '+tr+'개 → 휴지통 (30일 안에 복구 가능)':''),'확인');admLoad()}

@@ -5,7 +5,7 @@
  *  서버: Code.gs jobBoard(vstats) · vendorList */
 let smenu='dash',svData=null,svFilter='all';
 /* F1.8g 작업허가서 승인 · 순회점검 확인 메뉴 → '현장 확인' 하나로 (예전 이름으로 부르면 현장 확인으로) */
-const SMENU={dash:'대시보드',jobs:'공사 관리',meet:'협의체·합동점검',check:'현장 확인',permit:'작업허가서 승인',insp:'순회점검 확인',eval:'종료 평가',vendors:'업체 현황',notice:'참조 알림',tpl:'표준양식 관리',staff:'직원 관리'};
+const SMENU={dash:'대시보드',jobs:'공사 관리',meet:'협의체·합동점검',check:'현장 확인',data:'데이터 관리',permit:'작업허가서 승인',insp:'순회점검 확인',eval:'종료 평가',vendors:'업체 현황',notice:'참조 알림',tpl:'표준양식 관리',staff:'직원 관리'};
 const isStaffUI=()=>!!(state&&state.staff);
 const kstToday=()=>new Date(Date.now()+9*3600e3).toISOString().slice(0,10);
 /** 메뉴 보이기 (display 때마다) */
@@ -16,7 +16,7 @@ function setupSMenu(){const on=isStaffUI(),safety=on&&state.staff.role==='SAFETY
  markSMenu();if(tab==='my'&&!/^MEET-/.test(LINK_REVIEW))setTimeout(()=>sgo(smenu),0)}
 function markSMenu(){if(!isStaffUI())return;document.querySelectorAll('.smb').forEach(b=>b.classList.toggle('active',b.id==='sm_'+smenu));$('pageTitle').textContent=SMENU[smenu]||''}
 /** 메뉴 이동 */
-function sgo(m){if(m==='permit'||m==='insp')m='check';if(m==='eval')m='jobs';/* F1.8h 종료 평가는 공사 관리 안에서 */if(['tpl','staff'].includes(m)&&!state.isMaster)m='dash';if(m==='notice')m='dash';smenu=m;if(m==='dash'&&typeof dashJob!=='undefined')dashJob='';toggleMenu(false);stopScan();
+function sgo(m){if(m==='permit'||m==='insp')m='check';if(m==='eval')m='jobs';/* F1.8h 종료 평가는 공사 관리 안에서 */if(['tpl','staff','data'].includes(m)&&!state.isMaster)m='dash';if(m==='notice')m='dash';smenu=m;if(m==='dash'&&typeof dashJob!=='undefined')dashJob='';toggleMenu(false);stopScan();
  if(['notice','tpl','staff','vendors'].includes(m)){switchTab(m);markSMenu();return}
  if(tab!=='jobs')switchTab('jobs');else loadJobs();markSMenu();window.scrollTo(0,0)}
 /** 알림 숫자 (showBadges에서 호출) */
@@ -26,7 +26,7 @@ function sBadges(b){if(!isStaffUI())return;b=b||{};const vd=(b.admin||0)+(b.revi
  setBadge($('sm_jobs'),jb);setBadge($('sm_meet'),pa);setBadge($('sm_check'),ck);setBadge($('sm_vendors'),vd);setBadge($('menuBtn'),jb+pa+ck+vd)}
 /* ---------- 공사 화면 (메뉴별로 같은 공사 목록을 다르게 보여 줌) ---------- */
 function renderJobs(){jobsMode='list';roomId='';clearInterval(roomTimer);const d=jobData;if(!d)return;
- const H={dash:sDash,jobs:sJobs,meet:sMeet,check:sCheck,permit:sCheck,insp:sCheck,eval:sEval}[smenu]||sJobs;$('jobs').innerHTML=H(d)}
+ const H={dash:sDash,jobs:sJobs,meet:sMeet,check:sCheck,data:sData,permit:sCheck,insp:sCheck,eval:sEval}[smenu]||sJobs;$('jobs').innerHTML=H(d)}
 const sAct=d=>d.jobs.filter(j=>j.status!=='ENDED'),sEnded=d=>d.jobs.filter(j=>j.status==='ENDED');
 const sum=(l,f)=>l.reduce((s,x)=>s+(Number(f(x))||0),0);
 function sMeta(j){return escapeText(j.storeName)+' · '+escapeText(j.startDate)+(j.endDate?' ~ '+escapeText(j.endDate):'')+' · 주관 '+escapeText(j.hostName)}
