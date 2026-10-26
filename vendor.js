@@ -4,14 +4,14 @@
  *  공사가 여러 개면 각 메뉴 맨 위에서 공사를 고름 (1개면 자동)
  *  서버: Code.gs myJobs(stats·end) · vendorJob */
 let vmenu='dash',vSel='';
-const VMENU={dash:'대시보드',today:'오늘 현장 업무',meet:'협의체 및 합동점검 참여',drill:'비상대피훈련 등록',docs:'계약 서류'};
+const VMENU={dash:'대시보드',today:'오늘 현장 업무',edu:'신규교육 현황',meet:'협의체 및 합동점검 참여',drill:'비상대피훈련 등록',docs:'계약 서류'};
 /* F1.8a 작업자 등록·작업허가서·순회점검은 '오늘 현장 업무' 한 화면으로 합침 · 예전 이름으로 부르면 그 칸으로 바로 이동 */
 const VJUMP={workers:'regCard',permit:'permitCard',insp:'inspCard'};
 /* v5.17 재평가 중(이전 승인 있음)이어도 수행 메뉴는 그대로 사용 */
 const isVendorApproved=()=>!!(state&&!state.staff&&state.company&&state.company.status==='VERIFIED'&&(state.company.submissionStatus==='APPROVED'||!!state.company.renewAt));
 /** 메뉴 버튼 보이기 (display 때마다) */
 /* v5.17 진행 중인 공사가 없으면(모두 종료 · 배정 전) 공사 업무 메뉴는 숨기고 대시보드·계약 서류만 */
-const VJOB_MENUS=['today','meet','drill'];
+const VJOB_MENUS=['today','edu','meet','drill'];
 const vOpenJobs=()=>vjobs&&vjobs.jobs?vjobs.jobs.filter(j=>j.status!=='ENDED').length:(state&&state.openJobs!=null?state.openJobs:1);
 function setupVMenu(){const ap=isVendorApproved(),open=ap&&vOpenJobs()>0,isJob=el=>!!el&&VJOB_MENUS.includes(String(el.id).replace('vm_',''));
  /* v5.20 메뉴 묶음(navg)은 안에 공사 업무 메뉴가 있으면 공사 업무로 봄 */
@@ -33,8 +33,8 @@ async function vEnsureJob(){const el=$('execArea');if(!el)return;
  if(vjob&&vjob.job.id===vSel){renderVJob();return}await openVJob(vSel)}
 function pickJob(id){vSel=id;showQr=false;showAdd=false;openVJob(id)}
 /** 업무 화면 머리: 메뉴 이름 + 공사 선택 */
-function vJobHead(v){const jobs=(vjobs&&vjobs.jobs)||[];if(vmenu!=='today'){vmenu='today';markVMenu()}
- return '<div class="card vjhead"><h2 style="margin:0">'+escapeText(VMENU[vmenu]||'')+'</h2>'
+function vJobHead(v){const jobs=(vjobs&&vjobs.jobs)||[];if(!['today','edu'].includes(vmenu)){vmenu='today';markVMenu()}
+ return '<div class="card vjhead"><div class="vh-top"><h2 style="margin:0">'+escapeText(VMENU[vmenu]||'')+'</h2>'+(vmenu==='today'&&v.jobStatus!=='ENDED'?'<button class="button ghost" type="button" id="gdDay" style="padding:4px 8px;font-size:12px" onclick="dayGuide(true)">▶ 전체 사용 가이드</button>':'')+'</div>'
   +(jobs.length>1?'<label class="muted" for="vjSel" style="display:block;margin-top:10px">공사 선택</label><select id="vjSel" class="vjsel" onchange="pickJob(this.value)">'+jobs.map(j=>'<option value="'+escapeText(j.id)+'" '+(j.id===v.job.id?'selected':'')+'>'+escapeText(j.title)+' ('+escapeText(j.storeName)+')'+(j.status==='ENDED'?' · 종료':'')+'</option>').join('')+'</select>':'')
   +'<div class="muted" style="margin-top:6px">'+(jobs.length>1?'':escapeText(v.job.title)+' · ')+escapeText(v.job.storeName)+' · '+escapeText(v.company.trade)+' · 도급인 '+escapeText(v.job.hostName)+'</div></div>'}
 /* ---------- 대시보드 ---------- */

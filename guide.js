@@ -10,8 +10,9 @@ const TOUR_STEPS={
   {scr:'today',sel:'#btnQr',tap:1,text:'작업자가 구글 계정(휴대폰)이 있으면 [QR 보여주기]를 누르세요. 화면에 QR이 나옵니다.'},
   {scr:'today',sel:'#btnQr',text:'작업자가 자기 휴대폰 카메라로 QR을 찍고 → 본인 구글 계정으로 로그인 → 이름 적고 → 기초안전보건교육 이수증 사진을 찍고 → 안전 수칙을 읽고 서명하면 끝입니다.'},
   {scr:'today',sel:'#btnAdd',tap:1,text:'휴대폰·구글 계정이 없는 사람은 [직접 등록]을 눌러 소장님이 대신 등록합니다. 이수증 사진도 같이 올리고, 수칙 교육 확인에 체크합니다.'},
-  {scr:'today',sel:'#wkGrid',alt:'#regCard .stage',text:'이수증을 안 가져온 사람은 "이수증 미제출"로 표시되고 업체 평가에 반영됩니다. 나중에 가져오면 카드의 [📷 이수증 올리기]를 누르세요.'},
-  {scr:'today',sel:'#wkGrid',alt:'#regCard .stage',text:'등록한 사람은 여기에 카드로 하나씩 쌓입니다. ✔ 표시는 오늘 새로 등록한 사람입니다. 등록할 때 신규자 교육일지와 작업 안전 수칙 서명이 같이 만들어집니다 (처음 1회).'}],
+  {scr:'today',sel:'#regToday',text:'이수증을 안 가져온 사람은 [📷 올리기]로 표시되고 업체 평가에 반영됩니다. 나중에 가져오면 ☰ 메뉴 [신규교육 현황]에서 올릴 수 있습니다.'},
+  {scr:'today',sel:'#btnNoNew',tap:1,text:'새로 온 사람이 없는 날은 [오늘 신규자 없음]을 누르면 이 칸이 완료로 표시됩니다.'},
+  {scr:'today',sel:'#regToday',text:'오늘 등록한 사람이 이 표에 나옵니다. 등록할 때 신규자 교육일지와 작업 안전 수칙 서명이 같이 만들어집니다 (처음 1회).'}],
  permit:[
   {scr:'today',sel:'#btnPermit',tap:1,text:'작업 전에 [오늘 작업허가서 작성]을 누르세요. (이미 발행했으면 [진행 기록])'},
   {scr:'permit',sel:'#pf_work',text:'① 작업명과 작업 장소를 적습니다. 시간은 08:00~17:00이 기본입니다. 어제 허가서가 있으면 미리 채워져 있습니다.'},
@@ -40,9 +41,10 @@ function tourCss(){if($('tourCss'))return;const s=document.createElement('style'
  +'#tourBox{position:fixed;z-index:89;left:12px;right:12px;max-width:440px;margin:0 auto;background:#fff;border-radius:14px;padding:14px;box-shadow:0 10px 30px #0005;transition:top .35s}'
  +'#tourBox p{margin:0 0 10px;font-size:15px;line-height:1.55}#tourBox .tbar{display:flex;gap:6px;align-items:center}#tourBox .tbar button{padding:8px 10px;font-size:13px}'
  +'#tourBox .tprog{height:4px;background:#e5e7eb;border-radius:4px;margin:0 0 10px;overflow:hidden}#tourBox .tprog span{display:block;height:100%;background:#facc15;transition:width .3s}'
+ +'.touring .doneMask{display:none!important}'
  +'@media (prefers-reduced-motion:reduce){#tourHole,#tourHand,#tourBox{transition:none}#tourHand.tap{animation:none}}';document.head.appendChild(s)}
 /** 사용 가이드 시작 (kind: day | reg | permit | insp) */
-function startTour(kind){if(!vjob||!TOUR_STEPS[kind])return;endTour(true);tourCss();
+function startTour(kind){if(!vjob||!TOUR_STEPS[kind])return;endTour(true);tourCss();document.body.classList.add('touring');  // 안내 중에는 '오늘 완료' 막을 잠시 숨김
  const mk=(id,tag)=>{const e=document.createElement(tag||'div');e.id=id;document.body.appendChild(e);return e};
  const mask=mk('tourMask');mask.onclick=()=>tourGo(1);mk('tourHole');const hand=mk('tourHand');hand.textContent='👆';hand.setAttribute('aria-hidden','true');
  const box=mk('tourBox');box.setAttribute('role','dialog');box.setAttribute('aria-modal','true');box.setAttribute('aria-label','사용 가이드');
@@ -80,7 +82,7 @@ function tourPlace(){if(!tour||!tour.el)return;if(!tour.el.isConnected){const s=
 function tourPlay(){if(!tour)return;tour.play=!tour.play;clearTimeout(tour.timer);if(tour.play)tour.timer=setTimeout(()=>tourGo(1),1500);tourDraw()}
 /** 가이드 끝: 열어 둔 허가서·점검 화면을 닫고 오늘 현장 업무 화면으로 (아무것도 저장 안 함) */
 function endTour(quiet){if(!tour)return;const t=tour;clearTimeout(t.timer);document.removeEventListener('keydown',t.key);window.removeEventListener('resize',t.pos);window.removeEventListener('scroll',t.pos,true);
- ['tourMask','tourHole','tourHand','tourBox'].forEach(id=>$(id)?.remove());tour=null;
+ ['tourMask','tourHole','tourHand','tourBox'].forEach(id=>$(id)?.remove());tour=null;document.body.classList.remove('touring');
  if(quiet)return;const scr=tourScreen();if(scr==='permit'){hideSheet();pm=null}if(scr!=='today'){if(t.demo)ins=null;renderVJob()}
  const back=$(t.kind==='day'?'gdDay':t.kind==='reg'?'gdReg':t.kind==='permit'?'gdPermit':'gdInsp');if(back){back.scrollIntoView({block:'center'});back.focus({preventScroll:true})}
  if(t.kind==='day')msg('모를 때는 각 칸의 [❔ 사용 가이드]를 눌러 보세요.')}
