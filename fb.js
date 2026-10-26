@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F1.8c';
+  const VERSION = '26.10.24 F1.8d';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   const CFG = {
     INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
@@ -765,6 +765,9 @@
   };
   /** [작업자] QR 본인 등록 — QR 값 확인이 필요해 중계 서버가 처리. info 없이 부르면 입력 화면 정보 */
   API.workerCheckIn = async (a, token, info) => relay('workerIn', { token: String(token || ''), info: info || null }, !info);
+  /** F1.8c [업체] 잘못 누른 것 되돌리기: 오늘 등록 취소 · 오늘 순회점검 제출 취소 (중계 서버가 확인 후 지움) */
+  API.undoWorker = async (a, jobId, workerId) => { await relay('workerUndo', { jobId: tidy(jobId, 40), workerId: tidy(workerId, 40) }); return API.vendorJob(a, jobId); };
+  API.cancelInspection = async (a, jobId) => { await relay('inspCancel', { jobId: tidy(jobId, 40) }); return API.vendorJob(a, jobId); };
   /** F1.8b [업체] 작업자 기초안전보건교육 이수증 올리기 (직접 등록한 사람 · 나중에 가져온 사람) */
   API.uploadWorkerCert = async (a, jobId, workerId, f) => {
     if (!f || !/^(image\/(jpeg|png)|application\/pdf)$/.test(String(f.mime || ''))) fail('이수증은 사진(JPG·PNG) 또는 PDF만 올릴 수 있습니다.');
