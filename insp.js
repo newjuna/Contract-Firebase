@@ -10,9 +10,10 @@ let ins=null;                // 작성 중인 점검 {items,notes,tbm}
 let inspJob=null,inspFind=null;
 /* ---------- 업체: [오늘 할 일] ④ 카드 ---------- */
 function inspCardHtml(v){const I=v.insp||{open:[],recent:[]};
- const st=I.todayDone?['✔ 오늘 점검 완료','ok']:I.due?['점검 필요'+(I.since!=null?' · '+I.since+'일 경과':''),'bad']:['다음 점검 '+(2-I.since)+'일 후','todo'];
- return '<div class="card" id="inspCard"><div class="vh-top"><h2 style="margin:0">순회점검</h2><span class="pill '+st[1]+'">'+escapeText(st[0])+'</span></div>'
-  +'<p class="desc">2일 1회 · 첫 장에 TBM 사진, 그 아래 11개 항목을 점검합니다.'+(I.last?' 마지막 점검 '+escapeText(I.last):'')+'</p>'
+ /* F1.8a 매일 점검 (법정 기준 2일 1회 → 2일 넘게 안 하면 '기한 지남') */
+ const st=I.todayDone?['✔ 오늘 점검 완료','ok']:I.due?['기한 지남'+(I.since!=null?' · '+I.since+'일 경과':' · 점검 기록 없음'),'bad']:['오늘 점검 전','todo'];
+ return '<div class="card" id="inspCard"><div class="vh-top"><h2 style="margin:0">③ 순회점검</h2><span class="pill '+st[1]+'">'+escapeText(st[0])+'</span></div>'
+  +'<p class="desc">매일 점검합니다 (법정 기준 2일 1회). TBM 사진을 올리고, 항목은 불량만 바꾸면 됩니다.'+(I.last?' 마지막 점검 '+escapeText(I.last):'')+'</p>'
   +(I.todayDone?'':'<button class="button" type="button" style="width:100%" onclick="openInspForm()">오늘 순회점검 작성</button>')
   +(I.open.length?'<div class="stage">미조치 지적사항 <span class="cnt">'+I.open.length+'</span></div>'+I.open.map(f=>findRow(f,'vendor')).join(''):'')
   +(I.recent.length?'<details class="hist" style="margin-top:12px"><summary>순회점검일지 '+I.recent.length+'건</summary>'+I.recent.map(x=>'<div class="item"><div class="row" style="justify-content:space-between"><span>'+escapeText(x.date)+(x.bad?' · <b class="req">지적 '+x.bad+'</b>':' · 이상 없음')+' '+(x.checkedAt?'<span class="pill ok">도급인 확인</span>':'<span class="pill todo">확인 대기</span>')+'</span><button class="button ghost" type="button" onclick="openInspSheet(\''+escapeText(x.id)+'\',\'vendor\')">일지 보기</button></div></div>').join('')+'</details>':'')+'</div>'}
