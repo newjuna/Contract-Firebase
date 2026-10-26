@@ -36,7 +36,7 @@ async function upInsp(inputId,staffCompany,room){const inp=$(inputId),fl=[...((i
  msg('사진 '+fl.length+'장을 올리는 중입니다…');  // 이 안내가 안 뜨면 휴대폰이 사진을 화면에 넘겨주지 못한 것
  const rs=await Promise.allSettled(fl.map(async f0=>{const f=await readFile(f0,PHOTO_SITE);const r=staffCompany?await call('uploadInspPhotoStaff',inspJob.job.id,staffCompany,f):await call('uploadInspPhoto',vjob.job.id,f);inspPhoto[r.id]='data:'+f.mime+';base64,'+f.data;return r.id}));
  const ids=rs.filter(x=>x.status==='fulfilled').map(x=>x.value),bad=rs.filter(x=>x.status==='rejected');
- if(bad.length)alert((ids.length?ids.length+'장은 올렸고 ':'')+bad.length+'장은 올리지 못했습니다.\n'+((bad[0].reason&&bad[0].reason.message)||''));return ids}
+ if(bad.length)popup('사진을 올리지 못했습니다',(ids.length?ids.length+'장은 올렸고 ':'')+bad.length+'장은 올리지 못했습니다.\n'+((bad[0].reason&&bad[0].reason.message)||''),'확인');return ids}
 async function addTbm(){const ids=await upInsp('tbmFile',null,5-ins.tbm.length);if(!ids.length)return;ins.name=value('inName')||ins.name;ins.tbm=ins.tbm.concat(ids).slice(0,5);$('tbmList').innerHTML=thumbs(ins.tbm,'dropTbm')+'<label class="button ghost" for="tbmFile">📷 사진 넣기</label><input class="hidefile" type="file" id="tbmFile" accept="image/*" capture="environment" onchange="addTbm()" aria-label="TBM 사진 선택">';$('tbmCard').classList.remove('miss','shake')}
 function dropTbm(id){ins.tbm=ins.tbm.filter(x=>x!==id);addTbmRefresh()}
 function addTbmRefresh(){$('tbmList').innerHTML=thumbs(ins.tbm,'dropTbm')+'<label class="button ghost" for="tbmFile">📷 사진 넣기</label><input class="hidefile" type="file" id="tbmFile" accept="image/*" capture="environment" onchange="addTbm()" aria-label="TBM 사진 선택">'}
@@ -45,8 +45,11 @@ function inspFlag(ids,text){document.querySelectorAll('.miss').forEach(x=>x.clas
 async function submitInspNow(){ins.name=value('inName');const miss=[];if(!ins.tbm.length)miss.push('tbmCard');
  Object.entries(ins.items).forEach(([n,x])=>{if(x==='BAD'&&!String(ins.notes[n]?.memo||'').trim())miss.push('f_im'+n)});if(!ins.name)miss.push('f_inName');
  if(miss.length){inspFlag(miss,miss[0]==='tbmCard'?'TBM 사진을 먼저 올려 주세요':miss[0]==='f_inName'?'점검자 이름을 적어 주세요':'불량 항목의 지적 내용을 적어 주세요');return}
- const bad=Object.values(ins.items).filter(x=>x==='BAD').length;if(!confirm('순회점검을 제출할까요?'+(bad?'\n지적사항 '+bad+'건은 조치될 때까지 미조치로 남습니다.':'\n전 항목 이상 없음으로 제출합니다.')))return;
- try{vjob=await call('submitInspection',vjob.job.id,{tbm:ins.tbm,items:ins.items,notes:ins.notes,name:ins.name});ins=null;renderVJob();$('inspCard')?.scrollIntoView({block:'start'});msg('순회점검을 제출했습니다.')}catch(e){alert(e.message)}}
+ const bad=Object.values(ins.items).filter(x=>x==='BAD').length;
+ /* F1.7f 확인·결과를 화면 안 창으로 (일부 휴대폰은 confirm/alert를 말없이 막아 "눌러도 반응 없음"이 됨) */
+ if(!await askOk('순회점검 제출',bad?'지적사항 '+bad+'건은 조치될 때까지 미조치로 남습니다.':'전 항목 이상 없음으로 제출합니다.','제출'))return;
+ try{vjob=await call('submitInspection',vjob.job.id,{tbm:ins.tbm,items:ins.items,notes:ins.notes,name:ins.name});ins=null;renderVJob();$('inspCard')?.scrollIntoView({block:'start'});popup('순회점검 제출 완료','오늘 순회점검일지를 제출했습니다.'+(bad?'\n지적사항 '+bad+'건은 조치 후 [조치 등록]을 해 주세요.':''),'확인')}
+ catch(e){showErr('순회점검을 제출하지 못했습니다',e)}}
 /* ---------- 지적사항 조치 등록 (업체·도급인 공용) ---------- */
 let rs=null;
 function openResolve(id,who){const list=who==='staff'?inspJob.findings:vjob.insp.open,f=list.find(x=>x.id===id);if(!f)return;rs={f,who,photos:[]};renderResolve()}
