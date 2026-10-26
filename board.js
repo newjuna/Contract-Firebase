@@ -19,14 +19,33 @@ const lastDay=(y,m)=>new Date(Date.UTC(y,m,0)).toISOString().slice(0,10),p2=n=>S
 function lawDue(j,t){if(j.status==='ENDED'||j.startDate>lastDay(+t.slice(0,4),+t.slice(5,7)))return [];/* 다음 달 이후 시작하는 공사는 그달에 */const y=+t.slice(0,4),mo=+t.slice(5,7),qm=Math.floor((mo-1)/3)*3+1,M=j.meetings||[],out=[];
  const chk=(kind,ps,pe,label)=>{if(!(j.startDate<=pe&&(!j.endDate||j.endDate>=ps)))return;const has=M.some(m=>(m.kinds||[]).includes(kind)&&m.date>=ps&&m.date<=pe)||(j.startDate>=ps&&j.startDate<=pe&&M.some(m=>(m.kinds||[]).includes(kind)&&m.date<=pe));if(!has)out.push(label)};
  chk('COUNCIL',y+'-'+p2(mo)+'-01',lastDay(y,mo),mo+'월 협의체');chk('JOINT',y+'-'+p2(qm)+'-01',lastDay(y,qm+2),Math.ceil(mo/3)+'분기 합동점검');return out}
-const sAlert=(fn,title,sub,go)=>'<button class="vmeet" type="button" onclick="'+fn+'"><span><b>'+title+'</b>'+(sub?'<span class="muted">'+sub+'</span>':'')+'</span><span class="go">'+go+'</span></button>';
-function sAlertsHtml(d,t){const act=sAct(d),ended=sEnded(d),B=(state&&state.badges)||{},safety=d.me.role==='SAFETY',K=d.meetKinds||{},h=[],id=j=>escapeText(j.id);
- act.forEach(j=>{if(j.end&&['SOON','OVER'].includes(j.end.state))h.push(sAlert('jobEndPage(\''+id(j)+'\')','⏰ '+escapeText(j.title)+(j.end.state==='OVER'?' · 종료일 지남':' · 종료 '+(j.end.left?j.end.left+'일 전':'오늘')),escapeText(j.storeName),'연장·종료 ›'))});
- act.forEach(j=>(j.meetings||[]).filter(m=>!m.done&&(m.date>=t||m.pending)).forEach(m=>h.push(sAlert('openRoom(\''+escapeText(m.id)+'\')','📢 '+mdw(m.date)+(m.time?' '+escapeText(m.time):'')+' '+escapeText((m.kinds||[]).map(k=>K[k]||k).join(' · ')||m.title),escapeText(j.storeName+' · '+(m.place||''))+(m.pending?' · <span class="req">참석 확인 '+m.pending+'명</span>':''),m.open?'들어가기 ›':'방 열기 ›'))));
- act.forEach(j=>{const L=lawDue(j,t);if(L.length)h.push(sAlert('meetForm(\''+id(j)+'\')','🗓 '+escapeText(j.storeName)+' · '+escapeText(L.join(' · '))+' 미실시',escapeText(j.title),'미팅 만들기 ›'))});
- const nv=(B.newVendors||[]).length,ev=sum(ended,j=>(j.evalTotal||0)-(j.evalDone||0));
- if(nv)h.push(sAlert('sgo(\'jobs\')','🏢 공사 배정 대기 업체 '+nv+'곳','','배정하기 ›'));if(ev)h.push(sAlert('sgo(\'eval\')','⭐ 종료 평가 대기 '+ev+'건','','평가하기 ›'));if(safety&&B.notices)h.push(sAlert('sgo(\'notice\')','🔔 새 참조 알림 '+B.notices+'건','','보기 ›'));
- return h.join('')}
+/* F1.8h 알림: 메인에는 한 줄만 → 누르면 위에서 내려오는 창(뒤는 어둡게) → 하나를 눌러 들어가면 '본 것'으로 빠짐 (메뉴 숫자도 같이)
+ *  같은 일이라도 내용이 바뀌면(연장으로 종료일 변경 · 참석 확인 인원 변경 · 다음 달 주기 등) 새 알림으로 다시 뜸 · 참조 알림은 없앰 */
+function sAlertList(d,t){const act=sAct(d),ended=sEnded(d),B=(state&&state.badges)||{},K=d.meetKinds||{},h=[],id=j=>escapeText(j.id),add=(type,key,fn,title,sub,go)=>h.push({type,key,fn,title,sub,go});
+ act.forEach(j=>{if(j.end&&['SOON','OVER'].includes(j.end.state))add('end','end:'+j.id+':'+(j.endDate||'')+':'+j.end.state,'jobEndPage(\''+id(j)+'\')','⏰ '+escapeText(j.title)+(j.end.state==='OVER'?' · 종료일 지남':' · 종료 '+(j.end.left?j.end.left+'일 전':'오늘')),escapeText(j.storeName),'연장·종료 ›')});
+ act.forEach(j=>(j.meetings||[]).filter(m=>!m.done&&(m.date>=t||m.pending)).forEach(m=>add('meet','meet:'+m.id+':'+(m.open?1:0)+':'+(m.pending||0),'openRoom(\''+escapeText(m.id)+'\')','📢 '+mdw(m.date)+(m.time?' '+escapeText(m.time):'')+' '+escapeText((m.kinds||[]).map(k=>K[k]||k).join(' · ')||m.title),escapeText(j.storeName+' · '+(m.place||''))+(m.pending?' · <span class="req">참석 확인 '+m.pending+'명</span>':''),m.open?'들어가기 ›':'방 열기 ›')));
+ act.forEach(j=>{const L=lawDue(j,t);if(L.length)add('law','law:'+j.id+':'+t.slice(0,7)+':'+L.join(','),'meetForm(\''+id(j)+'\')','🗓 '+escapeText(j.storeName)+' · '+escapeText(L.join(' · '))+' 미실시',escapeText(j.title),'미팅 만들기 ›')});
+ const nv=B.newVendors||[];if(nv.length)add('nv','nv:'+nv.map(v=>v.id).sort().join(','),'sgo(\'jobs\')','🏢 공사 배정 대기 업체 '+nv.length+'곳',escapeText(nv.slice(0,3).map(v=>v.company).join(', ')),'배정하기 ›');
+ ended.forEach(j=>{const n=(j.evalTotal||0)-(j.evalDone||0);if(n>0)add('eval','eval:'+j.id+':'+n,'openJobEval(\''+id(j)+'\')','⭐ '+escapeText(j.title)+' · 종료 평가 '+n+'건',escapeText(j.storeName),'평가하기 ›')});
+ return h}
+const alKey=()=>'seenAlerts:'+((state&&state.email)||'');
+function alSeen(){try{return JSON.parse(localStorage.getItem(alKey())||'[]')}catch(e){return []}}
+function sAlertUnread(d){const s=new Set(alSeen());return sAlertList(d,kstToday()).filter(a=>!s.has(a.key))}
+/** 메인 한 줄: 🔔 알림 N · 첫 알림 제목 ▾ (안 본 알림이 없으면 숨김) */
+function sAlertBarHtml(d){const L=sAlertUnread(d);if(!L.length)return '';
+ return '<button class="abar" type="button" id="abar" onclick="openAlerts()" aria-haspopup="dialog" aria-expanded="false"><span class="abar-l">🔔 알림 <span class="cnt">'+L.length+'</span></span><span class="abar-t">'+L[0].title+'</span><span class="abar-c" aria-hidden="true">▾</span></button>'}
+function openAlerts(){const L=sAlertUnread(jobData);closeAlerts();if(!L.length)return;
+ const bg=document.createElement('div');bg.id='alDlg';bg.className='albg';bg.setAttribute('role','dialog');bg.setAttribute('aria-modal','true');bg.setAttribute('aria-labelledby','alTitle');
+ bg.innerHTML='<div class="alpanel"><div class="alhead"><h2 id="alTitle">알림 '+L.length+'건</h2><button class="certx" type="button" id="alClose" aria-label="알림 닫기" style="background:var(--bg);color:var(--text)">✕</button></div>'
+  +'<div class="allist">'+L.map((a,i)=>'<button class="vmeet" type="button" style="animation-delay:'+(i*45)+'ms" data-i="'+i+'"><span><b>'+a.title+'</b>'+(a.sub?'<span class="muted">'+a.sub+'</span>':'')+'</span><span class="go">'+a.go+'</span></button>').join('')+'</div>'
+  +'<button class="button ghost" type="button" id="alAll" style="width:100%;margin-top:8px">모두 확인 (목록에서 지우기)</button></div>';
+ document.body.appendChild(bg);document.body.style.overflow='hidden';$('abar')?.setAttribute('aria-expanded','true');
+ bg.querySelectorAll('.allist .vmeet').forEach(b=>b.onclick=()=>{const a=L[+b.dataset.i];alMark([a.key]);closeAlerts();new Function(a.fn)()});
+ $('alClose').onclick=closeAlerts;$('alAll').onclick=()=>{alMark(L.map(a=>a.key));closeAlerts();if(smenu==='dash'&&tab==='jobs'&&jobsMode==='list')renderJobs()};
+ bg.onclick=e=>{if(e.target===bg)closeAlerts()};bg.onkeydown=e=>{if(e.key==='Escape')closeAlerts()};setTimeout(()=>bg.querySelector('.allist .vmeet')?.focus(),60)}
+function closeAlerts(){const e=$('alDlg');if(e){e.remove();document.body.style.overflow=''}$('abar')?.setAttribute('aria-expanded','false')}
+/** 본 알림 기억 (최근 300개) → 메인 한 줄 · 메뉴 숫자 다시 계산 */
+function alMark(keys){try{localStorage.setItem(alKey(),JSON.stringify([...new Set(alSeen().concat(keys))].slice(-300)))}catch(e){}sBadges(state&&state.badges)}
 /** 큰 동그라미: 허가서 승인 대기 + 순회점검일지 확인 대기 */
 const ckJobs=d=>d.jobs.filter(j=>j.status!=='ENDED'||(j.permitWaiting||0)+(j.inspUnchecked||0)>0);
 function sCheckHtml(d){const L=ckJobs(d);if(!L.length)return '';const pw=sum(L,j=>j.permitWaiting),iu=sum(L,j=>j.inspUnchecked),n=pw+iu;
@@ -53,13 +72,13 @@ function sDash(d){if(dashJob){const j=d.jobs.find(x=>x.id===dashJob);if(j)return
    +'<div class="muted">'+escapeText(s.slice(5).replace('-','/'))+' ~ '+escapeText(e.slice(5).replace('-','/'))+' · 업체 '+j.vendors.length+'곳 · 순회 '+pctTxt(R.insp)+' · 허가서 '+pctTxt(R.permit)+'</div>'
    +'<div class="bchips">'+chip(j.permitWaiting,'허가서 대기',1)+chip(j.inspUnchecked,'일지 확인',1)+chip(j.findOpen,'미조치',1)+chip(sum(j.meetings||[],m=>m.pending),'참석 확인',1)+(j.status!=='ENDED'&&j.end&&j.end.state==='OVER'?'<span class="bchip red">종료일 경과</span>':j.status!=='ENDED'&&j.end&&j.end.state==='SOON'?'<span class="bchip">종료 '+(j.end.left?j.end.left+'일 전':'오늘')+'</span>':'')+chip(w,'주의',1)+(j.status==='ENDED'?chip((j.evalTotal||0)-(j.evalDone||0),'평가 대기',1):'')+'</div></button>'};
  /* F1.8g 메인: 인사 → 알림 띠 → [현장 확인하기] → 지적사항·시정조치 → 공사 현황 → (안전보건팀) 업체별 지적 현황 */
- let h='<div class="card"><h2 style="margin:0">'+escapeText(d.me.name)+' 님</h2><div class="muted">'+escapeText(t)+' · '+(safety?'전체 공사':'내 공사')+' 진행 '+act.length+'건'+(ended.length?' · 종료 '+ended.length+'건':'')+'</div></div>'
-  +sAlertsHtml(d,t);
+ setTimeout(()=>sBadges(state&&state.badges),0);  /* 메뉴 숫자를 안 본 알림 기준으로 */
+ let h='<div class="card"><h2 style="margin:0">'+escapeText(d.me.name)+' 님</h2><div class="muted">'+escapeText(t)+' · '+(safety?'전체 공사':'내 공사')+' 진행 '+act.length+'건'+(ended.length?' · 종료 '+ended.length+'건':'')+'</div>'+sAlertBarHtml(d)+'</div>';
  if(!d.jobs.length)return h+sNone('등록된 공사가 없습니다. ☰ → 공사 관리에서 [+ 새 공사 만들기]로 시작하세요.');
  h+=sCheckHtml(d)+fixCardHtml();
  h+='<div class="card"><h2>공사 현황 '+act.length+'</h2>'+(act.slice().sort((a,b)=>score(b)-score(a)).map(card).join('')||'<p class="muted">진행 중인 공사가 없습니다.</p>')+'</div>';
  if(ended.length)h+='<div class="card"><details class="hist"><summary>종료된 공사 '+ended.length+'건</summary>'+ended.map(card).join('')+'</details></div>';
- if(safety)h+=sWatchFind(d);return h}
+ return h}  /* F1.8h 업체별 지적 현황 표 없앰 (지적사항·시정조치 칸으로 충분) */
 function dashOpen(id){dashJob=id;renderJobs();window.scrollTo(0,0)}
 function dashBack(){dashJob='';renderJobs();window.scrollTo(0,0)}
 /** 안전보건팀: 업체별 지적 현황 (전체) */
