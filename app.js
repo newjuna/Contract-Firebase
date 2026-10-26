@@ -68,7 +68,7 @@ function text(id,label,value='',disabled=false){return `<div class="field"><labe
 function value(id){return $('f_'+id)?.value?.trim()||''}
 function switchTab(which){tab=which;toggleMenu(false);stopScan();if($(which+'Tab'))$('pageTitle').textContent=$(which+'Tab').textContent;clearInterval(roomTimer);clearInterval(wkTimer);for(const n of ['my','admin','review','tpl','staff','jobs','notice','vendors']){$(n).classList.toggle('hidden',n!==which);$(n+'Tab').classList.toggle('active',n===which)}if(which==='admin')loadAdmin();if(which==='review')loadReview();if(which==='tpl')loadTemplates();if(which==='staff')loadStaff();if(which==='jobs')loadJobs();if(which==='notice')loadNotices();if(which==='vendors')loadVendors();}
 // ★ 화면 버전: 여기 한 줄만 고침 (GitHub만 올리면 로그인 화면·앱 화면·메뉴에 모두 반영, Code.gs 수정 불필요)
-const UI_VERSION='26.10.24 F1.8e';
+const UI_VERSION='26.10.24 F1.8f';
 function showVer(){document.querySelectorAll('.verTxt').forEach(x=>x.textContent=UI_VERSION)}
 /** v4.1 ⚙ 마스터 설정: 직원 관리로 바로 이동 (마스터 계정만 보임) */
 function openMaster(){if(!state||!state.isMaster)return;sgo('staff')}
@@ -97,7 +97,7 @@ async function checkReview(){try{const s=await callQuiet('myStatus');if(s&&s.sub
  if(state.company.renewAt&&busyView()){if(window.__rvSeen===s.submissionStatus)return;window.__rvSeen=s.submissionStatus;msg(s.submissionStatus==='APPROVED'?'계약 전 서류 재평가가 승인되었습니다.':'계약 전 서류 재평가 결과가 나왔습니다. [계약 서류] 메뉴에서 확인해 주세요.');return}
  clearInterval(pollTimer);await reload();if(state.company&&state.company.submissionStatus==='APPROVED'&&s.submissionStatus==='APPROVED')msg('계약 전 서류 승인 완료');}}catch(e){}}
 /* 승인 안내 팝업: 업체당 한 번만 */
-function showApprovedOnce(b){const key='approvedSeen:'+b.id;let seen=false;try{seen=localStorage.getItem(key)==='1'}catch(e){}if(seen||window.__approvedShown)return;window.__approvedShown=true;popup('계약 전 검토가 완료되었습니다','본사 담당자 검토를 통과했습니다.\n첫 화면에서 공사 일정과 오늘 할 일을 확인하고, ☰ 메뉴에서 작업자 등록·작업허가서·순회점검을 진행해 주세요.','시작하기',()=>{try{localStorage.setItem(key,'1')}catch(e){}window.scrollTo(0,0)})}
+function showApprovedOnce(b){const key='approvedSeen:'+b.id;let seen=false;try{seen=localStorage.getItem(key)==='1'}catch(e){}if(seen||window.__approvedShown)return;window.__approvedShown=true;popup('계약 전 검토가 완료되었습니다','본사 담당자 검토를 통과했습니다.\n첫 화면의 [금일 작업 수행하기]를 눌러 신규자 등록·작업허가서·순회점검을 진행해 주세요.','시작하기',()=>{try{localStorage.setItem(key,'1')}catch(e){}window.scrollTo(0,0)})}
 /* ---------- 승인 대기 자동 확인 + 안내 팝업 ---------- */
 let pollTimer=null;
 function popup(title,body,btn,onOk,onLater,laterLabel){$('modalTitle').textContent=title;$('modalBody').textContent=body;$('modalBtn').textContent=btn;$('modal').style.zIndex='65';/* F1.7f 작성 화면(계획서·허가서, 40) 위에 뜨게 */$('modal').style.display='flex';const c=$('modalCancel');c.hidden=!onLater;c.textContent=laterLabel||'나중에';$('modalBtn').onclick=()=>{$('modal').style.display='none';onOk&&onOk()};c.onclick=()=>{$('modal').style.display='none';onLater&&onLater()};$('modalBtn').focus()}
@@ -800,6 +800,8 @@ function backAction(){
  if($('pickSheet'))return closePick;  // F1.8c 사진 넣기 창  // F1.8a 사용 가이드 중이면 가이드만 끝냄
  const md=$('modal');if(md&&md.style.display==='flex')return ()=>{const c=$('modalCancel');(c&&!c.hidden?c:$('modalBtn')).click()};
  const nc=$('ncDlg');if(nc&&nc.style.display==='flex')return closeNewContract;
+ const ds=$('dsDlg');if(ds&&ds.style.display==='flex')return closeDayStart;  // F1.8f 공사 고르기 창
+ if(typeof rs!=='undefined'&&rs&&rs.from==='dash'&&$('f_rsMemo'))return ()=>{rs=null;vgo('dash')};  // F1.8f 메인에서 연 조치 등록 → 메인으로
  if(loadCount)return ()=>msg('처리 중입니다. 잠시만 기다려 주세요.');
  if($('drawer')&&$('drawer').classList.contains('open'))return ()=>toggleMenu(false);
  const ps=$('psheet');if(ps&&!ps.hidden&&ps.innerHTML)return ()=>{if(typeof pm==='undefined'||!pm){hideSheet();return}if(pm.paper){pfPaper(false);return}/* F1.8a 미리보기 → 입력 화면 */if(pm.mode==='edit'){cancelEditPermit();return}
