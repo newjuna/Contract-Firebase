@@ -14,7 +14,7 @@ let state=null,activeStep=1,saveTimer=null,dirty=false,tab='my',reviewing=null;
 const $=id=>document.getElementById(id),escapeText=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function msg(t){$('toast').textContent=t;$('toast').style.display='block';setTimeout(()=>$('toast').style.display='none',4500)}
 /* 로딩 창 문구 (서버는 실제 진행률을 알려주지 않음) */
-const LOAD_MSG={portalData:'화면을 불러오는 중',registerBusiness:'신청서를 접수하는 중',uploadContractDoc:'파일을 올리는 중',uploadEvidence:'파일을 올리는 중',getTemplate:'샘플 양식을 내려받는 중',getMyFile:'파일을 내려받는 중',saveStep:'저장하는 중',submitProfile:'최종 제출하는 중',checkSubmission:'누락 항목을 확인하는 중',uploadTemplate:'양식을 등록하는 중',refreshTemplateFolders:'Drive 폴더를 확인하는 중',saveJob:'공사를 저장하는 중',jobBoard:'공사 목록을 불러오는 중',createMeeting:'미팅 방을 만드는 중',deleteJob:'공사를 삭제하는 중',deleteMeeting:'미팅 방을 삭제하는 중',meetingDetail:'미팅 방을 여는 중',vendorJob:'공사 화면을 여는 중',saveCrew:'오늘 인원을 저장하는 중',addWorker:'작업자를 등록하는 중',workerCheckIn:'등록하는 중',meetCheckIn:'참석을 확인하는 중',saveMeetingDocs:'점검표·회의록을 저장하는 중',completeMeeting:'미팅 실시 완료를 확정하는 중',reopenMeetingDocs:'완료를 취소하는 중',uploadMeetingPhoto:'사진을 올리는 중',getMeetingPhoto:'사진을 불러오는 중',getPermit:'작업허가서를 여는 중',issuePermit:'작업허가서를 발행하는 중',updatePermitProgress:'진행 기록을 저장하는 중',permitList:'작업허가서 목록을 불러오는 중',permitDetail:'작업허가서를 여는 중',approvePermit:'승인하는 중',editPermit:'수정 제출하는 중',withdrawPermit:'제출을 취소하는 중',uploadInspPhoto:'사진을 올리는 중',uploadInspPhotoStaff:'사진을 올리는 중',submitInspection:'순회점검을 제출하는 중',resolveFinding:'조치 결과를 등록하는 중',inspList:'순회점검일지를 불러오는 중',checkInspections:'확인 처리하는 중',inspMine:'일지를 불러오는 중',approvePermits:'허가서를 승인하는 중',vendorList:'업체 현황을 불러오는 중',saveRuleDoc:'서명이 들어간 규정 문서를 만드는 중',savePlanDoc:'안전보건관리계획서를 만드는 중',uploadPlanFile:'증빙을 올리는 중',extendJob:'공사를 연장하는 중',endJob:'공사를 종료하고 평가서를 만드는 중',jobEvalList:'종료 평가를 불러오는 중',saveJobEval:'평가를 저장하는 중',reopenJobEval:'확정을 푸는 중',uploadWorkerCert:'이수증을 올리는 중',undoWorker:'등록을 취소하는 중',cancelInspection:'제출을 취소하는 중',cancelRenewal:'신규 작성을 취소하는 중',jobEvalFile:'활동내역 ZIP + 원본파일 ZIP을 만드는 중 (처음 한 번은 1~3분)',noticeList:'참조 알림을 불러오는 중',readNotices:'읽음 처리하는 중'};
+const LOAD_MSG={portalData:'화면을 불러오는 중',registerBusiness:'신청서를 접수하는 중',uploadContractDoc:'파일을 올리는 중',uploadEvidence:'파일을 올리는 중',getTemplate:'샘플 양식을 내려받는 중',getMyFile:'파일을 내려받는 중',saveStep:'저장하는 중',submitProfile:'최종 제출하는 중',checkSubmission:'누락 항목을 확인하는 중',uploadTemplate:'양식을 등록하는 중',refreshTemplateFolders:'Drive 폴더를 확인하는 중',saveJob:'공사를 저장하는 중',jobBoard:'공사 목록을 불러오는 중',createMeeting:'미팅 방을 만드는 중',deleteJob:'공사를 삭제하는 중',deleteMeeting:'미팅 방을 삭제하는 중',meetingDetail:'미팅 방을 여는 중',vendorJob:'공사 화면을 여는 중',saveCrew:'오늘 인원을 저장하는 중',addWorker:'작업자를 등록하는 중',workerCheckIn:'등록하는 중',meetCheckIn:'참석을 확인하는 중',saveMeetingDocs:'점검표·회의록을 저장하는 중',completeMeeting:'미팅 실시 완료를 확정하는 중',reopenMeetingDocs:'완료를 취소하는 중',uploadMeetingPhoto:'사진을 올리는 중',getMeetingPhoto:'사진을 불러오는 중',getPermit:'작업허가서를 여는 중',issuePermit:'작업허가서를 발행하는 중',updatePermitProgress:'진행 기록을 저장하는 중',permitList:'작업허가서 목록을 불러오는 중',permitDetail:'작업허가서를 여는 중',approvePermit:'승인하는 중',editPermit:'수정 제출하는 중',withdrawPermit:'제출을 취소하는 중',uploadInspPhoto:'사진을 올리는 중',uploadInspPhotoStaff:'사진을 올리는 중',submitInspection:'순회점검을 제출하는 중',resolveFinding:'조치 결과를 등록하는 중',inspList:'순회점검일지를 불러오는 중',checkInspections:'확인 처리하는 중',inspMine:'일지를 불러오는 중',approvePermits:'허가서를 승인하는 중',vendorList:'업체 현황을 불러오는 중',saveRuleDoc:'서명이 들어간 규정 문서를 만드는 중',savePlanDoc:'안전보건관리계획서를 만드는 중',uploadPlanFile:'증빙을 올리는 중',extendJob:'공사를 연장하는 중',endJob:'공사를 종료하고 평가서를 만드는 중',jobEvalList:'종료 평가를 불러오는 중',saveJobEval:'평가를 저장하는 중',reopenJobEval:'확정을 푸는 중',uploadWorkerCert:'이수증을 올리는 중',viewCert:'이수증을 불러오는 중',undoWorker:'등록을 취소하는 중',cancelInspection:'제출을 취소하는 중',cancelRenewal:'신규 작성을 취소하는 중',jobEvalFile:'활동내역 ZIP + 원본파일 ZIP을 만드는 중 (처음 한 번은 1~3분)',noticeList:'참조 알림을 불러오는 중',readNotices:'읽음 처리하는 중'};
 /* v5.20 가짜 %(92%에서 멈춰 보이던 것) 대신 '움직이는 막대 + 지난 초' — 멈춘 게 아니라 기다리는 중이라는 것을 그대로 보여 줌 */
 let loadTimer=null,loadCount=0,coverTimer=null;
 function loadStart(name){loadCount++;if(loadCount>1)return;const rd=READS.has(name);$('loadMsg').textContent=(LOAD_MSG[name]||'처리하는 중')+'입니다';$('loadHint').textContent='잠시만 기다려 주세요';$('loadSec').textContent='';/* v4.2 0.4초 안에 끝나면 로딩 화면 안 띄움 */clearTimeout(coverTimer);coverTimer=setTimeout(()=>{if(loadCount)$('cover').style.display='flex'},400);const t0=Date.now();clearInterval(loadTimer);
@@ -68,7 +68,7 @@ function text(id,label,value='',disabled=false){return `<div class="field"><labe
 function value(id){return $('f_'+id)?.value?.trim()||''}
 function switchTab(which){tab=which;toggleMenu(false);stopScan();if($(which+'Tab'))$('pageTitle').textContent=$(which+'Tab').textContent;clearInterval(roomTimer);clearInterval(wkTimer);for(const n of ['my','admin','review','tpl','staff','jobs','notice','vendors']){$(n).classList.toggle('hidden',n!==which);$(n+'Tab').classList.toggle('active',n===which)}if(which==='admin')loadAdmin();if(which==='review')loadReview();if(which==='tpl')loadTemplates();if(which==='staff')loadStaff();if(which==='jobs')loadJobs();if(which==='notice')loadNotices();if(which==='vendors')loadVendors();}
 // ★ 화면 버전: 여기 한 줄만 고침 (GitHub만 올리면 로그인 화면·앱 화면·메뉴에 모두 반영, Code.gs 수정 불필요)
-const UI_VERSION='26.10.24 F1.8f';
+const UI_VERSION='26.10.24 F1.8g';
 function showVer(){document.querySelectorAll('.verTxt').forEach(x=>x.textContent=UI_VERSION)}
 /** v4.1 ⚙ 마스터 설정: 직원 관리로 바로 이동 (마스터 계정만 보임) */
 function openMaster(){if(!state||!state.isMaster)return;sgo('staff')}
@@ -526,7 +526,7 @@ function setNoNew(){try{localStorage.setItem(noNewKey(vjob),'1')}catch(e){}const
 function doneMask(label){return '<div class="doneMask" role="button" tabindex="0" aria-label="'+escapeText(label)+' 오늘 완료 · 눌러서 열기" onclick="this.remove()" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();this.remove()}" style="position:absolute;inset:0;z-index:3;border-radius:inherit;background:rgba(17,24,39,.55);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;cursor:pointer">'
  +'<span style="border:3px solid #fff;color:#fff;border-radius:10px;padding:6px 16px;font-size:20px;font-weight:800;transform:rotate(-8deg)">✔ 오늘 완료</span><span style="color:#fff;font-size:12px">눌러서 열기</span></div>'}
 /** 이수증 칸: 있으면 보기 · 없으면 바로 올리기 */
-function certCell(w){return w.certDoc?'<button class="linkbtn" type="button" style="font-size:12px;color:var(--ok)" onclick="viewFile(\''+escapeText(w.certDoc)+'\')">✔ 보기</button>'
+function certCell(w){return w.certDoc?'<button class="linkbtn" type="button" style="font-size:12px;color:var(--ok)" onclick="certView(\''+escapeText(w.certDoc)+'\',\''+escapeText(w.name)+'\')" aria-label="'+escapeText(w.name)+' 이수증 보기">✔ 보기</button>'
  :'<button class="linkbtn req" type="button" style="font-size:12px" onclick="pickCertFor(\''+escapeText(w.id)+'\')" aria-label="'+escapeText(w.name)+' 이수증 사진 넣기">📷 올리기</button>'}
 /** F1.8b ☰ 신규교육 현황: 이 공사에 등록한 전체 명단 · 이수증 놓친 사람 나중에 올리기 · 작업 안전 수칙 서명 기록 */
 function eduHtml(v){const W=v.workers.slice().sort((x,y)=>String(y.eduAt||'').localeCompare(String(x.eduAt||''))),ok=W.filter(w=>w.certDoc).length,method=w=>w.method==='SELF'?'본인':'소장';
@@ -693,6 +693,16 @@ async function upload(){try{const f=await readFile($('evidence').files[0]);displ
  *  새 창이 막히면(휴대폰 팝업 차단) 안내 창의 [열기] 버튼으로 다시 열기 */
 function openFile(f){if(!f)return;if(!f.url){saveBlob(f);return}const w=window.open(f.url,'_blank');if(!w)popup('파일 열기',(f.name||'파일')+'\n\n구글 드라이브 화면으로 엽니다.\n'+(f.email?'('+f.email+' 계정으로 보기 권한이 있습니다)':''),'열기',()=>window.open(f.url,'_blank'))}
 async function viewFile(id){try{openFile(await call('getMyFile',id))}catch(e){}}
+/* F1.8g 이수증 보기: 구글 드라이브로 가지 않고 화면 안 창에 이미지만 (한 번 본 것은 다시 받지 않음) */
+const certMem={};
+async function certView(id,who){let f=certMem[id];if(!f){try{f=certMem[id]=await call('viewCert',id)}catch(e){return}}
+ closeCert();const src='data:'+f.mime+';base64,'+f.data,pdf=/pdf/.test(f.mime);
+ const bg=document.createElement('div');bg.id='certDlg';bg.className='certbg';bg.setAttribute('role','dialog');bg.setAttribute('aria-modal','true');bg.setAttribute('aria-label',(who||'')+' 기초안전보건교육 이수증');
+ bg.innerHTML='<div class="certtop"><b>'+escapeText(who||'')+' 이수증</b><button class="certx" type="button" id="certClose" aria-label="닫기">✕</button></div>'
+  +'<div class="certbody">'+(pdf?'<div class="certpdf"><p>PDF로 올린 이수증입니다.</p><button class="button" type="button" id="certSave">📄 PDF 열기</button></div>':'<img src="'+src+'" alt="'+escapeText((who||'')+' 기초안전보건교육 이수증')+'">')+'</div>';
+ document.body.appendChild(bg);$('certClose').onclick=closeCert;bg.onclick=e=>{if(e.target===bg||e.target.classList.contains('certbody'))closeCert()};bg.onkeydown=e=>{if(e.key==='Escape')closeCert()};
+ if(pdf)$('certSave').onclick=()=>saveBlob(f);setTimeout(()=>$('certClose')?.focus(),30)}
+function closeCert(){$('certDlg')?.remove()}
 /* F1.4 휴대폰에서 사진 칸을 누르면 카메라만 열리던 것(capture) → 옆에 [🖼 앨범·파일] 버튼을 자동으로 붙임
  *  고른 사진은 원래 사진 칸에 넣고 원래 처리(올리기)를 그대로 실행. 화면을 다시 그려도 계속 붙음 */
 (function(){
@@ -797,11 +807,12 @@ function inAppBox(){const n=inAppName();if(!n)return;const box=document.createEl
 function backAction(){
  if(BOOT)return null;
  if(typeof tour!=='undefined'&&tour)return ()=>endTour();
+ if($('certDlg'))return closeCert;  // F1.8g 이수증 보기 창
  if($('pickSheet'))return closePick;  // F1.8c 사진 넣기 창  // F1.8a 사용 가이드 중이면 가이드만 끝냄
  const md=$('modal');if(md&&md.style.display==='flex')return ()=>{const c=$('modalCancel');(c&&!c.hidden?c:$('modalBtn')).click()};
  const nc=$('ncDlg');if(nc&&nc.style.display==='flex')return closeNewContract;
  const ds=$('dsDlg');if(ds&&ds.style.display==='flex')return closeDayStart;  // F1.8f 공사 고르기 창
- if(typeof rs!=='undefined'&&rs&&rs.from==='dash'&&$('f_rsMemo'))return ()=>{rs=null;vgo('dash')};  // F1.8f 메인에서 연 조치 등록 → 메인으로
+ if(typeof rs!=='undefined'&&rs&&rs.from==='dash'&&$('f_rsMemo'))return ()=>{const st=rs.who==='staff';rs=null;st?sgo('dash'):vgo('dash')};  // F1.8f·g 메인에서 연 조치 등록 → 메인으로
  if(loadCount)return ()=>msg('처리 중입니다. 잠시만 기다려 주세요.');
  if($('drawer')&&$('drawer').classList.contains('open'))return ()=>toggleMenu(false);
  const ps=$('psheet');if(ps&&!ps.hidden&&ps.innerHTML)return ()=>{if(typeof pm==='undefined'||!pm){hideSheet();return}if(pm.paper){pfPaper(false);return}/* F1.8a 미리보기 → 입력 화면 */if(pm.mode==='edit'){cancelEditPermit();return}
