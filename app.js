@@ -68,7 +68,7 @@ function text(id,label,value='',disabled=false){return `<div class="field"><labe
 function value(id){return $('f_'+id)?.value?.trim()||''}
 function switchTab(which){tab=which;toggleMenu(false);stopScan();if($(which+'Tab'))$('pageTitle').textContent=$(which+'Tab').textContent;clearInterval(roomTimer);clearInterval(wkTimer);for(const n of ['my','admin','review','tpl','staff','jobs','notice','vendors']){$(n).classList.toggle('hidden',n!==which);$(n+'Tab').classList.toggle('active',n===which)}if(which==='admin')loadAdmin();if(which==='review')loadReview();if(which==='tpl')loadTemplates();if(which==='staff')loadStaff();if(which==='jobs')loadJobs();if(which==='notice')loadNotices();if(which==='vendors')loadVendors();}
 // ★ 화면 버전: 여기 한 줄만 고침 (GitHub만 올리면 로그인 화면·앱 화면·메뉴에 모두 반영, Code.gs 수정 불필요)
-const UI_VERSION='26.10.24 F1.8d';
+const UI_VERSION='26.10.24 F1.8e';
 function showVer(){document.querySelectorAll('.verTxt').forEach(x=>x.textContent=UI_VERSION)}
 /** v4.1 ⚙ 마스터 설정: 직원 관리로 바로 이동 (마스터 계정만 보임) */
 function openMaster(){if(!state||!state.isMaster)return;sgo('staff')}
@@ -206,7 +206,8 @@ function contractHomeHtml(b){
  const pctHtml='<div class="row" style="justify-content:space-between;margin-top:12px"><span class="muted">준비 상태 · 사업장 정보 '+infoDone+'/'+need.length+' · 서류 '+docDone+'/'+req.length+'</span><b style="color:#1b7442">'+pct+'%</b></div><div class="prog"><span style="width:'+pct+'%"></span></div>';
  const info='<div class="card"><h2>① 사업장 정보</h2><p class="muted">입력하면 자동 저장됩니다.</p><form id="stepForm" oninput="changed()" onsubmit="saveManual(event)">'+infoForm(b,dis)+'<div class="row" style="justify-content:space-between;margin-top:10px"><span class="statusline" id="saved">서버 저장 상태: -</span><button class="button ghost" type="submit" '+(locked?'disabled':'')+'>임시저장</button></div></form></div>';
  const lockMsg=locked?'제출 완료 · 검토 중':correcting?'보완 대상 아님':'';
- const docs='<div class="card"><h2>② 계약 전 제출 서류</h2>'+(rows.map(r=>r.code==='C01'&&state.forms?ruleCardHtml(r,{lockMsg}):r.code==='C02'&&state.forms&&state.forms.plan?planCardHtml(r,{lockMsg}):docCard(r,{exec:false,lockMsg})).join('')||'<p class="desc">제출할 서류가 아직 설정되지 않았습니다.</p>')
+ const docs='<div class="card"><h2>② 계약 전 제출 서류</h2>'+(rows.map(r=>{const pair=state.forms&&state.forms.plan&&rows.some(x=>x.code==='C01')&&rows.some(x=>x.code==='C02');  // F1.8c 규정·계획서는 한 카드로
+  return pair&&r.code==='C01'?'':pair&&r.code==='C02'?docPairCardHtml(rows.find(x=>x.code==='C01'),r,{lockMsg}):r.code==='C01'&&state.forms?ruleCardHtml(r,{lockMsg}):r.code==='C02'&&state.forms&&state.forms.plan?planCardHtml(r,{lockMsg}):docCard(r,{exec:false,lockMsg})}).join('')||'<p class="desc">제출할 서류가 아직 설정되지 않았습니다.</p>')
   +'</div>';
  const fin='<div class="card"><h2>③ 제출</h2>'+(locked?'<div class="note">'+escapeText(SUB_LABEL[st]||st)+' 상태입니다. 제출한 내용은 검토가 끝날 때까지 수정할 수 없습니다.</div>':'<p class="desc">제출하면 본사 담당자 → 안전보건팀 순서로 검토합니다.</p><button class="button" style="width:100%" type="button" onclick="submitAll()">누락 확인 후 제출하기</button>')+'</div>';
  return headCard(b,st,todo,pctHtml)+(b.renewAt?bizInfoCard(b,locked||(correcting&&!allowed.some(k=>/^1:/.test(k)))):'')+info+docs+fin;
@@ -803,7 +804,7 @@ function backAction(){
  if($('drawer')&&$('drawer').classList.contains('open'))return ()=>toggleMenu(false);
  const ps=$('psheet');if(ps&&!ps.hidden&&ps.innerHTML)return ()=>{if(typeof pm==='undefined'||!pm){hideSheet();return}if(pm.paper){pfPaper(false);return}/* F1.8a 미리보기 → 입력 화면 */if(pm.mode==='edit'){cancelEditPermit();return}
   if(pm.mode==='new'&&pmTouched&&!confirm('작성 중인 허가서를 닫을까요?\n입력한 내용은 저장되지 않습니다.'))return;if(pm.mode==='staff')backPermitList();else closePermit()};
- const cs=$('csheet');if(cs&&cs.style.display==='block')return ()=>{if(/규정/.test(cs.getAttribute('aria-label')||'')){if(confirm('규정 작성을 닫을까요?\n입력한 내용은 저장되지 않습니다.'))closeRule()}else closePlan()};
+ const cs=$('csheet');if(cs&&cs.style.display==='block')return ()=>{if(!/계획서/.test(cs.getAttribute('aria-label')||'')){/* F1.8c 규정만 쓰는 화면일 때만 규정 닫기 (합친 화면은 계획서 닫기 = 임시 보관) */if(confirm('규정 작성을 닫을까요?\n입력한 내용은 저장되지 않습니다.'))closeRule()}else closePlan()};
  const sec=document.querySelector('.main > section:not(.hidden)');if(sec){const b=[...sec.querySelectorAll('button')].find(x=>/^\s*←/.test(x.textContent)&&x.offsetParent!==null);if(b)return ()=>b.click()}
  if(tab==='jobs'&&jobsMode==='form')return ()=>renderJobs();
  if(state&&isVendorApproved()&&(tab!=='my'||vmenu!=='dash'||!$('execArea')))return ()=>vgo('dash');
