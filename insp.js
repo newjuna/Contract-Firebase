@@ -69,9 +69,11 @@ async function submitInspNow(){ins.name=value('inName');const miss=[];if(!ins.tb
  catch(e){showErr('순회점검을 제출하지 못했습니다',e)}}
 /* ---------- 지적사항 조치 등록 (업체·도급인 공용) ---------- */
 let rs=null;
-function openResolve(id,who){const list=who==='staff'?inspJob.findings:vjob.insp.open,f=list.find(x=>x.id===id);if(!f)return;rs={f,who,photos:[]};renderResolve()}
+/* F1.8f from='dash': 메인 화면 [조치하기]에서 열었으면 돌아가기·등록 후 메인으로 */
+function openResolve(id,who,from){const list=who==='staff'?inspJob.findings:vjob.insp.open,f=list.find(x=>x.id===id);if(!f)return;rs={f,who,photos:[],from:from||''};renderResolve()}
+const rsBack=()=>rs&&rs.from==='dash'?'rs=null;vgo(\'dash\')':rs&&rs.who==='staff'?'renderInspList()':'renderVJob()';
 function renderResolve(){const f=rs.f,staff=rs.who==='staff',t=new Date(Date.now()+9*3600e3).toISOString().slice(0,10),area=staff?$('jobs'):$('execArea');
- area.innerHTML='<div class="card"><button class="button ghost" type="button" onclick="'+(staff?'renderInspList()':'renderVJob()')+'">← 돌아가기</button><h2 style="margin-top:12px">지적사항 조치 등록</h2><table class="rtable"><tr><th>항목</th><td>'+f.no+'. '+escapeText(f.item)+'</td></tr><tr><th>업체</th><td>'+escapeText(f.company)+'</td></tr><tr><th>지적일</th><td>'+escapeText(f.foundDate)+'</td></tr><tr><th>지적 내용</th><td>'+escapeText(f.memo)+'</td></tr><tr><th>조치 전</th><td>'+(thumbs(f.before,'')||'<span class="muted">사진 없음</span>')+'</td></tr></table></div>'
+ area.innerHTML='<div class="card"><button class="button ghost" type="button" onclick="'+rsBack()+'">← 돌아가기</button><h2 style="margin-top:12px">지적사항 조치 등록</h2><table class="rtable"><tr><th>항목</th><td>'+f.no+'. '+escapeText(f.item)+'</td></tr><tr><th>업체</th><td>'+escapeText(f.company)+'</td></tr><tr><th>지적일</th><td>'+escapeText(f.foundDate)+'</td></tr><tr><th>지적 내용</th><td>'+escapeText(f.memo)+'</td></tr><tr><th>조치 전</th><td>'+(thumbs(f.before,'')||'<span class="muted">사진 없음</span>')+'</td></tr></table></div>'
   +'<div class="card"><div class="field"><label for="f_rsMemo">조치 내용 <span class="req">*</span></label><input id="f_rsMemo" placeholder="예) 통로 자재 정리 완료, 적치구역 지정"></div>'
   +'<div class="split"><div class="field"><label for="f_rsDate">조치일 <span class="req">*</span></label><input id="f_rsDate" type="date" value="'+t+'" min="'+escapeText(f.foundDate)+'" max="'+t+'"></div>'+(staff?'':'<div class="field"><label for="f_rsName">조치 확인자 <span class="req">*</span></label><input id="f_rsName" value="'+escapeText(vjob.siteManager||'')+'"></div>')+'</div>'
   +'<div class="field" id="rsPh"><label>조치 후 사진 <span class="req">*</span></label><div class="row" id="rsList">'+rsPhotoHtml()+'</div></div></div>'
@@ -80,8 +82,13 @@ function rsPhotoHtml(){return thumbs(rs.photos,'')+'<label class="button ghost" 
 async function addRsPhoto(){const memo=value('rsMemo'),date=value('rsDate'),name=value('rsName'),ids=await upInsp('rsFile',rs.who==='staff'?rs.f.companyId:null,5-rs.photos.length);if(!ids.length)return;rs.photos=rs.photos.concat(ids).slice(0,5);
  /* 조치 내용·조치일·확인자는 사진 칸만 다시 그리므로 그대로 남지만, 혹시 화면이 바뀌었으면 되살림 */if($('f_rsMemo')&&!$('f_rsMemo').value)$('f_rsMemo').value=memo;if($('f_rsDate')&&!$('f_rsDate').value)$('f_rsDate').value=date;if($('f_rsName')&&!$('f_rsName').value)$('f_rsName').value=name;$('rsList').innerHTML=rsPhotoHtml();$('rsPh').classList.remove('miss','shake')}
 async function resolveNow(){const d={memo:value('rsMemo'),date:value('rsDate'),name:value('rsName'),photos:rs.photos},miss=[];if(!d.memo)miss.push('f_rsMemo');if(!d.date)miss.push('f_rsDate');if(rs.who!=='staff'&&!d.name)miss.push('f_rsName');if(!d.photos.length)miss.push('rsPh');
- if(miss.length){inspFlag(miss,'빨간 칸을 채워 주세요 (조치 후 사진 필수)');return}if(!confirm(d.date+' 조치 완료로 등록할까요?'))return;
- try{if(rs.who==='staff'){inspJob=await call('resolveFinding',rs.f.id,d);renderInspList()}else{vjob=await call('resolveFinding',rs.f.id,d);renderVJob();$('inspCard')?.scrollIntoView({block:'start'})}rs=null;msg('조치 완료로 등록했습니다.')}catch(e){alert(e.message)}}
+ if(miss.length){inspFlag(miss,'빨간 칸을 채워 주세요 (조치 후 사진 필수)');return}if(!await askOk('조치 완료 등록',d.date+' 조치 완료로 등록할까요?','등록'))return;
+ const fid=rs.f.id,dash=rs.from==='dash';
+ try{if(rs.who==='staff'){inspJob=await call('resolveFinding',fid,d);renderInspList()}
+  else{vjob=await call('resolveFinding',fid,d);rs=null;
+   if(dash){/* F1.8f 메인 목록도 바로 '조치 완료'로 바꾸고 메인으로 */((vjobs&&vjobs.jobs)||[]).forEach(j=>(j.findings||[]).forEach(f=>{if(f.id===fid){f.status='DONE';f.actionDate=d.date}}));((vjobs&&vjobs.jobs)||[]).forEach(j=>{if(j.stats&&j.findings)j.stats.openFindings=j.findings.filter(f=>f.status!=='DONE').length});vjobsAt=0;vgo('dash')}
+   else{renderVJob();$('inspCard')?.scrollIntoView({block:'start'})}}
+  rs=null;msg('조치 완료로 등록했습니다.')}catch(e){showErr('조치 완료로 등록하지 못했습니다',e)}}
 /* ---------- 순회점검일지 (종이 일지 모양 보기, 업체·도급인 공용) ---------- */
 async function openInspSheet(id,who){let x,fs,items,job,area;
  if(who==='staff'){x=inspJob.list.find(i=>i.id===id);fs=inspJob.findings.filter(f=>f.inspId===id);items=inspJob.items;job=inspJob.job;area=$('jobs')}
