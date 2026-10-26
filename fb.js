@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F1.7e';
+  const VERSION = '26.10.24 F1.7f';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   const CFG = {
     INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
@@ -134,7 +134,9 @@
   const tidy = (v, max = 600) => String(v ?? '').trim().slice(0, max);
   const lower = (v) => String(v || '').trim().toLowerCase();
   const fail = (m) => { throw Error(m); };
-  const getMode = () => { try { return localStorage.getItem('fbMode') || ''; } catch (e) { return ''; } };
+  /* F1.7f 접속 구분이 비어 있으면(예전에 작업자 QR로 로그인한 기기) 로그인 화면에서 마지막으로 고른 구분을 씀
+   *  → 직원 명단에 있는 사람이 [협력업체]로 쓰다가 작업자 QR을 한 번 찍은 뒤 업체 업무가 직원 기준으로 처리되던 문제 */
+  const getMode = () => { try { const m = localStorage.getItem('fbMode') || localStorage.getItem('loginMode') || ''; return ['VENDOR', 'STAFF'].includes(m) ? m : ''; } catch (e) { return ''; } };
   async function me() {
     await ready;
     if (!USER) fail('로그인이 만료되었습니다. 다시 로그인해 주세요.');
@@ -1235,7 +1237,8 @@
   }
   /** 로그인 직후 (기존 op:'login'과 같은 모양으로 돌려줌) */
   async function login(mode, boot) {
-    try { localStorage.setItem('fbMode', mode || ''); } catch (e) {}
+    // F1.7f 작업자 QR 로그인은 접속 구분을 바꾸지 않음 (예전: 비워서 같은 기기의 업체 업무가 직원 기준으로 처리됨)
+    if (!/^WRK-/.test(boot || '')) { try { localStorage.setItem('fbMode', mode || ''); } catch (e) {} }
     const a = await me(), data = { key: a.uid, email: a.email };
     if (/^WRK-[a-f0-9]{32}$/.test(boot || '')) {  // 작업자 등록 QR로 로그인: 등록 화면을 같이 돌려줌
       data.appVersion = VERSION;
