@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F1.8m';
+  const VERSION = '26.10.24 F1.8n';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   const CFG = {
     INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
@@ -341,6 +341,12 @@
     let steps = [], documents = [], docBoard = null, forms = null;
     if (V) {
       steps = V.profiles.map((x) => ({ step: Number(x.step), data: staleForm(b, x.updatedAt) ? {} : (x.data || {}) }));
+      // F1.8n 사업장 정보(현장대리인 · 연락처 · 주소)는 가입 때 받은 값 → 비어 있으면 한 번 채워 둠 (예전에 가입한 업체 포함)
+      if (b.submissionStatus === 'DRAFT' && (!(b.renewAt && b.renewMode === 'NEW') || String(b.infoAt || '') >= String(b.renewAt))) {
+        const s1 = steps.find((x) => x.step === 1), cur = (s1 && s1.data) || {}, fill = { siteManager: b.contact, siteManagerPhone: b.phone, siteAddress: b.address }, next = { ...cur };
+        let ch = false; Object.keys(fill).forEach((k) => { if (!String(cur[k] || '').trim() && fill[k]) { next[k] = tidy(fill[k], 4000); ch = true; } });
+        if (ch) { try { await db.collection('PROFILES').doc(b.id + '_1').set({ companyId: b.id, uid: a.uid, step: 1, data: next, updatedAt: now(), updatedBy: a.email }); if (s1) s1.data = next; else steps.push({ step: 1, data: next }); } catch (e) { console.warn('사업장 정보 자동 채움 실패', e && e.message); } }
+      }
       const linked = new Set(V.subs.map((x) => x.documentId));
       documents = V.files.filter((x) => !linked.has(x.id)).map((x) => ({ id: x.id, name: x.name, mime: x.mime }));
       docBoard = vendorDocBoard(b, V.tpl, V.subs);
