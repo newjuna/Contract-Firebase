@@ -141,7 +141,7 @@ body{background:var(--bg);color:var(--text);font:15px/1.6 "Pretendard","Malgun G
 .cwrap{max-width:720px;margin:0 auto;padding:12px 12px 40px}
 .cdoc #ruleDoc{font-size:14px;line-height:1.75;color:#111}.cdoc h3{text-align:center;font-size:16px;margin:8px 0 14px}.cdoc p{margin:0 0 6px}.cdoc .art{margin-top:12px}.cdoc .art b{display:block;margin-bottom:2px}
 .cdoc b.fill{background:#fff4c2;padding:0 4px;border-radius:4px}
-.csign{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}.csign>div{border:1px solid #9ca3af;border-radius:8px;padding:10px;font-size:13px;line-height:1.6}
+.csign{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:14px}.csign>div{border:1px solid #9ca3af;border-radius:8px;padding:8px 6px;font-size:12px;line-height:1.6;word-break:keep-all}
 .sigpad{width:100%;height:180px;border:1.5px dashed #9ca3af;border-radius:12px;background:#fff;touch-action:none;display:block;cursor:crosshair}
 #sigBox.miss .sigpad{border-color:var(--accent)}
 #csheet .card{min-width:0}#csheet input{max-width:100%;box-sizing:border-box}
