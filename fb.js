@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F1.8i';
+  const VERSION = '26.10.24 F1.8j';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   const CFG = {
     INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
@@ -263,7 +263,7 @@
     const y = Number(today().slice(0, 4)), w = PLAN_INDUSTRY_WORKS[b.industry] || [];
     return { policy: planPolicy_(b.company), goal: '무재해 달성 (산업재해 0건)',
       kpis: [{ name: '순회점검 실시율 (2일 1회)', target: '100%' }, { name: '작업 전 TBM·안전교육 실시율', target: '100%' }, { name: '지적사항 즉시 시정률', target: '100%' }],
-      org: [{ role: '안전총괄책임자', name: b.representative || '', phone: b.phone || '' }, { role: '안전관리책임자 (현장대리인)', name: p.siteManager || '', phone: p.siteManagerPhone || '' }, { role: '안전담당자', name: p.safetyManager || '', phone: p.safetyPhone || '' }],
+      org: [{ role: '안전총괄책임자', name: b.representative || '', phone: b.phone || '' }, { role: '안전관리책임자 (현장대리인)', name: p.siteManager || '', phone: p.siteManagerPhone || '' }, { role: '안전담당자', name: p.safetyManager || p.siteManager || '', phone: p.safetyPhone || p.siteManagerPhone || '' }],
       works: w.length ? w : ['HEIGHT', 'TOOL', 'HEAVY'], scen: ['FIRE'].concat(w.includes('ELEC') ? ['SHOCK'] : []).concat((w.length ? w : ['HEIGHT']).includes('HEIGHT') ? ['FALL'] : []),
       hospital: '', years: [y - 3, y - 2, y - 1], accidents: ['', '', ''], evidence: [], practice: '',
       drill: { route: '', assembly: '', equip: '', manager: p.siteManager || '', items: ['NEW', 'EVAC', 'FIRE'] } };  // F1.8c 비상대피훈련 계획 (중계 서버 planDefaults_와 같게)
@@ -411,7 +411,9 @@
   };
   /** 파일 내려받기 (권한은 중계 서버가 다시 확인) */
   API.getInternalFile = async (a, companyId, docId) => relay('file', { companyId: String(companyId || ''), docId: String(docId || '') }, true);
-  API.getMyFile = async (a, docId) => relay('file', { docId: String(docId || '') }, true);
+  API.getMyFile = async (a, docId) => relay('file', { docId: String(docId || ''), raw: true }, true);  // F1.8j 드라이브 화면 대신 내용 (화면 안에서 보기)
+  /** F1.8j ZIP 바로 내려받기 (8MB씩) */
+  API.jobEvalFilePart = async (a, id, fid, i) => { await staffOnly(a); return relay('evalZipPart', { evalId: tidy(id, 40), fid: tidy(fid, 80), i: Number(i) || 0 }, true, 180000); };
   /** F1.8g 이수증 보기: 파일 내용만 받아 화면 안 창에 띄움 (구글 드라이브 화면 안 열림) */
   API.viewCert = async (a, docId) => relay('certView', { docId: tidy(docId, 60) }, true);
   /** F1.8i [마스터] 데이터 현황 · 지우기 (중계 서버가 마스터인지 다시 확인) */
@@ -1184,6 +1186,14 @@
     if (st) return rec({ name: st.name, side: 'STAFF', companyId: '', company: '아성다이소', role: '도급인(' + (STAFF_ROLES[st.role] || st.role) + ')', status: 'OK' });
     const vs = L.vendors || [], own = (await myCompanies(a)).find((x) => x.status === 'VERIFIED') || null, assigned = own && vs.find((v) => v.companyId === own.id);
     if (!vs.length) return { ...base, state: 'NO_VENDOR' };
+    /* F1.8j QR만 찍으면 바로 참석 (입력 없음)
+     *  배정된 업체 대표 계정 → 업체명 + 현장대리인 이름(없으면 업체 담당자) · 관리자
+     *  이 공사에 등록된 작업자 본인 계정 → 등록한 이름 · 업체 · 근로자 */
+    if (!info && assigned) return rec({ name: (await siteManagerOf(a, own).catch(() => '')) || own.contact || own.representative || a.email, side: 'VENDOR', companyId: own.id, company: own.company, role: ATTEND_ROLES[0], status: 'OK' });
+    if (!info) {
+      const w = docs(await db.collection('WORKERS').where('uid', '==', a.uid).get().catch(() => ({ docs: [] }))).find((x) => x.jobId === L.jobId && x.active !== 'N' && vs.some((v) => v.companyId === x.companyId));
+      if (w) return rec({ name: w.name, side: 'VENDOR', companyId: w.companyId, company: w.company || (vs.find((v) => v.companyId === w.companyId) || {}).company || '', role: ATTEND_ROLES[1], status: 'OK', workerId: w.id });
+    }
     if (!info) return { ...base, state: 'NEED_INFO', known: assigned ? { companyId: own.id, company: own.company, name: own.contact } : null, myCompany: own && !assigned ? own.company : '', vendors: vs, roles: ATTEND_ROLES };
     const name = tidy(info.name, 40), role = ATTEND_ROLES.includes(info.role) ? info.role : '';
     if (!name || !role) fail('이름과 역할(관리자/근로자)을 입력해 주세요.');
