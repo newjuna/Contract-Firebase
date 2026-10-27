@@ -20,7 +20,6 @@ const TOUR_STEPS={
   {scr:'permit',sel:'#pfAll',tap:1,text:'③ 작업 전에 안전조치를 했으면 [모두 조치함]을 누르세요. 고른 위험작업에 필요한 조치만 나옵니다.'},
   {scr:'permit',sel:'#pfIssue',tap:1,text:'④ 현장책임자 이름을 확인하고 [발행]을 누르면 바로 작업할 수 있습니다.'},
   {scr:'permit',sel:'#pfPrev',tap:1,text:'[결과지 미리보기]를 누르면 작업허가서 양식으로 어떻게 나오는지 볼 수 있습니다.'},
-  {scr:'permit',sel:'#pgDur',tap:1,text:'발행한 뒤에는: 작업 중 현장을 둘러볼 때마다 [지금 확인 기록]을 누릅니다.'},
   {scr:'permit',sel:'#pgDoneBtn',tap:1,text:'작업이 끝나면 [지금 완료]를 누르고'},
   {scr:'permit',sel:'#pgSave',tap:1,text:'[저장]을 누르면 오늘 작업허가서가 마무리됩니다.'}],
  insp:[

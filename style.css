@@ -291,3 +291,11 @@ html,body{overscroll-behavior-y:none}
 @keyframes alDrop{from{transform:translateY(-100%)}to{transform:none}}
 @keyframes alItem{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.albg,.alpanel,.allist .vmeet{animation:none}}
+/* ===== F1.8j 아이폰 좌우 흔들림 막기: 위아래만 스크롤 ===== */
+html{overflow-x:hidden}body{max-width:100%}  /* html에만 hidden (body까지 주면 위쪽 메뉴 줄 고정이 풀림) */
+@supports (overflow:clip){body{overflow-x:clip}}
+body{position:relative;-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior-x:none}
+img,svg,video,iframe,canvas,table,select,input,textarea{max-width:100%}
+.main,.card,.cwrap{min-width:0;overflow-wrap:anywhere}
+/* 아이폰은 글자 16px 미만 입력칸을 누르면 화면을 확대해서 좌우로 밀림 → 입력칸 글자 16px */
+@media (max-width:820px){input,select,textarea{font-size:16px!important}}

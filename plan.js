@@ -28,6 +28,8 @@ function planCardHtml(r,opt){return docPairCardHtml(plRow('C01'),r,opt)}
 function openPlan(){const can=plCan();if(!can.C02&&can.C01){openRule();return}  // 규정만 고칠 수 있으면 예전 규정 화면
  const F=state.forms.plan,saved=F.C02&&F.C02.data,D=F.defaults,R=state.forms,b=state.company,prev=(R.C01&&R.C01.data)||{};let draft=null;try{draft=JSON.parse(localStorage.getItem(plKey())||'null')}catch(e){}
  pl=JSON.parse(JSON.stringify(draft||saved||D));['policy','kpis','org','works','scen','accidents','evidence'].forEach(k=>{if(!Array.isArray(pl[k]))pl[k]=JSON.parse(JSON.stringify(D[k]))});
+ /* F1.8j 조직 이름 자동 연결: 총괄 = 대표이사 · 관리책임자·담당자 = 사업장 정보의 현장대리인 (비어 있는 칸만 채움 · 고친 이름은 그대로) */
+ (D.org||[]).slice(0,3).forEach((o,i)=>{const x=pl.org[i]=pl.org[i]||{role:o.role,name:'',phone:''};if(!x.role)x.role=o.role;if(!x.name)x.name=o.name||'';if(!x.phone)x.phone=o.phone||''});
  pl.drill=Object.assign({},D.drill||{},pl.drill||{});if(!Array.isArray(pl.drill.items))pl.drill.items=(D.drill&&D.drill.items||[]).slice();
  pl.rule=Object.assign({hqRep:prev.hqRep||R.hqRep||'',vendorRep:prev.vendorRep||b.representative||''},pl.rule||{},{date:R.today});
  pl.years=D.years;pl.evidenceFiles=pl.evidenceFiles||(saved&&saved.evidenceFiles)||[];pl.ruleDone=!!(draft&&draft.ruleDone&&plRow('C01').uploads.length);plStep=plFirst();  // 규정만 먼저 등록된 경우 계획서부터
@@ -71,7 +73,7 @@ function renderPlan(){const F=state.forms.plan,el=$('csheet'),n=plStep,can=plCan
   +'<div class="card"><details class="hist"><summary><b>이행 사례 (가점 · 선택)</b></summary><textarea id="f_plPr" rows="4" style="width:100%;margin-top:8px" placeholder="예) 위험성평가 결과 사다리 작업 → 말비계로 교체 (2025.5)">'+escapeText(pl.practice)+'</textarea></details></div>'
   +'<div class="card" id="sigBox"><h2>대표이사 서명 <span class="req">*</span></h2><p class="muted">'+(can.C01&&!pl.ruleDone?'규정과 계획서에 같은 서명이 들어갑니다.':'계획서에 대표이사 서명으로 들어갑니다.')+'</p><canvas id="sigPad" class="sigpad" aria-label="서명 칸 (손가락으로 서명)"></canvas><div class="row" style="justify-content:space-between;margin-top:8px"><span class="muted">'+escapeText(b.company)+' 대표이사 '+escapeText(can.C01?pl.rule.vendorRep:b.representative)+'</span><button class="button ghost" type="button" onclick="clearSig()">다시 쓰기</button></div></div>'}
  const first=plFirst();
- el.innerHTML='<div class="pbar"><button class="button ghost" type="button" onclick="closePlan()">✕ 닫기</button><b class="pbt">안전보건 서류 '+n+'/'+PL_LAST+'</b><span style="width:64px"></span></div><div class="cwrap">'
+ el.innerHTML='<div class="pbar"><button class="button ghost" type="button" onclick="closePlan()">‹ 이전으로</button><b class="pbt">안전보건 서류 '+n+'/'+PL_LAST+'</b><span style="width:64px"></span></div><div class="cwrap">'
   +'<div class="plsteps">'+PL_STEPS.map((t,i)=>'<span class="'+(i+1<n?'done':i+1===n?'now':'')+'">'+escapeText(t)+'</span>').join('')+'</div>'+body
   +'<div class="card roomfoot"><div class="row">'+(n>first?'<button class="button ghost" type="button" style="flex:1" onclick="plGo(-1)">이전</button>':'')+(n<PL_LAST?'<button class="button" type="button" style="flex:2" onclick="plGo(1)">다음</button>':'<button class="button" id="planSave" type="button" style="flex:2" onclick="savePlanNow()">서명하고 작성 완료</button>')+'</div></div></div>';
  el.scrollTop=0;if(n===PL_LAST)setTimeout(initSig,30)}

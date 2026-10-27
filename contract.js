@@ -15,7 +15,7 @@ function openRule(){const F=state.forms,b=state.company,prev=(F.C01&&F.C01.data)
  rd={hqRep:prev.hqRep||F.hqRep||'',vendorRep:prev.vendorRep||b.representative||'',date:F.today};sigDirty=false;
  let el=$('csheet');if(!el){el=document.createElement('div');el.id='csheet';el.setAttribute('role','dialog');el.setAttribute('aria-modal','true');document.body.appendChild(el)}
  el.setAttribute('aria-label','안전보건관리규정 작성');  // F1.8e 합친 화면에서 쓰던 창을 다시 쓸 때도 이름을 바꿔야 뒤로가기가 규정 닫기로 감
- el.innerHTML='<div class="pbar"><button class="button ghost" type="button" onclick="closeRule()">✕ 닫기</button><b class="pbt">안전보건관리규정 작성</b><span style="width:64px"></span></div><div class="cwrap">'
+ el.innerHTML='<div class="pbar"><button class="button ghost" type="button" onclick="closeRule()">‹ 이전으로</button><b class="pbt">안전보건관리규정 작성</b><span style="width:64px"></span></div><div class="cwrap">'
   +'<div class="card"><h2>① 세 칸만 확인해 주세요</h2><p class="desc">나머지 내용(제1조~제10조)은 정해진 지침 문구가 자동으로 들어갑니다.</p>'
   +'<div class="field"><label for="f_rhq">"갑" 다이소 현장대리인 이름 <span class="req">*</span></label><input id="f_rhq" value="'+escapeText(rd.hqRep)+'" placeholder="예: 김담당 (다이소 담당자 이름)" oninput="ruleIn()"></div>'
   +'<div class="field"><label for="f_rrep">"을" '+escapeText(b.company)+' 대표이사 <span class="req">*</span></label><input id="f_rrep" value="'+escapeText(rd.vendorRep)+'" oninput="ruleIn()"></div>'

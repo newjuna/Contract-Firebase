@@ -92,7 +92,24 @@ function evDlPanel(r){let b=$('evDlPanel');if(b)b.remove();b=document.createElem
  const c=document.createElement('button');c.type='button';c.className='button ghost';c.style.cssText='width:100%;margin-top:12px';c.textContent='닫기';
  const close=()=>{b.remove();document.removeEventListener('keydown',esc)},esc=(ev)=>{if(ev.key==='Escape')close()};c.onclick=close;b.onclick=(ev)=>{if(ev.target===b)close()};document.addEventListener('keydown',esc);
  box.appendChild(c);b.appendChild(box);document.body.appendChild(b);box.querySelector('button').focus()}
-async function evFile(id){try{const r=await call('jobEvalFile',id);if(Array.isArray(r.files)&&r.files.length>1){evDlPanel(r);return}if(!r.download){openFile(r);return}evDl=r;
+/* F1.8j ZIP 바로 내려받기: 드라이브 화면을 거치지 않고 8MB씩 받아 이어 붙여 휴대폰·PC에 저장 */
+const zipMem={};
+async function zipGet(evId,f,btn){const k=evId+':'+f.fid;let blob=zipMem[k];
+ if(!blob){const parts=[];let n=f.parts||1;try{for(let i=0;i<n;i++){if(btn)btn.textContent='받는 중 '+(n>1?(i+1)+'/'+n:'')+'…';const r=await callQuiet('jobEvalFilePart',evId,f.fid,i);n=r.parts;const s=atob(r.data),u=new Uint8Array(s.length);for(let j=0;j<s.length;j++)u[j]=s.charCodeAt(j);parts.push(u)}}
+  catch(e){if(btn){btn.disabled=false;btn.textContent='다시 받기'}showErr('ZIP을 받지 못했습니다',e);return}blob=zipMem[k]=new Blob(parts,{type:'application/zip'})}
+ const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=f.name||'활동내역.zip';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),120000);
+ if(btn){btn.disabled=false;btn.textContent='✓ 저장됨 · 다시 저장'}msg('다운로드(파일) 폴더를 확인해 주세요.')}
+function zipPanel(evId,r){let b=$('evDlPanel');if(b)b.remove();b=document.createElement('div');b.id='evDlPanel';b.setAttribute('role','dialog');b.setAttribute('aria-modal','true');b.setAttribute('aria-labelledby','evDlTitle');
+ b.style.cssText='position:fixed;inset:0;z-index:95;background:#0007;display:flex;align-items:center;justify-content:center;padding:16px';
+ const box=document.createElement('div');box.className='card';box.style.cssText='max-width:460px;width:100%;max-height:90vh;overflow:auto;margin:0';
+ box.innerHTML='<h2 id="evDlTitle" style="margin:0 0 6px">ZIP 준비 완료 · '+r.files.length+'개</h2><p class="muted" style="margin:0 0 10px">파일마다 [내려받기]를 눌러 주세요. 바로 휴대폰(PC)에 저장됩니다.</p>';
+ r.files.forEach(f=>{const row=document.createElement('div');row.style.cssText='border:1px solid #d8dee8;border-radius:10px;padding:10px;margin-top:8px';
+  row.innerHTML='<b>'+escapeText(f.label||'')+'</b><div class="muted" style="word-break:break-all">'+escapeText(f.name||'')+(f.size?' ('+(f.size/1048576).toFixed(1)+'MB)':'')+'</div>';
+  const d=document.createElement('button');d.type='button';d.className='button';d.style.cssText='width:100%;margin-top:8px';d.textContent='내려받기';d.onclick=()=>{d.disabled=true;zipGet(evId,f,d)};row.appendChild(d);box.appendChild(row)});
+ const c=document.createElement('button');c.type='button';c.className='button ghost';c.style.cssText='width:100%;margin-top:12px';c.textContent='닫기';
+ const close=()=>{b.remove();document.removeEventListener('keydown',esc)},esc=(ev)=>{if(ev.key==='Escape')close()};c.onclick=close;b.onclick=(ev)=>{if(ev.target===b)close()};document.addEventListener('keydown',esc);
+ box.appendChild(c);b.appendChild(box);document.body.appendChild(b);box.querySelector('button').focus()}
+async function evFile(id){try{const r=await call('jobEvalFile',id);if(Array.isArray(r.files)&&r.files.length&&r.files[0].fid){zipPanel(id,r);return}if(Array.isArray(r.files)&&r.files.length>1){evDlPanel(r);return}if(!r.download){openFile(r);return}evDl=r;
   const mb=r.size?' ('+(r.size/1048576).toFixed(1)+'MB)':'';
   popup('ZIP 준비 완료',(r.name||'전체활동내역.zip')+mb+'\n\n[내려받기]를 누르면 다운로드 폴더로 받습니다.\n새 탭이 잠깐 열렸다 닫힐 수 있습니다.\n\n안 받아지면 이 화면의 [드라이브에서 열기]를 눌러 주세요.\n('+(r.email||'')+' 계정으로 보기 권한이 있습니다)','내려받기',()=>{const w=window.open(r.download,'_blank');if(!w)location.href=r.download;msg('다운로드 폴더를 확인해 주세요.');evDlLink()})}
  catch(e){/* v5.19 응답이 사라져도 서버는 계속 만들고 있을 수 있음 → 다시 누르라고 안내 (두 번 만들지 않음) */if(/응답을 받지 못했|만드는 중/.test(e&&e.message||''))alert('ZIP을 만드는 중입니다.\n처음 한 번은 1~2분 걸립니다. 잠시 뒤 [전체 활동내역 ZIP 내려받기]를 다시 눌러 주세요.\n(다 만들어진 뒤에는 바로 내려받아집니다)')}}

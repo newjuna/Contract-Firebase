@@ -96,7 +96,13 @@ async function dashFixS(jobId,fid){try{inspJob=await call('inspList',jobId)}catc
  jobsMode='insp';openResolve(fid,'staff','dash');window.scrollTo(0,0)}
 /** 도급인 [✔ 보기] → 그날 순회점검일지 (지적 내용 · 조치 전·후 사진) */
 async function dashViewS(jobId,inspId){try{inspJob=await call('inspList',jobId)}catch(e){return}jobsMode='insp';openInspSheet(inspId,'staff')}
-function renderDash(){const el=$('execArea');if(!el||!vjobs)return;
+/* F1.8j 업체 메인 자동 새로고침: 도급인이 미팅을 만들거나 조치·허가서가 바뀌면 새로고침 없이 반영
+ *  메인을 보고 있을 때만 30초마다 + 앱으로 돌아왔을 때 바로 · 바뀐 게 있을 때만 다시 그림 */
+let vDashTimer=null;
+function vDashPoll(){if(document.hidden||!state||state.staff||!isVendorApproved()||tab!=='my'||vmenu!=='dash'||vjob||!$('execArea')||($('dsDlg')&&$('dsDlg').style.display==='flex')||(typeof loadCount!=='undefined'&&loadCount))return;
+ callQuiet('myJobs').then(r=>{if(!r||vmenu!=='dash'||vjob||tab!=='my')return;vjobsAt=Date.now();if(JSON.stringify(r)!==JSON.stringify(vjobs)){vjobs=r;setupVMenu();renderDash()}}).catch(()=>{})}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)vDashPoll()});
+function renderDash(){const el=$('execArea');if(!el||!vjobs)return;if(!vDashTimer)vDashTimer=setInterval(vDashPoll,30000);
  // v5.18 공사 화면 미리 받기는 5분에 한 번만 (예전: 대시보드를 그릴 때마다 3번씩 → 다음 버튼과 겹쳐 느려짐)
  /* v4: 대시보드가 상세자료 3건을 자동으로 요청하던 동작 제거. 상세는 공사 선택 시에만 요청. */clearTimeout(window.__pf);vjob=null;clearInterval(wkTimer);const d=vjobs,t=d.today,act=d.jobs.filter(j=>j.status!=='ENDED'),ended=d.jobs.filter(j=>j.status==='ENDED');
  const due=act.reduce((n,j)=>n+((j.stats&&j.stats.inspDue&&!j.stats.inspToday&&j.startDate<=t)?1:0)+((j.stats&&j.stats.openFindings)||0),0);setBadge($('vm_today'),due);setBadge($('menuBtn'),due);

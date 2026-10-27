@@ -140,9 +140,7 @@ function pgHtml(){const P=pm.permit,d=P.data||{},g=pm.g,f=pfInit(d),sm=pgSm(),cp
  return '<div class="cwrap">'
   +'<div class="card"><h2 style="margin:0">'+escapeText(d.workName||'')+'</h2><div class="muted">허가번호 '+escapeText(P.no||'')+' · '+escapeText(d.place||'')+' · '+escapeText(pv(d.period,'start'))+'~'+escapeText(pv(d.period,'end'))+'</div><p class="desc">위험작업: '+escapeText(types)+' · 현장책임자 '+escapeText(sm)+'</p>'
   +(canFix?'<div class="row"><button class="button ghost" type="button" onclick="startEditPermit()">내용 수정</button><button class="linkbtn" type="button" onclick="withdrawPermitNow()">발행 취소 (삭제)</button></div><p class="muted">도급인 승인 전이라 고칠 수 있습니다.</p>':P.status==='APPROVED'?'<p class="muted">도급인이 승인했습니다. 내용은 고칠 수 없고 아래 진행 기록만 적을 수 있습니다.</p>':'')+'</div>'
-  +'<div class="card"><h2>작업 중 확인</h2><p class="desc">작업 중 현장을 둘러봤을 때 누르세요. (지금 시각 · '+escapeText(sm)+')</p>'
-  +(g.during.map((x,i)=>'<div class="item"><div class="row" style="justify-content:space-between"><span>'+(i+1)+'회 · '+escapeText(x.time)+' · '+escapeText(x.by)+'</span><button class="button ghost" type="button" onclick="pgDrop(\'during\','+i+')" aria-label="'+(i+1)+'회 확인 빼기">✕</button></div></div>').join('')||'')
-  +'<button class="button" type="button" id="pgDur" style="width:100%;margin-top:8px" onclick="pgDuring()">＋ 지금 확인 기록</button></div>'
+  /* F1.8j '작업 중 확인' 칸 없앰 (예전에 남긴 기록은 결과지에 그대로) */
   +(needGas?'<div class="card"><h2>가스농도 측정</h2><p class="desc">화기·밀폐공간 작업은 작업 전과 작업 중에 측정해서 적어 주세요.</p>'
    +(g.gas.map((x,i)=>'<div class="item"><div class="row" style="justify-content:space-between"><span>'+escapeText(x.time)+' · CO '+escapeText(x.co||'-')+' · H2S '+escapeText(x.h2s||'-')+' · LEL '+escapeText(x.lel||'-')+' · O2 '+escapeText(x.o2||'-')+' · '+escapeText(x.by)+'</span><button class="button ghost" type="button" onclick="pgDrop(\'gas\','+i+')" aria-label="측정값 빼기">✕</button></div></div>').join(''))
    +'<div class="split">'+fld('pgn_t','측정 시각',nowHM(),'time')+fld('pgn_co','CO (ppm)')+fld('pgn_h2s','H2S (ppm)')+fld('pgn_lel','LEL (%)')+fld('pgn_o2','O2 (%)')+fld('pgn_by','측정자',sm)+'</div>'
@@ -162,7 +160,7 @@ function showSheet(){const P=pm.permit,M=pm.mode;
  if(['new','edit','progress'].includes(M))return showSimple();
  return showPaper()}
 function showSimple(){const P=pm.permit,M=pm.mode,st=P_STATUS[P.status]||[P.status,'todo'];let o=$('psheet');if(!o){o=document.createElement('div');o.id='psheet';o.setAttribute('role','dialog');o.setAttribute('aria-modal','true');o.setAttribute('aria-label','안전작업허가서');document.body.appendChild(o)}
- const bar='<div class="pbar"><button class="button ghost" type="button" onclick="'+(pm.paper?'pfPaper(false)':M==='edit'?'cancelEditPermit()':'closePermit()')+'">'+(pm.paper?'← 입력 화면':M==='edit'?'수정 취소':'✕ 닫기')+'</button><div class="pbt"><b>작업허가서</b> <span class="pill '+st[1]+'">'+escapeText(st[0])+'</span></div>'
+ const bar='<div class="pbar"><button class="button ghost" type="button" onclick="'+(pm.paper?'pfPaper(false)':M==='edit'?'cancelEditPermit()':'closePermit()')+'">'+(pm.paper?'← 입력 화면':M==='edit'?'수정 취소':'‹ 이전으로')+'</button><div class="pbt"><b>작업허가서</b> <span class="pill '+st[1]+'">'+escapeText(st[0])+'</span></div>'
   +(pm.paper?'<span style="width:64px"></span>':'<button class="button ghost" type="button" id="pfPrev" onclick="pfPaper(true)">결과지 미리보기</button>')+'</div>';
  const help=pm.paper?'<div class="phelp">입력한 내용이 들어간 작업허가서 양식입니다. (보기 전용 · 고치려면 [← 입력 화면])</div>'
   :M==='new'?'<div class="phelp">'+(pm.fromLast?escapeText(pm.fromLast)+' 허가서 내용으로 채웠습니다. <b>안전조치 체크만 다시 하고</b> 발행하세요.':'필요한 것만 위에서부터 채우고 <b>[발행]</b>을 누르면 바로 작업할 수 있습니다.')+'</div>'
@@ -175,7 +173,7 @@ function showPaper(){const P=pm.permit,M=pm.mode,st=P_STATUS[P.status]||[P.statu
   :M==='edit'?'<button class="button ghost" type="button" onclick="cancelEditPermit()">수정 취소</button><button class="button" type="button" onclick="editPermitNow()">수정 제출</button>'
   :M==='progress'?(canFix?'<button class="button ghost" type="button" onclick="startEditPermit()">내용 수정</button>':'')+'<button class="button" type="button" onclick="savePermitProgress()">저장</button>'
   :M==='view'&&canFix?'<button class="button" type="button" onclick="startEditPermit()">내용 수정</button>':M==='staff'&&P.status!=='APPROVED'?'<button class="button" type="button" onclick="approvePermitNow()">승인</button>':'';
- o.innerHTML='<div class="pbar"><button class="button ghost" type="button" onclick="'+(M==='staff'?'backPermitList()':'closePermit()')+'">✕ 닫기</button><div class="pbt"><b>안전작업허가서</b> <span class="pill '+st[1]+'">'+escapeText(st[0])+'</span></div>'+act+'</div>'
+ o.innerHTML='<div class="pbar"><button class="button ghost" type="button" onclick="'+(M==='staff'?'backPermitList()':'closePermit()')+'">‹ 이전으로</button><div class="pbt"><b>안전작업허가서</b> <span class="pill '+st[1]+'">'+escapeText(st[0])+'</span></div>'+act+'</div>'
   +(M==='new'?'<div class="phelp">'+(pm.fromLast?escapeText(pm.fromLast)+' 허가서 내용이 채워져 있습니다. ':'')+'필요한 칸만 눌러서 채우고 <b>[최종 제출]</b>을 누르면 바로 작업할 수 있습니다. ☐ 필요한 사항 · ○ 조치 완료</div>':M==='edit'?'<div class="phelp">내용을 고친 뒤 <b>[수정 제출]</b>을 누르세요. 허가번호는 그대로 유지됩니다.</div>'
   :M==='progress'||M==='view'?'<div class="phelp">'+(M==='progress'?'제출된 허가서입니다. 가스농도 측정·작업중 확인·작업완료·연장 칸만 채우고 [저장]하세요.':'지난 허가서입니다.')
    +(canFix?'<br>도급인 승인 전이라 고칠 수 있습니다: <b>[내용 수정]</b> 또는 <button class="linkbtn" type="button" onclick="withdrawPermitNow()">제출 취소 (허가서 삭제)</button>':P.status==='APPROVED'?'<br>도급인이 승인한 허가서는 수정·취소할 수 없습니다.':'')+'</div>':'')
