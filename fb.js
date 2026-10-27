@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F1.8j';
+  const VERSION = '26.10.24 F1.8k';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   const CFG = {
     INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
@@ -263,7 +263,8 @@
     const y = Number(today().slice(0, 4)), w = PLAN_INDUSTRY_WORKS[b.industry] || [];
     return { policy: planPolicy_(b.company), goal: '무재해 달성 (산업재해 0건)',
       kpis: [{ name: '순회점검 실시율 (2일 1회)', target: '100%' }, { name: '작업 전 TBM·안전교육 실시율', target: '100%' }, { name: '지적사항 즉시 시정률', target: '100%' }],
-      org: [{ role: '안전총괄책임자', name: b.representative || '', phone: b.phone || '' }, { role: '안전관리책임자 (현장대리인)', name: p.siteManager || '', phone: p.siteManagerPhone || '' }, { role: '안전담당자', name: p.safetyManager || p.siteManager || '', phone: p.safetyPhone || p.siteManagerPhone || '' }],
+      org: [{ role: '안전관리책임자 (현장대리인)', name: p.siteManager || '', phone: p.siteManagerPhone || '' }],  // F1.8k 협력업체 관리자 = 현장대리인 1명
+      agent: { birth: '', addr: '', licKind: '', licType: '', licNo: '' },  // F1.8k 현장대리인계 (공사마다 자동)
       works: w.length ? w : ['HEIGHT', 'TOOL', 'HEAVY'], scen: ['FIRE'].concat(w.includes('ELEC') ? ['SHOCK'] : []).concat((w.length ? w : ['HEIGHT']).includes('HEIGHT') ? ['FALL'] : []),
       hospital: '', years: [y - 3, y - 2, y - 1], accidents: ['', '', ''], evidence: [], practice: '',
       drill: { route: '', assembly: '', equip: '', manager: p.siteManager || '', items: ['NEW', 'EVAC', 'FIRE'] } };  // F1.8c 비상대피훈련 계획 (중계 서버 planDefaults_와 같게)
@@ -344,6 +345,8 @@
       documents = V.files.filter((x) => !linked.has(x.id)).map((x) => ({ id: x.id, name: x.name, mime: x.mime }));
       docBoard = vendorDocBoard(b, V.tpl, V.subs);
       forms = contractFormsView(b, V.forms, V.files, (steps.find((x) => x.step === 1) || {}).data || {});
+      // F1.8k 규정 "갑" 다이소 현장대리인 = 위임받은 도급인 책임자 (곽동민)
+      const P = await principal().catch(() => null); if (P && P.delegate.name) forms.hqRep = P.delegate.name;
     }
     return {
       email: a.email, isApprover, correctionNote: b && b.submissionStatus === 'CORRECTION' ? b.correctionNote || '' : '', openJobs: V ? V.openJobs : null,
@@ -416,6 +419,27 @@
   API.jobEvalFilePart = async (a, id, fid, i) => { await staffOnly(a); return relay('evalZipPart', { evalId: tidy(id, 40), fid: tidy(fid, 80), i: Number(i) || 0 }, true, 180000); };
   /** F1.8g 이수증 보기: 파일 내용만 받아 화면 안 창에 띄움 (구글 드라이브 화면 안 열림) */
   API.viewCert = async (a, docId) => relay('certView', { docId: tidy(docId, 60) }, true);
+  /* ---------- F1.8k 도급인 책임자 (SETTINGS/principal · 중계 서버 PRINCIPAL_DEF_와 같은 기본값) ---------- */
+  const PRINCIPAL_DEF = { ceo: { name: '김기호', rank: '부사장', title: '안전보건총괄책임자', org: '대표이사' },
+    delegate: { name: '곽동민', rank: '부장', title: '인테리어부장', org: '영업본부 매장지원부문 인테리어부' }, manager: { name: '', rank: '', org: '' } };
+  let PRINC = null;
+  async function principal(force) {
+    if (PRINC && !force) return PRINC;
+    let s = {}; try { const d = await db.collection('SETTINGS').doc('principal').get(); if (d.exists) s = d.data(); } catch (e) {}
+    const o = {}; ['ceo', 'delegate', 'manager'].forEach((k) => { o[k] = Object.assign({}, PRINCIPAL_DEF[k]); Object.keys(s[k] || {}).forEach((f) => { if (s[k][f]) o[k][f] = String(s[k][f]); }); });
+    if (!o.manager.name) { try { const m = await db.collection('STAFF').doc(MASTER_EMAILS[0]).get(); if (m.exists) o.manager.name = m.data().name || ''; } catch (e) {} }
+    PRINC = o; return o;
+  }
+  API.principalGet = async (a) => { await staffOnly(a); return { ...(await principal(true)), def: PRINCIPAL_DEF }; };
+  API.principalSave = async (a, d) => {
+    if (!isMaster(a)) fail('마스터 계정만 고칠 수 있습니다.');
+    const o = {}; ['ceo', 'delegate', 'manager'].forEach((k) => { o[k] = {}; ['name', 'rank', 'title', 'org'].forEach((f) => { o[k][f] = tidy(((d || {})[k] || {})[f], 60); }); });
+    if (!o.ceo.name || !o.delegate.name) fail('총괄책임자와 위임받는 책임자 이름은 꼭 적어 주세요.');
+    await db.collection('SETTINGS').doc('principal').set({ ...o, updatedAt: now(), updatedBy: a.email }); audit(a, '', 'PRINCIPAL_SAVE', o.ceo.name + ' → ' + o.delegate.name);
+    return API.principalGet(a);
+  };
+  /** 위임장 · 현장대리인계 보기 (중계 서버가 양식을 만들어 줌) */
+  API.jobPaper = async (a, jobId, kind, companyId) => relay('jobPaper', { jobId: tidy(jobId, 40), kind: tidy(kind, 10), companyId: tidy(companyId, 40) }, true);
   /** F1.8i [마스터] 데이터 현황 · 지우기 (중계 서버가 마스터인지 다시 확인) */
   const masterGate = (a) => { if (!isMaster(a)) fail('마스터 계정만 사용할 수 있습니다.'); };
   API.adminStats = async (a) => { masterGate(a); return relay('adminStats', {}, true, 120000); };
@@ -612,7 +636,7 @@
     const L = await Promise.all(['JOB_VENDORS', 'WORKERS', 'CREW', 'PERMITS', 'INSPECTIONS', 'FINDINGS', 'MEETINGS', 'ATTEND', 'JOB_EVALS'].map((n) => byJobs(n, ids)));
     // 업체 고를 때 지난 종료 평가 (C·D등급 경고)
     const le = lastEvals(await db.collection('JOB_EVALS').where('status', '==', 'DONE').get().then(docs), all);
-    return { me: { name: s.name, role: s.role }, kinds: JOB_KINDS, meetKinds: MEET_KINDS, vendors: choices.map(({ uid, ...v }) => ({ ...v, lastEval: le[v.id] || null })), testMode: CFG.TEST_SKIP_FILES, jobs: jobs.map((j) => jobView(j, ...L)) };
+    return { me: { name: s.name, role: s.role }, principal: await principal().catch(() => null), kinds: JOB_KINDS, meetKinds: MEET_KINDS, vendors: choices.map(({ uid, ...v }) => ({ ...v, lastEval: le[v.id] || null })), testMode: CFG.TEST_SKIP_FILES, jobs: jobs.map((j) => jobView(j, ...L)) };
   };
   /** [직원] 공사 만들기·수정 (참여 업체·위임장 정보 포함) */
   API.saveJob = async (a, d) => {
@@ -734,7 +758,7 @@
       crewDefault: ((tc || cr[0]) ? ((tc || cr[0]).workers || []).map((w) => w.id) : ws.map((w) => w.id)).filter((id) => ws.some((w) => w.id === id)),
       rules: WORK_RULES, pledge: WORK_PLEDGE, roles: WORKER_ROLES,
       permits: pms.filter((p) => p.companyId === b.id).sort((x, y) => (x.date < y.date ? 1 : -1)).slice(0, 30).map(permitSummary), insp: inspPack(inss.filter((x) => x.companyId === b.id), fds.filter((x) => x.companyId === b.id), LB),
-      jobStatus: j.status, permitToday: null, evalResult: ev ? { total: Number(ev.total), grade: ev.grade, comment: ev.comment, date: ev.evaluatedAt ? kst(ev.evaluatedAt) : '' } : null };
+      jobStatus: j.status, permitToday: null, principal: await principal().catch(() => null), evalResult: ev ? { total: Number(ev.total), grade: ev.grade, comment: ev.comment, date: ev.evaluatedAt ? kst(ev.evaluatedAt) : '' } : null };
   }
   /** [업체] 공사 화면 (처음 열 때 작업자 등록 QR 값 생성) */
   API.vendorJob = async (a, jobId) => {
