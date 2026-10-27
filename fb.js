@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F1.8p';
+  const VERSION = '26.10.24 F1.8q';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   const CFG = {
     INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
@@ -831,9 +831,9 @@
   };
 
   /* ---------- F1.4 안전작업허가서 (매일 1회 · 업체 발행 → 바로 작업 · 도급인 나중 승인) ----------
-   *  PERMITS/{공사ID_업체ID_날짜}  data = 허가서 내용(JSON 글자) · progress = 발행 후 진행 기록(가스측정·작업중 확인·완료·연장)
+   *  PERMITS/{공사ID_업체ID_날짜}  data = 허가서 내용(JSON 글자) · progress = 발행 후 진행 기록(가스측정·완료·연장)
    *  승인 뒤에는 data는 못 고치고 progress만 고칠 수 있음 (보안 규칙이 확인) */
-  const PERMIT_PROGRESS_KEYS = ['gas', 'gasNote', 'during', 'complete', 'extend'];
+  const PERMIT_PROGRESS_KEYS = ['gas', 'gasNote', 'complete', 'extend'];  // F1.8p 작업중 확인(during) 없앰
   /** 허가서 내용 정리: 글자 300자, 배열 10개, 키 60개, 깊이 5단계 */
   function permitClean(v, depth) {
     depth = depth || 0; if (depth > 5) return null;
@@ -870,7 +870,7 @@
     if (dt !== today()) fail('해당 날짜의 허가서가 없습니다.');
     const last = list.sort((x, y) => (x.date < y.date ? 1 : -1))[0], ld = last ? permitData(last) : null, sm = await siteManagerOf(a, b);
     const base = { applicant: { dept: b.company, title: '현장책임자', name: sm }, period: { start: '08:00', end: '17:00' }, place: j.storeName, device: '', workName: '', attach: {}, pre: { procChange: '무', workDiff: '무' }, safety: {}, supp: {},
-      gas: [], gasNote: '', confirm: { manager: sm, witness: '' }, during: [], complete: {}, etc: '', issuer: { dept: b.company, title: '현장책임자', name: sm }, extend: {} };
+      gas: [], gasNote: '', confirm: { manager: sm, witness: '' }, complete: {}, etc: '', issuer: { dept: b.company, title: '현장책임자', name: sm }, extend: {} };
     if (ld) {
       ['applicant', 'period', 'place', 'device', 'workName', 'attach', 'pre', 'safety', 'supp', 'confirm', 'issuer'].forEach((k) => { if (ld[k] !== undefined) base[k] = ld[k]; });
       // 보충작업 확인자·조치 완료 체크는 매일 새로 확인 (필요 체크만 이어받음)
