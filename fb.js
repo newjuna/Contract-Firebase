@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F1.8l';
+  const VERSION = '26.10.24 F1.8m';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   const CFG = {
     INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
@@ -1173,9 +1173,20 @@
     B.update(db.collection('MEETINGS').doc(m.id), open ? { open: 'Y', openedAt: now() } : { open: 'N', closedAt: now() });
     B.update(db.collection('MEET_LINKS').doc(m.token), { open: open ? 'Y' : 'N', vendors: vs });
     await B.commit(); audit(a, '', open ? 'MEETING_OPEN' : 'MEETING_CLOSE', m.id);
+    /* F1.8m [▶ 미팅 시작]을 누른 도급인 담당자는 QR 없이 바로 참석으로 (방이 열린 뒤에 써야 보안 규칙 통과) */
+    if (open) await staffSelfIn(a, s, m, j);
     await meetNotice(m, j.storeName, !!m.doneAt);  // 그 사이 배정된 업체도 알림을 받도록 다시 씀
     return API.meetingDetail(a, id);
   };
+  /** F1.8m 미팅을 연(들어간) 도급인 담당자 → 참석 기록 (이미 있으면 그대로) */
+  async function staffSelfIn(a, s, m, j) {
+    const aid = m.id + '_' + a.uid, ex = await db.collection('ATTEND').doc(aid).get().catch(() => null);
+    if (ex && ex.exists && ex.data().status !== 'REJECTED') return;
+    await db.collection('ATTEND').doc(aid).set({ id: aid, meetingId: m.id, jobId: j.id, token: m.token, email: a.email, uid: a.uid, checkedAt: now(), confirmedBy: '', confirmedAt: '',
+      name: s.name, side: 'STAFF', companyId: '', company: '아성다이소', role: '도급인(' + (STAFF_ROLES[s.role] || s.role) + ')', status: 'OK', auto: 'Y' }).catch((e) => console.warn('담당자 자동 참석 실패', e && e.message));
+  }
+  /** [직원] 이미 열린 미팅에 들어갈 때도 담당자 자동 참석 */
+  API.meetJoin = async (a, id) => { const s = await staffOnly(a), { m, j } = await meetingOf(a, s, id); if (m.open === 'Y' && !m.doneAt) await staffSelfIn(a, s, m, j); return API.meetingDetail(a, id); };
   /** [직원] 확인 대기 참석자 확인/제외 */
   API.confirmAttendee = async (a, meetingId, attendId, okk) => {
     const s = await staffOnly(a), { m } = await meetingOf(a, s, meetingId);
