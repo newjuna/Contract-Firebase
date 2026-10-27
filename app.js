@@ -57,7 +57,7 @@ function text(id,label,value='',disabled=false){return `<div class="field"><labe
 function value(id){return $('f_'+id)?.value?.trim()||''}
 function switchTab(which){tab=which;toggleMenu(false);stopScan();if($(which+'Tab'))$('pageTitle').textContent=$(which+'Tab').textContent;clearInterval(roomTimer);clearInterval(wkTimer);for(const n of ['my','admin','review','tpl','staff','jobs','notice','vendors']){$(n).classList.toggle('hidden',n!==which);$(n+'Tab').classList.toggle('active',n===which)}if(which==='admin')loadAdmin();if(which==='review')loadReview();if(which==='tpl')loadTemplates();if(which==='staff')loadStaff();if(which==='jobs')loadJobs();if(which==='notice')loadNotices();if(which==='vendors')loadVendors();}
 // ★ 화면 버전: 여기 한 줄만 고침 (GitHub만 올리면 로그인 화면·앱 화면·메뉴에 모두 반영, Code.gs 수정 불필요)
-const UI_VERSION='26.10.24 F1.8i';
+const UI_VERSION='26.10.24 F1.8j';
 function showVer(){document.querySelectorAll('.verTxt').forEach(x=>x.textContent=UI_VERSION)}
 /** v4.1 ⚙ 마스터 설정: 직원 관리로 바로 이동 (마스터 계정만 보임) */
 function openMaster(){if(!state||!state.isMaster)return;sgo('staff')}
@@ -357,7 +357,7 @@ async function saveJobForm(e,id){e.preventDefault();
  const cur=id&&jobData?jobData.jobs.find(x=>x.id===id):null;
  const dl={};['COUNCIL','JOINT'].forEach(k=>dl[k]={delegator:value('d'+k+'a'),delegatee:value('d'+k+'b'),date:value('d'+k+'c')});const d={id,kind:$('f_jKind').value,title:value('jTitle'),storeName:value('jStore'),storeCode:cur?cur.storeCode:'',address:cur?cur.address:'',startDate:value('jStart'),endDate:value('jEnd'),delegations:dl,vendorIds:[...document.querySelectorAll('.jv:checked')].map(x=>x.value)};try{jobData=await call('saveJob',d);jobsMode='list';renderJobs();msg('공사를 저장했습니다.');refreshBadges()}catch(err){alert(err.message)}}
 function meetForm(jobId){jobsMode='form';const j=jobData.jobs.find(x=>x.id===jobId),today=new Date().toISOString().slice(0,10);$('jobs').innerHTML='<div class="card"><h2>미팅 방 만들기 · '+escapeText(j.title)+'</h2><form onsubmit="saveMeetForm(event,\''+escapeText(jobId)+'\')"><div class="split">'+input('mTitle','미팅명','착수 전 현장 미팅')+input('mPlace','장소',j.storeName)+input('mDate','일자',today,'date')+input('mTime','시간 (선택)','','time')+'</div><div class="field"><label>포함할 행사</label>'+Object.entries(jobData.meetKinds).map(([k,v])=>'<label class="desc" style="display:block;margin:6px 0"><input type="checkbox" class="mk" value="'+k+'" checked> '+escapeText(v)+'</label>').join('')+'</div><p class="desc">만들면 참여 업체 대표 계정에 안내 메일이 갑니다. 참석 체크는 현장에서 [방 열기]를 눌러야 시작됩니다.</p><div class="row"><button class="button" type="submit">방 만들기</button><button class="button ghost" type="button" onclick="renderJobs()">취소</button></div></form></div>'}
-async function saveMeetForm(e,jobId){e.preventDefault();const d={title:value('mTitle'),place:value('mPlace'),date:value('mDate'),time:value('mTime'),kinds:[...document.querySelectorAll('.mk:checked')].map(x=>x.value)};try{const r=await call('createMeeting',jobId,d);showRoom(r);msg('미팅 방을 만들었습니다.')}catch(err){alert(err.message)}}
+async function saveMeetForm(e,jobId){e.preventDefault();const d={title:value('mTitle'),place:value('mPlace'),date:value('mDate'),time:value('mTime'),kinds:[...document.querySelectorAll('.mk:checked')].map(x=>x.value)};try{const r=await call('createMeeting',jobId,d);jobAt=0;/* 목록으로 돌아가면 새 미팅이 바로 보이게 */showRoom(r);msg('미팅 방을 만들었습니다.')}catch(err){alert(err.message)}}
 async function openRoom(id){try{showRoom(await call('meetingDetail',id))}catch(e){}}
 /* ---------- v4.6 미팅 방: 탭으로 나눔 [QR 참석] [합동점검] [협의체 회의록] + 아래 실시 완료 ---------- */
 let room=null,roomTab='att';const photoPrev={};
@@ -375,7 +375,8 @@ function showRoom(r){
  jobsMode='room';roomId=r.id;room=r;clearInterval(roomTimer);
  const K=r.kindCodes||[],tabs=[['att','QR 참석 '+okAtt(r).length+'명']].concat(K.includes('JOINT')?[['joint','합동점검']]:[]).concat(K.includes('COUNCIL')?[['council','협의체 회의록']]:[]);
  if(!tabs.some(t=>t[0]===roomTab))roomTab='att';
- $('jobs').innerHTML='<div class="card"><button class="button ghost" type="button" onclick="loadJobs()">← 공사 목록</button><h2 style="margin-top:12px">'+escapeText(r.title)+' · '+escapeText(r.job.storeName)+'</h2><div class="muted">'+escapeText(r.date)+' '+escapeText(r.time||'')+' · '+escapeText(r.place)+' · '+escapeText(r.kinds.join(', '))+'</div>'
+ /* F1.8j 미팅 방에서 바로: ← 협의체·합동점검 목록 · + 같은 공사에 미팅 방 하나 더 */
+ $('jobs').innerHTML='<div class="card"><div class="row" style="justify-content:space-between"><button class="button ghost" type="button" onclick="clearInterval(roomTimer);sgo(\'meet\')">‹ 협의체·합동점검</button>'+(r.done?'':'<button class="button ghost" type="button" onclick="clearInterval(roomTimer);meetForm(\''+escapeText(r.job.id)+'\')">+ 미팅 방 만들기</button>')+'</div><h2 style="margin-top:12px">'+escapeText(r.title)+' · '+escapeText(r.job.storeName)+'</h2><div class="muted">'+escapeText(r.date)+' '+escapeText(r.time||'')+' · '+escapeText(r.place)+' · '+escapeText(r.kinds.join(', '))+'</div>'
   +(r.done?'<div class="note" style="margin-top:12px"><b style="color:var(--ok)">✔ 미팅 실시 완료</b> · '+escapeText(fmtTime(r.doneAt))+' · '+escapeText(r.doneBy||'')+'</div>':'')
   +'<div class="seg" role="tablist">'+tabs.map(([k,l])=>'<button type="button" role="tab" id="rt_'+k+'" aria-selected="'+(roomTab===k)+'" class="'+(roomTab===k?'on':'')+'" onclick="setRoomTab(\''+k+'\')">'+escapeText(l)+'</button>').join('')+'</div></div>'
   +'<div id="roomDocs"><div id="rp_att" '+(roomTab==='att'?'':'hidden')+'>'+attPanel(r)+'</div>'
@@ -681,17 +682,21 @@ async function upload(){try{const f=await readFile($('evidence').files[0]);displ
 /** F1.4 파일 열기: 서버가 주소(url)를 주면 구글 드라이브 화면으로 바로 열고(빠름), 내용(data)을 주면 예전처럼 내려받기
  *  새 창이 막히면(휴대폰 팝업 차단) 안내 창의 [열기] 버튼으로 다시 열기 */
 function openFile(f){if(!f)return;if(!f.url){saveBlob(f);return}const w=window.open(f.url,'_blank');if(!w)popup('파일 열기',(f.name||'파일')+'\n\n구글 드라이브 화면으로 엽니다.\n'+(f.email?'('+f.email+' 계정으로 보기 권한이 있습니다)':''),'열기',()=>window.open(f.url,'_blank'))}
-async function viewFile(id){try{openFile(await call('getMyFile',id))}catch(e){}}
+/* F1.8j 업체가 올리거나 만든 서류 보기: 구글 드라이브로 가지 않고 화면 안 창 (이미지 바로 · PDF는 창 안 미리보기 + 열기) */
+const fileMem={};
+async function viewFile(id){let f=fileMem[id];if(!f){try{f=await call('getMyFile',id)}catch(e){return}if(f&&f.data)fileMem[id]=f}if(!f)return;if(!f.data){openFile(f);return}fileShow(f,f.name||'')}
 /* F1.8g 이수증 보기: 구글 드라이브로 가지 않고 화면 안 창에 이미지만 (한 번 본 것은 다시 받지 않음) */
 const certMem={};
-async function certView(id,who){let f=certMem[id];if(!f){try{f=certMem[id]=await call('viewCert',id)}catch(e){return}}
- closeCert();const src='data:'+f.mime+';base64,'+f.data,pdf=/pdf/.test(f.mime);
- const bg=document.createElement('div');bg.id='certDlg';bg.className='certbg';bg.setAttribute('role','dialog');bg.setAttribute('aria-modal','true');bg.setAttribute('aria-label',(who||'')+' 기초안전보건교육 이수증');
- bg.innerHTML='<div class="certtop"><b>'+escapeText(who||'')+' 이수증</b><button class="certx" type="button" id="certClose" aria-label="닫기">✕</button></div>'
-  +'<div class="certbody">'+(pdf?'<div class="certpdf"><p>PDF로 올린 이수증입니다.</p><button class="button" type="button" id="certSave">📄 PDF 열기</button></div>':'<img src="'+src+'" alt="'+escapeText((who||'')+' 기초안전보건교육 이수증')+'">')+'</div>';
- document.body.appendChild(bg);$('certClose').onclick=closeCert;bg.onclick=e=>{if(e.target===bg||e.target.classList.contains('certbody'))closeCert()};bg.onkeydown=e=>{if(e.key==='Escape')closeCert()};
- if(pdf)$('certSave').onclick=()=>saveBlob(f);setTimeout(()=>$('certClose')?.focus(),30)}
-function closeCert(){$('certDlg')?.remove()}
+async function certView(id,who){let f=certMem[id];if(!f){try{f=certMem[id]=await call('viewCert',id)}catch(e){return}}fileShow(f,(who||'')+' 이수증')}
+const b64Blob=f=>{const s=atob(f.data),u=new Uint8Array(s.length);for(let i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return new Blob([u],{type:f.mime||'application/octet-stream'})};
+/** 화면 안 파일 보기 창 (이미지 · PDF) · PDF는 [열기]를 누르면 휴대폰 PDF 보기로 (드라이브 아님) */
+function fileShow(f,title){closeCert();const pdf=/pdf/.test(f.mime||''),img=/^image\//.test(f.mime||''),url=URL.createObjectURL(b64Blob(f));
+ const bg=document.createElement('div');bg.id='certDlg';bg.className='certbg';bg.setAttribute('role','dialog');bg.setAttribute('aria-modal','true');bg.setAttribute('aria-label',title||'파일 보기');
+ bg.innerHTML='<div class="certtop"><b style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escapeText(title||'')+'</b><button class="certx" type="button" id="certClose" aria-label="닫기">✕</button></div>'
+  +'<div class="certbody">'+(img?'<img src="'+url+'" alt="'+escapeText(title||'')+'">':pdf&&!IS_IOS&&!IS_AND?'<iframe src="'+url+'" title="'+escapeText(title||'')+'" style="width:100%;height:100%;border:0;background:#fff;border-radius:6px"></iframe>':'<div class="certpdf"><p>'+escapeText(f.name||'파일')+'</p><button class="button" type="button" id="certSave" style="width:100%">📄 '+(pdf?'PDF 열기':'파일 받기')+'</button></div>')+'</div>';
+ document.body.appendChild(bg);bg._url=url;$('certClose').onclick=closeCert;bg.onclick=e=>{if(e.target===bg||e.target.classList.contains('certbody'))closeCert()};bg.onkeydown=e=>{if(e.key==='Escape')closeCert()};
+ if($('certSave'))$('certSave').onclick=()=>{if(pdf&&window.open(url,'_blank'))return;saveBlob(f)};setTimeout(()=>$('certClose')?.focus(),30)}
+function closeCert(){const d=$('certDlg');if(!d)return;const u=d._url;d.remove();if(u)setTimeout(()=>URL.revokeObjectURL(u),60000)}
 /* F1.4 휴대폰에서 사진 칸을 누르면 카메라만 열리던 것(capture) → 옆에 [🖼 앨범·파일] 버튼을 자동으로 붙임
  *  고른 사진은 원래 사진 칸에 넣고 원래 처리(올리기)를 그대로 실행. 화면을 다시 그려도 계속 붙음 */
 (function(){
