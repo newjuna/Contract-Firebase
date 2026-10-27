@@ -57,7 +57,7 @@ function text(id,label,value='',disabled=false){return `<div class="field"><labe
 function value(id){return $('f_'+id)?.value?.trim()||''}
 function switchTab(which){tab=which;toggleMenu(false);stopScan();if($(which+'Tab'))$('pageTitle').textContent=$(which+'Tab').textContent;clearInterval(roomTimer);clearInterval(wkTimer);for(const n of ['my','admin','review','tpl','staff','jobs','notice','vendors']){$(n).classList.toggle('hidden',n!==which);$(n+'Tab').classList.toggle('active',n===which)}if(which==='admin')loadAdmin();if(which==='review')loadReview();if(which==='tpl')loadTemplates();if(which==='staff')loadStaff();if(which==='jobs')loadJobs();if(which==='notice')loadNotices();if(which==='vendors')loadVendors();}
 // ★ 화면 버전: 여기 한 줄만 고침 (GitHub만 올리면 로그인 화면·앱 화면·메뉴에 모두 반영, Code.gs 수정 불필요)
-const UI_VERSION='26.10.24 F1.8r';
+const UI_VERSION='26.10.24 F1.8t';
 /* F1.8o 전화번호 · 사업자번호: 숫자만 쳐도 '-' 자동 (서버는 원래 숫자만 골라 씀) */
 function fmtTel(v){const d=String(v||'').replace(/\D/g,'').slice(0,11);if(d.startsWith('02'))return d.length<3?d:d.length<6?d.slice(0,2)+'-'+d.slice(2):d.length<10?d.slice(0,2)+'-'+d.slice(2,5)+'-'+d.slice(5):d.slice(0,2)+'-'+d.slice(2,6)+'-'+d.slice(6,10);
  return d.length<4?d:d.length<8?d.slice(0,3)+'-'+d.slice(3):d.length<11?d.slice(0,3)+'-'+d.slice(3,6)+'-'+d.slice(6):d.slice(0,3)+'-'+d.slice(3,7)+'-'+d.slice(7)}
@@ -522,12 +522,16 @@ function todayHtml(v){
   +'<div class="vh-top"><h2 style="margin:0;font-size:16px">① 신규자 등록</h2><button class="button ghost" type="button" id="gdReg" style="padding:4px 8px;font-size:12px" onclick="startTour(\'reg\')">❔ 사용 가이드</button></div>'
   +'<div class="row" style="margin-top:8px;gap:6px"><button class="button" type="button" id="btnQr" style="flex:1;'+sb+'" onclick="toggleQr()">'+(showQr?'QR 닫기':'QR 보여주기')+'</button><button class="button ghost" type="button" id="btnAdd" style="flex:1;'+sb+'" onclick="toggleAdd()">'+(showAdd?'직접 등록 닫기':'직접 등록')+'</button></div>'
   +(showQr?'<div style="text-align:center;margin:12px 0 4px"><img src="'+escapeText(qr)+'" alt="작업자 등록 QR 코드" width="220" height="220" style="border:1px solid var(--line);border-radius:12px"><div class="row" style="justify-content:center;margin-top:6px"><button class="button ghost" type="button" style="'+sb+'" onclick="copyLink(\''+escapeText(v.link)+'\')">등록 링크 복사</button><button class="button ghost" type="button" style="'+sb+'" onclick="renewQr()">QR 새로 만들기</button></div></div>':'')
-  +(showAdd?'<form class="subbox" onsubmit="addWorkerForm(event)"><div style="display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:6px">'+input('wName','이름','','text',false,'홍길동')+'<div class="field"><label for="f_wRole">구분</label><select id="f_wRole">'+v.roles.map(r=>'<option '+(r==='근로자'?'selected':'')+'>'+escapeText(r)+'</option>').join('')+'</select></div>'+input('wTrade','공정명','','text',false,'목공')+'</div>'+certFieldHtml('wCert')+'<label class="desc"><input type="checkbox" id="wAgree"> 작업 안전 수칙 '+v.rules.length+'개 항목을 교육하고 서약을 받았습니다.</label><button class="button" type="submit" style="width:100%;margin-top:10px">작업자 등록</button></form>':'')
+  +(showAdd?'<form class="subbox" onsubmit="addWorkerForm(event)"><div style="display:grid;grid-template-columns:1.3fr 1fr;gap:6px">'+input('wName','이름','','text',false,'홍길동')+'<div class="field"><label for="f_wRole">구분</label><select id="f_wRole">'+v.roles.map(r=>'<option '+(r==='근로자'?'selected':'')+'>'+escapeText(r)+'</option>').join('')+'</select></div>'+'</div>'+tradeSel('f_wTrade',v.trades)+certFieldHtml('wCert')+'<label class="desc"><input type="checkbox" id="wAgree"> 채용 시 교육(작업 안전 수칙 '+v.rules.length+'개 항목 포함)을 하고 서약을 받았습니다.</label><button class="button" type="submit" style="width:100%;margin-top:10px">작업자 등록</button></form>':'')
   /* 오늘 등록한 사람만 표로 (전체 명단·지난 사람 이수증은 ☰ 신규교육 현황) */
-  +'<div id="regToday" style="margin-top:10px">'+(todayW.length?'<table class="rtable"><tr><th>이름</th><th>구분·공정</th><th style="width:72px">이수증</th><th style="width:44px"></th></tr>'+todayW.map(w=>'<tr><td><b>'+escapeText(w.name)+'</b></td><td>'+escapeText(w.role)+(w.trade?' · '+escapeText(w.trade):'')+'</td><td>'+certCell(w)+'</td><td><button class="linkbtn" type="button" style="font-size:12px" onclick="undoWorker(\''+escapeText(w.id)+'\')" aria-label="'+escapeText(w.name)+' 등록 취소">취소</button></td></tr>').join('')+'</table>'
+  +'<div id="regToday" style="margin-top:10px">'+(todayW.length?'<table class="rtable"><tr><th>이름</th><th>구분·공정</th><th style="width:72px">이수증</th><th style="width:44px"></th></tr>'+todayW.map(w=>'<tr><td><b>'+escapeText(w.name)+'</b></td><td>'+escapeText(w.role)+(w.trade?' · '+escapeText(w.trade):'')+eduH(w)+'</td><td>'+certCell(w)+'</td><td><button class="linkbtn" type="button" style="font-size:12px" onclick="undoWorker(\''+escapeText(w.id)+'\')" aria-label="'+escapeText(w.name)+' 등록 취소">취소</button></td></tr>').join('')+'</table>'
    :'<div class="row" style="justify-content:space-between"><span class="muted">오늘 등록한 사람 없음'+(noNew?' · [오늘 신규자 없음] 표시함':'')+'</span>'+(noNew?'<button class="button ghost" type="button" style="padding:4px 8px;font-size:12px" onclick="clearNoNew()">취소</button>':'')+(v.jobStatus!=='ENDED'&&!noNew?'<button class="button ghost" type="button" id="btnNoNew" style="padding:4px 8px;font-size:12px" onclick="setNoNew()">오늘 신규자 없음</button>':'')+'</div>')+'</div></div>';
  return reg+permitCardHtml(v)+inspCardHtml(v);
 }
+/** F1.8s 공종 고르기 (계획서에서 고른 공종) · 특별교육 대상 공종이면 교육 2H · 안 고르면 채용 시 교육 1H */
+function tradeSel(id,T){return '<div class="field"><label for="'+id+'">공종 (선택)</label><select id="'+id+'" onchange="tradeHint(this)"><option value="">선택 안 함</option>'+(T||[]).map(t=>'<option value="'+escapeText(t.key)+'" data-sp="'+escapeText((t.special||[]).join(' / '))+'">'+escapeText(t.name)+'</option>').join('')+'</select><div class="muted" id="'+id+'_h" style="font-size:12px;margin-top:2px">채용 시 교육 1H</div></div>'}
+function tradeHint(s){const o=s.options[s.selectedIndex],sp=o&&o.dataset.sp,h=$(s.id+'_h');if(h)h.textContent=sp?'채용 시 교육 + 특별교육 2H ('+sp+')':'채용 시 교육 1H'}
+const eduH=w=>' · <b>'+(Number(w.eduHours)||1)+'H</b>'+((w.special||[]).length?' 특별':'');
 /** 오늘 등록한 사람 (등록하면 그날 작업 안전 수칙 서명 기록에 들어감) */
 function isTodayWorker(v,w){if(v.todayCrew&&(v.todayCrew.workers||[]).some(x=>x.id===w.id))return true;try{return new Date(w.eduAt).toLocaleDateString('sv-SE',{timeZone:'Asia/Seoul'})===v.today}catch(e){return false}}
 /** [오늘 신규자 없음] (이 기기에 그날만 기억) → 신규자 등록 칸을 완료로 */
@@ -544,7 +548,7 @@ function certCell(w){return w.certDoc?'<button class="linkbtn" type="button" sty
 function eduHtml(v){const W=v.workers.slice().sort((x,y)=>String(y.eduAt||'').localeCompare(String(x.eduAt||''))),ok=W.filter(w=>w.certDoc).length,method=w=>w.method==='SELF'?'본인':'소장';
  const rules=v.history.length?'<details class="hist" style="margin-top:12px"><summary>작업 안전 수칙 서명 기록 '+v.history.length+'일 (등록한 날)</summary>'+v.history.map(h=>'<div class="item"><div class="row" style="justify-content:space-between"><span>'+escapeText(h.date)+' · '+h.count+'명</span><button class="button ghost" type="button" onclick="showRules(\''+escapeText(h.date)+'\')">보기</button></div></div>').join('')+'</details>':'';
  return '<div class="card" id="eduCard"><div class="vh-top"><h2 style="margin:0;font-size:16px">신규교육 현황</h2><span class="pill '+(W.length&&ok===W.length?'ok':'todo')+'">이수증 '+ok+' / '+W.length+'명</span></div>'
-  +(W.length?'<table class="rtable" style="margin-top:10px"><tr><th>이름</th><th>구분·공정</th><th style="width:64px">등록일</th><th style="width:76px">이수증</th></tr>'+W.map(w=>'<tr><td><b>'+escapeText(w.name)+'</b><div class="muted" style="font-size:11px">'+method(w)+' 등록 · <button class="linkbtn" type="button" style="font-size:11px" onclick="dropWorker(\''+escapeText(w.id)+'\',\''+escapeText(w.name)+'\')">빼기</button></div></td><td>'+escapeText(w.role)+(w.trade?' · '+escapeText(w.trade):'')+'</td><td>'+escapeText(String(fmtTime(w.eduAt)).slice(5,10))+'</td><td>'+certCell(w)+'</td></tr>').join('')+'</table>'
+  +(W.length?'<table class="rtable" style="margin-top:10px"><tr><th>이름</th><th>구분·공정</th><th style="width:64px">등록일</th><th style="width:76px">이수증</th></tr>'+W.map(w=>'<tr><td><b>'+escapeText(w.name)+'</b><div class="muted" style="font-size:11px">'+method(w)+' 등록 · <button class="linkbtn" type="button" style="font-size:11px" onclick="dropWorker(\''+escapeText(w.id)+'\',\''+escapeText(w.name)+'\')">빼기</button></div></td><td>'+escapeText(w.role)+(w.trade?' · '+escapeText(w.trade):'')+eduH(w)+'</td><td>'+escapeText(String(fmtTime(w.eduAt)).slice(5,10))+'</td><td>'+certCell(w)+'</td></tr>').join('')+'</table>'
    :'<p class="muted" style="margin-top:10px">아직 등록한 작업자가 없습니다.</p>')+rules+'</div>'}
 /** F1.8a 오늘 현장 업무 순서 안내 (하루 한 번 자동 · ❔ 버튼으로 다시) */
 function dayGuide(force){const v=vjob;if(!v||v.jobStatus==='ENDED')return;const key='dayGuide:'+v.today;let seen=false;try{seen=localStorage.getItem(key)==='1'}catch(e){}
@@ -566,7 +570,7 @@ async function renewQr(){if(!confirm('QR을 새로 만들면 이전 QR·링크�
 let workerSubmitting=false,workerPending=null;
 function workerApplyReceipt(r,d){
  if(!vjob||!r||!r.saved||!r.workerId||vjob.job.id!==r.jobId)return false;
- const w={id:r.workerId,name:r.name||d.name,role:r.role||d.role,trade:r.trade||d.trade,method:'MANUAL',eduAt:new Date().toISOString(),email:''};
+ const w={id:r.workerId,name:r.name||d.name,role:r.role||d.role,trade:r.trade||d.trade,tradeKey:r.tradeKey||'',special:r.special||[],eduHours:r.eduHours||1,method:'MANUAL',eduAt:new Date().toISOString(),email:''};
  if(!vjob.workers.some(x=>x.id===w.id))vjob.workers.push(w);
  if(vjob.todayCrew&&Array.isArray(vjob.todayCrew.workers)){
   if(!vjob.todayCrew.workers.some(x=>x.id===w.id))vjob.todayCrew.workers.push({...w,sign:'MANAGER'});
@@ -578,14 +582,14 @@ function workerApplyReceipt(r,d){
 }
 async function addWorkerForm(e){
  e.preventDefault();if(workerSubmitting)return;
- const d={name:value('wName'),role:$('f_wRole').value,trade:value('wTrade'),agree:$('wAgree').checked};
+ const d={name:value('wName'),role:$('f_wRole').value,trade:'',tradeKey:$('f_wTrade')?$('f_wTrade').value:'',agree:$('wAgree').checked};
  if(!d.name){markMissing([{key:'wName'}]);return}
  if(!d.agree){msg('교육 실시·서약 확인에 체크해 주세요.');return}
  /* F1.8b 이수증: 있으면 등록 직후 올림 · 없으면 확인 후 '미제출'로 등록 */
  const cf=certPick.wCert;let cert=null;
  if(cf){try{cert=await readFile(cf,PHOTO_DEFAULT)}catch(x){showErr('이수증 사진을 읽지 못했습니다',x);return}}
  else if(!await askOk('이수증 없이 등록할까요?',d.name+' 님의 건설업 기초안전보건교육 이수증이 없으면 "미제출"로 등록됩니다.\n교육 없이 투입된 것으로 보고 업체 평가에 반영됩니다. (나중에 작업자 카드에서 올릴 수 있습니다)','이수증 없이 등록'))return;
- const jobId=vjob.job.id,mark=[jobId,d.name,d.role,d.trade].join('|');
+ const jobId=vjob.job.id,mark=[jobId,d.name,d.role,d.tradeKey].join('|');
  if(!workerPending||workerPending.mark!==mark){
   const id=(globalThis.crypto&&crypto.randomUUID?crypto.randomUUID().replace(/-/g,''):Array.from({length:32},()=>Math.floor(Math.random()*16).toString(16)).join(''));
   workerPending={mark,id};
@@ -629,13 +633,13 @@ function showRules(date){const v=vjob,h=v.history.find(x=>x.date===date)||v.toda
  +h.workers.map(w=>'<tr><td></td><td>'+escapeText(w.trade||'')+'</td><td><b>'+escapeText(w.name)+'</b> <span class="sg">'+escapeText(SIGN_LABEL[w.sign]||'✔')+'</span></td></tr>').join('')+'</table><p class="muted" style="margin-top:8px">본인 계정 서명: 처음 등록한 날 본인 Google 계정으로 서명 · 소장 확인: 업체 대표 계정으로 그날 출근을 확인 · 저장 '+escapeText(fmtTime(h.savedAt))+'</p></div>';window.scrollTo(0,0)}
 /* ---------- v3.1 작업자 등록 QR로 들어온 계정 ---------- */
 async function wkCheckIn(info){const token=LINK_REVIEW.slice(4);try{const r=await call('workerCheckIn',token,info||null);if(r&&r.email&&state){state.email=r.email;$('identity').textContent='접속 계정: '+r.email}showWk(r)}catch(e){$('my').innerHTML='<div class="card"><h2>작업자 등록 실패</h2><p class="desc">'+escapeText(e.message||'')+'</p></div>'}$('pageTitle').textContent='작업자 등록';window.scrollTo(0,0)}
-function showWk(r){const head='<div class="card"><small class="muted">'+escapeText(r.store)+' · '+escapeText(r.company)+' ('+escapeText(r.trade)+')</small><h2>작업자 등록 · 신규자 교육</h2>';let body='';
+function showWk(r){const head='<div class="card"><small class="muted">'+escapeText(r.store)+' · '+escapeText(r.company)+' ('+escapeText(r.trade)+')</small><h2>작업자 등록 · 채용 시 교육</h2>';let body='';
  if(r.state==='DONE')body='<div style="text-align:center;padding:10px 0"><div style="font-size:44px;color:var(--ok)">✔</div><h2 style="color:var(--ok)">'+(r.again?'이미 등록되어 있습니다':'등록 완료')+'</h2><p class="desc"><b>'+escapeText(r.name)+'</b> · '+escapeText(r.role)+' · '+escapeText(r.company)+'<br>교육 확인 '+escapeText(fmtTime(r.eduAt))+' · 계정 '+escapeText(state.email)+(r.again?'':'<br>기초안전보건교육 이수증: '+(r.cert?'<b style="color:var(--ok)">✔ 제출</b>':'<b class="req">미제출</b> (소장님께 이수증을 보여 주세요)'))+'</p><div class="note" style="text-align:left">이 공사에서는 다시 QR을 찍지 않아도 됩니다.<br>내일부터는 소장님이 출근 인원을 체크합니다.</div></div>';
- else body='<p class="desc">로그인 계정 <b>'+escapeText(state.email)+'</b> 으로 등록합니다. <b>본인 계정</b>인지 확인해 주세요. 이 공사에서 처음 한 번만 하면 됩니다. <button class="linkbtn" type="button" onclick="relogin()">다른 계정으로 로그인</button></p><form onsubmit="sendWk(event)">'+input('kName','이름','','text',false,'예: 홍길동')+'<div class="split"><div class="field"><label for="f_kRole">구분</label><select id="f_kRole">'+r.roles.map(x=>'<option '+(x==='근로자'?'selected':'')+'>'+escapeText(x)+'</option>').join('')+'</select></div>'+input('kTrade','공정명 (선택)','','text',false,'예: 목공, 전기')+'</div>'
+ else body='<p class="desc">로그인 계정 <b>'+escapeText(state.email)+'</b> 으로 등록합니다. <b>본인 계정</b>인지 확인해 주세요. 이 공사에서 처음 한 번만 하면 됩니다. <button class="linkbtn" type="button" onclick="relogin()">다른 계정으로 로그인</button></p><form onsubmit="sendWk(event)">'+input('kName','이름','','text',false,'예: 홍길동')+'<div class="field"><label for="f_kRole">구분</label><select id="f_kRole">'+r.roles.map(x=>'<option '+(x==='근로자'?'selected':'')+'>'+escapeText(x)+'</option>').join('')+'</select></div>'+tradeSel('f_kTrade',r.trades)
   +certFieldHtml('kCert')
   +'<div class="stage">작업 안전 수칙 (끝까지 읽어 주세요)</div><ol class="rules boxed">'+r.rules.map(x=>'<li>'+escapeText(x)+'</li>').join('')+'</ol><p class="pledge">'+escapeText(r.pledge)+'</p><label class="wk"><input type="checkbox" id="kAgree"><span>위 작업 안전 수칙을 교육받았고, 준수할 것을 서약합니다.</span></label><button class="button" style="width:100%;margin-top:10px" type="submit">교육 확인 및 서명</button></form>';
  $('my').innerHTML=head+body+'</div>'}
-async function sendWk(e){e.preventDefault();const info={name:value('kName'),role:$('f_kRole').value,trade:value('kTrade'),agree:$('kAgree').checked};if(!info.name){markMissing([{key:'kName'}]);return}if(!info.agree){popup('확인해 주세요','작업 안전 수칙 교육 확인·서약에 체크해 주세요.','확인');return}
+async function sendWk(e){e.preventDefault();const info={name:value('kName'),role:$('f_kRole').value,tradeKey:$('f_kTrade')?$('f_kTrade').value:'',agree:$('kAgree').checked};if(!info.name){markMissing([{key:'kName'}]);return}if(!info.agree){popup('확인해 주세요','작업 안전 수칙 교육 확인·서약에 체크해 주세요.','확인');return}
  // F1.8b 기초안전보건교육 이수증 (없으면 '미제출'로 등록 · 소장님이 나중에 올릴 수 있음)
  const cf=certPick.kCert;if(cf){try{info.cert=await readFile(cf,PHOTO_DEFAULT)}catch(x){showErr('이수증 사진을 읽지 못했습니다',x);return}}
  else if(!await askOk('이수증 없이 등록할까요?','건설업 기초안전보건교육 이수증이 없으면 "미제출"로 등록됩니다.\n교육을 받지 않고 투입된 것으로 보고 업체 평가에 반영됩니다.\n\n이수증을 가져왔으면 [취소]를 누르고 사진을 찍어 주세요.','이수증 없이 등록'))return;
