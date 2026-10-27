@@ -245,6 +245,10 @@ html,body{overscroll-behavior-y:none}
 .bootlist li.skip i,.bootlist li.fail i{border-color:#9ca3af;color:#6b7280}.bootlist li.skip i::after,.bootlist li.fail i::after{content:'–'}
 .bootnote{font-size:13px;color:var(--sub);min-height:20px;margin:12px 0 0;line-height:1.6}
 #bootBtn{width:100%;margin-top:10px}
+/* F1.8p 허가서 서명 칸: 발행된 허가서는 업체 소장 이름을 정자로 · 긴 글귀는 작게 */
+.sgn{font-family:'Batang','바탕','Noto Serif KR',serif;font-weight:700;font-size:14px;color:#1f3a8a;letter-spacing:1px;padding:0 3px}.sgm{font-size:11px;color:#555}.sml{font-size:11px}
+/* F1.8p 제출 진행 체크리스트 (사진 올리기 → 저장) */
+#subBox{position:fixed;inset:0;z-index:95;background:rgba(17,24,39,.55);display:flex;align-items:center;justify-content:center;padding:20px 16px;overflow:auto}
 .bootlist li.done,.bootlist li.wait,.bootlist li.run{background:none}
 
 /* ===== F1.0 Firebase 구글 로그인 버튼 ===== */

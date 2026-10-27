@@ -45,12 +45,11 @@ function renderInspForm(){const v=vjob,I=v.insp;clearInterval(wkTimer);
 function inspBadBox(n){const nt=ins.notes[n]||(ins.notes[n]={memo:'',photos:[]});return '<div class="jbad"><label for="f_im'+n+'">지적 내용 <span class="req">*</span></label><input id="f_im'+n+'" class="jmemo" value="'+escapeText(nt.memo)+'" oninput="ins.notes['+n+'].memo=this.value" placeholder="예) 통로에 자재 적치 → 즉시 정리"><div class="row" style="margin-top:8px">'+thumbs(nt.photos,'')+'<label class="button ghost" for="if_'+n+'">📷 사진 넣기</label><input class="hidefile" type="file" id="if_'+n+'" accept="image/*" capture="environment" onchange="addInspBad('+n+')" aria-label="'+n+'번 불량 사진 선택"></div></div>'}
 function inspMark(n,k){ins.items[n]=k;const el=$('ii_'+n);el.classList.toggle('bad',k==='BAD');el.classList.remove('miss','shake');$('ibx_'+n).innerHTML=k==='BAD'?inspBadBox(n):'';if(k==='BAD')setTimeout(()=>$('f_im'+n)?.focus(),50);
  const bad=Object.values(ins.items).filter(x=>x==='BAD').length;$('inSum').innerHTML=bad?'· 불량 <b class="req">'+bad+'</b>건':''}
-/* F1.6b 고른 사진 여러 장을 한꺼번에 올림 (칸마다 최대 5장) → 올라간 사진 ID 목록. 일부만 실패하면 실패한 장 수를 알려 줌 */
+/* F1.6b 고른 사진 여러 장 (칸마다 최대 5장) → F1.8p 임시 ID 목록 (실제 올리기는 제출 때) */
 async function upInsp(inputId,staffCompany,room){const inp=$(inputId),fl=[...((inp&&inp.files)||[])].slice(0,Math.max(0,room??5));if(inp)inp.value='';if(!fl.length){if(inp&&room===0)msg('사진은 칸마다 5장까지입니다.');return []}
- msg('사진 '+fl.length+'장을 올리는 중입니다…');  // 이 안내가 안 뜨면 휴대폰이 사진을 화면에 넘겨주지 못한 것
- const rs=await Promise.allSettled(fl.map(async f0=>{const f=await readFile(f0,PHOTO_SITE);const r=staffCompany?await call('uploadInspPhotoStaff',inspJob.job.id,staffCompany,f):await call('uploadInspPhoto',vjob.job.id,f);inspPhoto[r.id]='data:'+f.mime+';base64,'+f.data;return r.id}));
- const ids=rs.filter(x=>x.status==='fulfilled').map(x=>x.value),bad=rs.filter(x=>x.status==='rejected');
- if(bad.length)popup('사진을 올리지 못했습니다',(ids.length?ids.length+'장은 올렸고 ':'')+bad.length+'장은 올리지 못했습니다.\n'+((bad[0].reason&&bad[0].reason.message)||''),'확인');return ids}
+ /* F1.8p 여기서는 올리지 않음 (미리보기만) → [제출] 때 pendUpload로 한꺼번에 */
+ const jobId=staffCompany?inspJob.job.id:vjob.job.id;
+ return fl.map(f0=>{const id=pendAdd(f0,async f=>{const x=await readFile(f,PHOTO_SITE);return staffCompany?api('uploadInspPhotoStaff',[jobId,staffCompany,x]):api('uploadInspPhoto',[jobId,x])});if(PEND[id].url)inspPhoto[id]=PEND[id].url;return id})}
 async function addTbm(){const ids=await upInsp('tbmFile',null,5-ins.tbm.length);if(!ids.length)return;ins.name=value('inName')||ins.name;const first=!ins.tbm.length;ins.tbm=ins.tbm.concat(ids).slice(0,5);
  /* F1.8a 첫 TBM 사진이 올라가면 점검표를 펼침 */if(first){const y=window.scrollY;renderInspForm();window.scrollTo(0,y);setTimeout(()=>$('inItems')?.scrollIntoView({behavior:'smooth',block:'start'}),80);return}
  $('tbmList').innerHTML=thumbs(ins.tbm,'dropTbm')+'<label class="button ghost" for="tbmFile">📷 사진 넣기</label><input class="hidefile" type="file" id="tbmFile" accept="image/*" capture="environment" onchange="addTbm()" aria-label="TBM 사진 선택">';$('tbmCard').classList.remove('miss','shake')}
@@ -65,7 +64,10 @@ async function submitInspNow(){ins.name=value('inName');const miss=[];if(!ins.tb
  const bad=Object.values(ins.items).filter(x=>x==='BAD').length;
  /* F1.7f 확인·결과를 화면 안 창으로 (일부 휴대폰은 confirm/alert를 말없이 막아 "눌러도 반응 없음"이 됨) */
  if(!await askOk('순회점검 제출',bad?'지적사항 '+bad+'건은 조치될 때까지 미조치로 남습니다.':'전 항목 이상 없음으로 제출합니다.','제출'))return;
- try{vjob=await call('submitInspection',vjob.job.id,{tbm:ins.tbm,items:ins.items,notes:ins.notes,name:ins.name,drill:dr.photos.length?{type:dr.type,photos:dr.photos}:null});ins=null;renderVJob();$('inspCard')?.scrollIntoView({block:'start'});popup('순회점검 제출 완료','오늘 순회점검일지를 제출했습니다.'+(bad?'\n지적사항 '+bad+'건은 조치 후 [조치 등록]을 해 주세요.':''),'확인')}
+ /* F1.8p 불량이 아닌 항목에 남은 사진은 버림 → 사진 올리기 → 일지 저장 (체크리스트 한 번) */
+ Object.keys(ins.notes).forEach(n=>{if(ins.items[n]!=='BAD')ins.notes[n].photos=[]});
+ const lists=[ins.tbm,dr.photos].concat(Object.values(ins.notes).map(x=>x.photos)),np=pendCount(lists);
+ try{await subRun('순회점검 제출',[np&&['사진 '+np+'장 올리기',set=>pendUpload(lists,set,inspPhoto)],['순회점검일지 저장',async()=>{vjob=await api('submitInspection',[vjob.job.id,{tbm:ins.tbm,items:ins.items,notes:ins.notes,name:ins.name,drill:dr.photos.length?{type:dr.type,photos:dr.photos}:null}])}]]);ins=null;renderVJob();$('inspCard')?.scrollIntoView({block:'start'});popup('순회점검 제출 완료','오늘 순회점검일지를 제출했습니다.'+(bad?'\n지적사항 '+bad+'건은 조치 후 [조치 등록]을 해 주세요.':''),'확인')}
  catch(e){showErr('순회점검을 제출하지 못했습니다',e)}}
 /* ---------- 지적사항 조치 등록 (업체·도급인 공용) ---------- */
 /** F1.8k 도급인 책임자 이름 (서버가 공사 화면과 함께 보내 줌 · 없으면 기본값) */
@@ -86,10 +88,13 @@ async function addRsPhoto(){const memo=value('rsMemo'),date=value('rsDate'),name
 async function resolveNow(){const d={memo:value('rsMemo'),date:value('rsDate'),name:value('rsName'),photos:rs.photos},miss=[];if(!d.memo)miss.push('f_rsMemo');if(!d.date)miss.push('f_rsDate');if(rs.who!=='staff'&&!d.name)miss.push('f_rsName');if(!d.photos.length)miss.push('rsPh');
  if(miss.length){inspFlag(miss,'빨간 칸을 채워 주세요 (조치 후 사진 필수)');return}if(!await askOk('조치 완료 등록',d.date+' 조치 완료로 등록할까요?','등록'))return;
  const fid=rs.f.id,dash=rs.from==='dash';
- try{if(rs.who==='staff'){inspJob=await call('resolveFinding',fid,d);rs=null;
+ /* F1.8p 조치 후 사진 올리기 → 조치 저장 (체크리스트 한 번) */
+ const np=pendCount([rs.photos]);let res=null;
+ try{await subRun('조치 완료 등록',[np&&['조치 후 사진 '+np+'장 올리기',set=>pendUpload([rs.photos],set,inspPhoto)],['조치 결과 저장',async()=>{d.photos=rs.photos;res=await api('resolveFinding',[fid,d])}]]);
+  if(rs.who==='staff'){inspJob=res;rs=null;
    if(dash){/* F1.8g 도급인 메인에서 연 조치 → 메인 목록 바로 '조치 완료' */((jobData&&jobData.jobs)||[]).forEach(j=>{(j.findings||[]).forEach(f=>{if(f.id===fid){f.status='DONE';f.actionDate=d.date}});if(j.findings)j.findOpen=j.findings.filter(f=>f.status!=='DONE').length});jobAt=0;sgo('dash')}
    else renderInspList()}
-  else{vjob=await call('resolveFinding',fid,d);rs=null;
+  else{vjob=res;rs=null;
    if(dash){/* F1.8f 메인 목록도 바로 '조치 완료'로 바꾸고 메인으로 */((vjobs&&vjobs.jobs)||[]).forEach(j=>(j.findings||[]).forEach(f=>{if(f.id===fid){f.status='DONE';f.actionDate=d.date}}));((vjobs&&vjobs.jobs)||[]).forEach(j=>{if(j.stats&&j.findings)j.stats.openFindings=j.findings.filter(f=>f.status!=='DONE').length});vjobsAt=0;vgo('dash')}
    else{renderVJob();$('inspCard')?.scrollIntoView({block:'start'})}}
   rs=null;msg('조치 완료로 등록했습니다.')}catch(e){showErr('조치 완료로 등록하지 못했습니다',e)}}

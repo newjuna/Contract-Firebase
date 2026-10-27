@@ -36,7 +36,7 @@ function openPlan(){const can=plCan();if(!can.C02&&can.C01){openRule();return}  
  pl.drill=Object.assign({},D.drill||{},pl.drill||{});if(!Array.isArray(pl.drill.items))pl.drill.items=(D.drill&&D.drill.items||[]).slice();
  /* F1.8o 규정 = 자동 (갑 = 도급인 위임 현장대리인 고정 · 을 = 등록 때 대표이사 · 시행일 = 오늘) */
  pl.rule={hqRep:R.hqRep||'곽동민',vendorRep:b.representative||prev.vendorRep||'',date:R.today};
- pl.years=D.years;pl.evidenceFiles=pl.evidenceFiles||(saved&&saved.evidenceFiles)||[];pl.ruleDone=!!(draft&&draft.ruleDone&&plRow('C01').uploads.length);plStep=plFirst();  // 규정만 먼저 등록된 경우 계획서부터
+ pl.years=D.years;pl.evidenceFiles=(pl.evidenceFiles||(saved&&saved.evidenceFiles)||[]).filter(f=>!isPend(f.id)||PEND[f.id]);/* F1.8p 새로 고침으로 사라진 (아직 안 올린) 증빙은 뺌 */pl.ruleDone=!!(draft&&draft.ruleDone&&plRow('C01').uploads.length);plStep=plFirst();  // 규정만 먼저 등록된 경우 계획서부터
  let el=$('csheet');if(!el){el=document.createElement('div');el.id='csheet';el.setAttribute('role','dialog');el.setAttribute('aria-modal','true');document.body.appendChild(el)}
  el.setAttribute('aria-label','안전보건관리규정 · 계획서 작성');el.style.display='block';document.body.style.overflow='hidden';renderPlan()}
 function closePlan(){plCollect();try{localStorage.setItem(plKey(),JSON.stringify(pl))}catch(e){}const el=$('csheet');if(el)el.style.display='none';document.body.style.overflow='';if(pl&&pl.ruleDone)display(state);msg('작성 중인 내용은 이 휴대폰에 보관됩니다. 다시 [작성하기]를 누르면 이어서 작성합니다.')}
@@ -81,7 +81,7 @@ function renderPlan(){const F=state.forms.plan,el=$('csheet'),n=plStep,can=plCan
   +'<div class="plsteps">'+PL_STEPS.map((t,i)=>'<span class="'+(i+1<n?'done':i+1===n?'now':'')+'">'+escapeText(t)+'</span>').join('')+'</div>'+body
   +'<div class="card roomfoot"><div class="row">'+(n>first?'<button class="button ghost" type="button" style="flex:1" onclick="plGo(-1)">이전</button>':'')+(n<PL_LAST?'<button class="button" type="button" style="flex:2" onclick="plGo(1)">다음</button>':'<button class="button" id="planSave" type="button" style="flex:2" onclick="savePlanNow()">서명하고 작성 완료</button>')+'</div></div></div>';
  el.scrollTop=0;if(n===PL_LAST)setTimeout(initSig,30)}
-function plEvHtml(){return pl.evidenceFiles.map((f,i)=>'<div class="plfile"><span>📎 '+escapeText(f.name)+'</span><button type="button" class="xs" onclick="plEvDel('+i+')" aria-label="빼기">✕</button></div>').join('')+'<button class="button ghost" type="button" style="display:block;width:100%;margin-top:6px" onclick="pickPhoto(plUploadFile,{title:\'증빙 넣기\',accept:\'image/*,.pdf,application/pdf\'})">📷 촬영 · 파일 올리기</button>'}
+function plEvHtml(){return pl.evidenceFiles.map((f,i)=>'<div class="plfile"><span>📎 '+escapeText(f.name)+(isPend(f.id)?' <span class="muted">· 완료 때 올림</span>':'')+'</span><button type="button" class="xs" onclick="plEvDel('+i+')" aria-label="빼기">✕</button></div>').join('')+'<button class="button ghost" type="button" style="display:block;width:100%;margin-top:6px" onclick="pickPhoto(plUploadFile,{title:\'증빙 넣기\',accept:\'image/*,.pdf,application/pdf\'})">📷 촬영 · 파일 올리기</button>'}
 /** 지금 화면의 입력값을 pl에 담기 */
 function plCollect(){if(!pl)return;const n=plStep,v=id=>$('f_'+id)?$('f_'+id).value.trim():null;
  if(n===2){pl.goal=v('plGoal')??pl.goal;pl.kpis=pl.kpis.map((k,i)=>({name:v('plK'+i)??k.name,target:v('plT'+i)??k.target}));const p=v('plPol');if(p!=null)pl.policy=p.split('\n').map(x=>x.trim()).filter(Boolean)}
@@ -96,7 +96,8 @@ function plWork(k,on){plCollect();pl.works=on?[...new Set(pl.works.concat(k))]:p
 function plScen(k,on){plCollect();pl.scen=on?[...new Set(pl.scen.concat(k))]:pl.scen.filter(x=>x!==k);$('plScen').classList.remove('miss','shake')}
 function plDrillItem(k,on){plCollect();pl.drill.items=on?[...new Set(pl.drill.items.concat(k))]:pl.drill.items.filter(x=>x!==k);$('plDrill')?.classList.remove('miss','shake')}
 function plEvDel(i){pl.evidenceFiles.splice(i,1);$('plEv').innerHTML=plEvHtml()}
-async function plUploadFile(f0){try{const f=await readFile(f0);const r=await call('uploadPlanFile',f);plCollect();pl.evidenceFiles.push(r);$('plEv').innerHTML=plEvHtml();msg('증빙을 올렸습니다.')}catch(e){showErr('증빙을 올리지 못했습니다',e)}}
+/* F1.8p 증빙은 고를 때 올리지 않음 → [서명하고 작성 완료] 때 한꺼번에 (이 휴대폰에만 있으므로 새로 고침하면 다시 골라야 함) */
+function plUploadFile(f0){if(f0.size>MAX_MB*1024*1024&&!/^image\//.test(f0.type||'')){popup('파일이 너무 큽니다','파일은 '+MAX_MB+'MB 이하만 올릴 수 있습니다.','확인');return}plCollect();const id=pendAdd(f0,async f=>api('uploadPlanFile',[await readFile(f)]));pl.evidenceFiles.push({id,name:f0.name||'증빙'});$('plEv').innerHTML=plEvHtml()}
 /** 단계 이동 (다음은 빈 칸 확인) */
 function plGo(d){plCollect();if(d>0){const m=plMiss(plStep);if(m.length){inspFlag(m,'빨간 칸을 채워 주세요');return}}plStep=Math.max(plFirst(),Math.min(PL_LAST,plStep+d));renderPlan()}
 function plMiss(n){const m=[],can=plCan();
@@ -113,11 +114,13 @@ async function savePlanNow(){plCollect();const m=plMiss(PL_LAST);if(m.length){in
  const cnt=(s,c)=>((((s||state).docBoard||{}).rows||[]).find(x=>x.code===c)||{uploads:[]}).uploads.length,b1=cnt(null,'C01'),b2=cnt(null,'C02'),btn=$('planSave');
  const busy=t=>{if(btn){btn.disabled=true;btn.textContent=t}};
  const done=s=>{try{localStorage.removeItem(plKey())}catch(z){}const el=$('csheet');if(el)el.style.display='none';document.body.style.overflow='';pl=null;display(s);setTimeout(()=>$('row_docC02')?.scrollIntoView({block:'center'}),100);msg('규정·계획서 작성 완료 · 제출 서류로 등록했습니다.')};
- const run=async(fn,args,code,before)=>{try{return await call(fn,...args)}catch(e){if(LOST_RE.test(e&&e.message||'')){try{const s=await callQuiet('portalData');if(cnt(s,code)>before)return s}catch(x){}}throw e}};
- try{
-  if(doRule){busy('① 규정을 만드는 중… (10초 정도)');const s1=await run('saveRuleDoc',[{hqRep:pl.rule.hqRep,vendorRep:pl.rule.vendorRep,agent:plMgr().name,date:pl.rule.date},sg],'C01',b1);state=s1;pl.ruleDone=true}
-  busy((doRule?'② ':'')+'계획서를 만드는 중… (20초 정도)');
-  const d=Object.assign({},pl,{evidence:pl.evidenceFiles.map(f=>f.id)});['evidenceFiles','rule','ruleDone'].forEach(k=>delete d[k]);
-  done(await run('savePlanDoc',[d,sg],'C02',b2));
+ const run=async(fn,args,code,before)=>{try{return await api(fn,args)}catch(e){if(LOST_RE.test(e&&e.message||'')){try{const s=await callQuiet('portalData');if(cnt(s,code)>before)return s}catch(x){}}throw e}};
+ /* F1.8p 체크리스트 한 번: 증빙 올리기 → 규정 PDF → 계획서 PDF */
+ const ev=pl.evidenceFiles.map(f=>f.id),np=pendCount([ev]);let s2=null;
+ try{busy('작성 중…');
+  await subRun('안전보건 서류 작성 완료',[np&&['증빙 '+np+'건 올리기',async set=>{await pendUpload([ev],set);pl.evidenceFiles=pl.evidenceFiles.map(f=>isPend(f.id)?(PEND[f.id]&&PEND[f.id].done?{id:PEND[f.id].done,name:f.name}:null):f).filter(Boolean)}],
+   doRule&&['안전보건관리규정 PDF 만들기',async()=>{state=await run('saveRuleDoc',[{hqRep:pl.rule.hqRep,vendorRep:pl.rule.vendorRep,agent:plMgr().name,date:pl.rule.date},sg],'C01',b1);pl.ruleDone=true}],
+   ['안전보건관리계획서 PDF 만들기 · 등록',async()=>{const d=Object.assign({},pl,{evidence:pl.evidenceFiles.map(f=>f.id)});['evidenceFiles','rule','ruleDone'].forEach(k=>delete d[k]);s2=await run('savePlanDoc',[d,sg],'C02',b2)}]]);
+  done(s2);
  }catch(e){if(btn){btn.disabled=false;btn.textContent='서명하고 작성 완료'}
   showErr(pl&&pl.ruleDone&&doRule?'규정은 등록했지만 계획서를 등록하지 못했습니다':'서류를 등록하지 못했습니다',{message:(e&&e.message||'')+(pl&&pl.ruleDone?'\n\n[서명하고 작성 완료]를 다시 누르면 계획서만 다시 만듭니다.':'')})}}

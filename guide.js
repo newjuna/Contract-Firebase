@@ -20,8 +20,8 @@ const TOUR_STEPS={
   {scr:'permit',sel:'#pfAll',tap:1,text:'③ 작업 전에 안전조치를 했으면 [모두 조치함]을 누르세요. 고른 위험작업에 필요한 조치만 나옵니다.'},
   {scr:'permit',sel:'#pfIssue',tap:1,text:'④ 현장책임자 이름을 확인하고 [발행]을 누르면 바로 작업할 수 있습니다.'},
   {scr:'permit',sel:'#pfPrev',tap:1,text:'[결과지 미리보기]를 누르면 작업허가서 양식으로 어떻게 나오는지 볼 수 있습니다.'},
-  {scr:'permit',sel:'#pgDoneBtn',tap:1,text:'작업이 끝나면 [지금 완료]를 누르고'},
-  {scr:'permit',sel:'#pgSave',tap:1,text:'[저장]을 누르면 오늘 작업허가서가 마무리됩니다.'}],
+  {scr:'permit',sel:'#pgDoneCard',text:'작업 완료 칸은 기본값(17:00 · 현장대리인)이 들어가 있습니다. 다를 때만 고치세요.'},
+  {scr:'permit',sel:'#pgSave',tap:1,text:'[작업 완료 저장]을 누르면 오늘 작업허가서가 마무리됩니다.'}],
  insp:[
   {scr:'today',sel:'#btnInsp',alt:'#inspCard',tap:1,text:'순회점검은 매일 합니다. [오늘 순회점검 작성]을 누르세요.'},
   {scr:'insp0',sel:'#tbmCard',tap:1,text:'먼저 TBM(작업 전 안전 미팅) 사진을 📷 찍어서 올립니다.'},
