@@ -11,6 +11,17 @@ let pl=null,plStep=1;
 const PL_STEPS=['규정(자동)','방침·목표','현장대리인','위험성평가','비상대책','대피훈련 계획','산재·서명'];
 const plMgr=()=>pl.org[0]||(pl.org[0]={role:'안전관리책임자 (현장대리인)',name:'',phone:''});
 const PL_LAST=PL_STEPS.length;
+/* F1.8t 위쪽 단계 탭: 초록 = 다 씀 · 빨강 = 빈 칸이나 제출 때 돌려받은 항목 · 회색 = 아직 안 봄 · 누르면 그 단계로 바로 이동 */
+let plSeen=new Set(),plSrv={};
+/* 제출 때 서버가 돌려준 항목 → 단계 (서명은 마지막 · 위에서부터 먼저 맞는 것) */
+const PL_SRV_MAP=[[/서명/,7],[/대피훈련|훈련|집결|대피 경로/,6],[/시나리오|병원/,5],[/위험|공종/,4],[/현장대리인|안전관리책임자|조직|연락처|생년월일|주소/,3],[/목표|성과지표|방침/,2],[/산재|증빙/,7]];
+const plSrvStep=t=>{const x=PL_SRV_MAP.find(([re])=>re.test(t));return x?x[1]:0};
+function plTabCls(i){if(i<plFirst())return 'done';const ok=!plMiss(i).filter(x=>x!=='sigBox').length&&!plSrv[i];return ok?'done':(plSeen.has(i)||plSrv[i])?'bad':''}
+function plTabsHtml(){const n=plStep,first=plFirst();return '<div id="plTabs"><div class="plsteps" role="tablist" aria-label="작성 단계">'+PL_STEPS.map((t,i)=>{const k=i+1,c=plTabCls(k);return '<button type="button" role="tab" aria-selected="'+(k===n)+'" class="'+c+(k===n?' now':'')+'" '+(k<first?'disabled':'')+' onclick="plJump('+k+')" aria-label="'+escapeText(t)+(c==='done'?' · 작성 완료':c==='bad'?' · 확인 필요':'')+'">'+escapeText(t)+'</button>'}).join('')+'</div>'
+ +(plSrv[n]?'<div class="note plsrv">⚠ 제출 때 확인이 필요한 항목: '+escapeText(plSrv[n].join(', '))+'</div>':'')+'</div>'}
+function plJump(i){if(i===plStep||i<plFirst())return;plCollect();plLeave();plStep=i;renderPlan();const m=plMiss(i).filter(x=>x!=='sigBox');if(m.length&&plSeen.has(i))setTimeout(()=>inspFlag(m,'빨간 칸을 채워 주세요'),50)}
+/** 지금 단계를 떠날 때: 본 단계로 표시 · 다 채웠으면 제출 때 돌려받은 표시도 지움 */
+function plLeave(){plSeen.add(plStep);if(plSrv[plStep]&&!plMiss(plStep).filter(x=>x!=='sigBox').length)delete plSrv[plStep]}
 const DRILL_PLAN=[['NEW','신규자 투입 시 대피 경로·집결 장소 안내'],['EVAC','공사 중 비상대피 훈련 1회 이상'],['CPR','심폐소생술(CPR) 교육'],['FIRE','소화기 사용 훈련']];
 const plKey=()=>'planDraft:'+(state.company&&state.company.id);
 const plRow=c=>(((state.docBoard||{}).rows||[]).find(x=>x.code===c))||{uploads:[]};
@@ -42,7 +53,7 @@ function openPlan(){const can=plCan();if(!can.C02&&can.C01){openRule();return}  
  pl.drill=Object.assign({},D.drill||{},pl.drill||{});if(!Array.isArray(pl.drill.items))pl.drill.items=(D.drill&&D.drill.items||[]).slice();
  /* F1.8o 규정 = 자동 (갑 = 도급인 위임 현장대리인 고정 · 을 = 등록 때 대표이사 · 시행일 = 오늘) */
  pl.rule={hqRep:R.hqRep||'곽동민',vendorRep:b.representative||prev.vendorRep||'',date:R.today};
- pl.years=D.years;pl.evidenceFiles=(pl.evidenceFiles||(saved&&saved.evidenceFiles)||[]).filter(f=>!isPend(f.id)||PEND[f.id]);/* F1.8p 새로 고침으로 사라진 (아직 안 올린) 증빙은 뺌 */pl.ruleDone=!!(draft&&draft.ruleDone&&plRow('C01').uploads.length);plStep=plFirst();  // 규정만 먼저 등록된 경우 계획서부터
+ pl.years=D.years;pl.evidenceFiles=(pl.evidenceFiles||(saved&&saved.evidenceFiles)||[]).filter(f=>!isPend(f.id)||PEND[f.id]);/* F1.8p 새로 고침으로 사라진 (아직 안 올린) 증빙은 뺌 */pl.ruleDone=!!(draft&&draft.ruleDone&&plRow('C01').uploads.length);plStep=plFirst();plSeen=new Set();plSrv={};  // 규정만 먼저 등록된 경우 계획서부터
  let el=$('csheet');if(!el){el=document.createElement('div');el.id='csheet';el.setAttribute('role','dialog');el.setAttribute('aria-modal','true');document.body.appendChild(el)}
  el.setAttribute('aria-label','안전보건관리규정 · 계획서 작성');el.style.display='block';document.body.style.overflow='hidden';renderPlan()}
 function closePlan(){plCollect();try{localStorage.setItem(plKey(),JSON.stringify(pl))}catch(e){}const el=$('csheet');if(el)el.style.display='none';document.body.style.overflow='';if(pl&&pl.ruleDone)display(state);msg('작성 중인 내용은 이 휴대폰에 보관됩니다. 다시 [작성하기]를 누르면 이어서 작성합니다.')}
@@ -87,7 +98,7 @@ function renderPlan(){const F=state.forms.plan,el=$('csheet'),n=plStep,can=plCan
   +'<div class="card" id="sigBox"><h2>현장대리인 서명 <span class="req">*</span></h2><p class="muted">'+(can.C01&&!pl.ruleDone?'규정 · 계획서 · 현장대리인계에 같은 서명이 들어갑니다.':'계획서 · 현장대리인계에 같은 서명이 들어갑니다.')+'</p><canvas id="sigPad" class="sigpad" aria-label="서명 칸 (손가락으로 서명)"></canvas><div class="row" style="justify-content:space-between;margin-top:8px"><span class="muted">'+escapeText(b.company)+' 현장대리인 '+escapeText(plMgr().name)+' (대표이사 '+escapeText(can.C01?pl.rule.vendorRep:b.representative)+' 대리)</span><button class="button ghost" type="button" onclick="clearSig()">다시 쓰기</button></div></div>'}
  const first=plFirst();
  el.innerHTML='<div class="pbar"><button class="button ghost" type="button" onclick="closePlan()">‹ 이전으로</button><b class="pbt">안전보건 서류 '+n+'/'+PL_LAST+'</b><span style="width:64px"></span></div><div class="cwrap">'
-  +'<div class="plsteps">'+PL_STEPS.map((t,i)=>'<span class="'+(i+1<n?'done':i+1===n?'now':'')+'">'+escapeText(t)+'</span>').join('')+'</div>'+body
+  +plTabsHtml()+body
   +'<div class="card roomfoot"><div class="row">'+(n>first?'<button class="button ghost" type="button" style="flex:1" onclick="plGo(-1)">이전</button>':'')+(n<PL_LAST?'<button class="button" type="button" style="flex:2" onclick="plGo(1)">다음</button>':'<button class="button" id="planSave" type="button" style="flex:2" onclick="savePlanNow()">서명하고 작성 완료</button>')+'</div></div></div>';
  el.scrollTop=0;if(n===PL_LAST)setTimeout(initSig,30)}
 function plEvHtml(){return pl.evidenceFiles.map((f,i)=>'<div class="plfile"><span>📎 '+escapeText(f.name)+(isPend(f.id)?' <span class="muted">· 완료 때 올림</span>':'')+'</span><button type="button" class="xs" onclick="plEvDel('+i+')" aria-label="빼기">✕</button></div>').join('')+'<button class="button ghost" type="button" style="display:block;width:100%;margin-top:6px" onclick="pickPhoto(plUploadFile,{title:\'증빙 넣기\',accept:\'image/*,.pdf,application/pdf\'})">📷 촬영 · 파일 올리기</button>'}
@@ -113,7 +124,7 @@ function plEvDel(i){pl.evidenceFiles.splice(i,1);$('plEv').innerHTML=plEvHtml()}
 /* F1.8p 증빙은 고를 때 올리지 않음 → [서명하고 작성 완료] 때 한꺼번에 (이 휴대폰에만 있으므로 새로 고침하면 다시 골라야 함) */
 function plUploadFile(f0){if(f0.size>MAX_MB*1024*1024&&!/^image\//.test(f0.type||'')){popup('파일이 너무 큽니다','파일은 '+MAX_MB+'MB 이하만 올릴 수 있습니다.','확인');return}plCollect();const id=pendAdd(f0,async f=>api('uploadPlanFile',[await readFile(f)]));pl.evidenceFiles.push({id,name:f0.name||'증빙'});$('plEv').innerHTML=plEvHtml()}
 /** 단계 이동 (다음은 빈 칸 확인) */
-function plGo(d){plCollect();if(d>0){const m=plMiss(plStep);if(m.length){inspFlag(m,'빨간 칸을 채워 주세요');return}}plStep=Math.max(plFirst(),Math.min(PL_LAST,plStep+d));renderPlan()}
+function plGo(d){plCollect();if(d>0){const m=plMiss(plStep);if(m.length){plSeen.add(plStep);inspFlag(m,'빨간 칸을 채워 주세요');return}}plLeave();plStep=Math.max(plFirst(),Math.min(PL_LAST,plStep+d));renderPlan()}
 function plMiss(n){const m=[],can=plCan();
  if(n===2){if(!pl.goal)m.push('f_plGoal');if(!pl.kpis.some(k=>k.name))m.push(pl.kpis.length?'f_plK0':'f_plGoal')}
  if(n===3){const o=plMgr(),g=pl.agent;if(!o.name)m.push('f_plN0');if(!o.phone)m.push('f_plP0');if(!/^\d{4}-\d{2}-\d{2}$/.test(g.birth||''))m.push('f_plGb');if(!g.addr)m.push('f_plGa')}if(n===4){if(!pl.works.length)m.push('plWorks');else if(!pl.risks.length)m.push('plRisks')}if(n===5&&!pl.scen.length)m.push('plScen');
@@ -121,7 +132,8 @@ function plMiss(n){const m=[],can=plCan();
  if(n===7){pl.accidents.forEach((a,i)=>{if(a==='')m.push('f_plA'+i)});if(!sigDirty)m.push('sigBox')}return m}
 /** 서명하고 작성 완료 → 규정 PDF(필요하면) → 계획서 PDF · 같은 서명 · 응답이 끊겨도 실제로 등록됐는지 확인 */
 async function savePlanNow(){plCollect();const m=plMiss(PL_LAST);if(m.length){inspFlag(m,m[0]==='sigBox'?'현장대리인 서명을 해 주세요':'최근 3년 산재 건수를 적어 주세요 (없으면 0)');return}
- for(let i=1;i<PL_LAST;i++)if(plMiss(i).length){plStep=i;renderPlan();setTimeout(()=>inspFlag(plMiss(i),PL_STEPS[i-1]+' 단계에 빈 칸이 있습니다'),50);return}
+ for(let i=plFirst();i<=PL_LAST;i++)plSeen.add(i);
+ for(let i=plFirst();i<PL_LAST;i++)if(plMiss(i).length){plStep=i;renderPlan();setTimeout(()=>inspFlag(plMiss(i),PL_STEPS[i-1]+' 단계에 빈 칸이 있습니다'),50);return}
  const sg=sigData();if(!sg){sigBad();inspFlag(['sigBox'],'서명 칸을 다시 준비했습니다. 한 번 더 서명해 주세요');return}
  const can=plCan(),doRule=can.C01&&!pl.ruleDone;
  if(!await askOk('안전보건 서류 작성 완료',(doRule?'안전보건관리규정 + ':'')+'안전보건관리계획서\n공종 '+pl.works.length+'개 · 위험요인 '+pl.risks.length+'개 · 비상 시나리오 '+pl.scen.length+'개 · 대피훈련 계획 · 증빙 '+pl.evidenceFiles.length+'건\n\n서명이 들어간 PDF가 만들어져 제출 서류로 등록됩니다.','작성 완료'))return;
@@ -137,4 +149,9 @@ async function savePlanNow(){plCollect();const m=plMiss(PL_LAST);if(m.length){in
    ['안전보건관리계획서 PDF 만들기 · 등록',async()=>{const d=Object.assign({},pl,{evidence:pl.evidenceFiles.map(f=>f.id)});['evidenceFiles','rule','ruleDone'].forEach(k=>delete d[k]);s2=await run('savePlanDoc',[d,sg],'C02',b2)}]]);
   done(s2);
  }catch(e){if(btn){btn.disabled=false;btn.textContent='서명하고 작성 완료'}
+  /* F1.8t 서버가 '다음 항목을 확인해 주세요: …'로 돌려보내면 → 그 단계 탭을 빨갛게 + 첫 단계로 바로 이동 */
+  const g=/다음\s*항목을\s*확인해\s*주세요\s*[:：]?\s*([\s\S]+)/.exec(e&&e.message||''),items=g?g[1].split(/\s*(?:,|\n-?)\s*/).map(x=>x.replace(/^-\s*/,'').trim()).filter(Boolean):[];
+  if(pl&&items.length){plSrv={};items.forEach(t=>{const k=plSrvStep(t)||PL_LAST;(plSrv[k]=plSrv[k]||[]).push(t)});const k0=Math.min(...Object.keys(plSrv).map(Number));
+   if(k0!==plStep){plCollect();plStep=k0;renderPlan()}else if($('plTabs'))$('plTabs').outerHTML=plTabsHtml();/* 같은 단계(서명)면 서명 칸을 지우지 않고 탭만 다시 */const m=plMiss(k0).filter(x=>x!=='sigBox');if(m.length)setTimeout(()=>inspFlag(m,'빨간 칸을 확인해 주세요'),50);
+   popup('확인이 필요한 항목이 있습니다','· '+items.join('\n· ')+'\n\n빨간 단계 탭을 눌러 바로 이동할 수 있습니다. ['+PL_STEPS[k0-1]+'] 단계로 이동했습니다.','확인');return}
   showErr(pl&&pl.ruleDone&&doRule?'규정은 등록했지만 계획서를 등록하지 못했습니다':'서류를 등록하지 못했습니다',{message:(e&&e.message||'')+(pl&&pl.ruleDone?'\n\n[서명하고 작성 완료]를 다시 누르면 계획서만 다시 만듭니다.':'')})}}
