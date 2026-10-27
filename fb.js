@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F1.8r';
+  const VERSION = '26.10.24 F1.8t';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   const CFG = {
     INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
@@ -166,6 +166,25 @@
   const PLAN_WORKS=RISK_TRADES.map(t=>[t[0],t[1],t[2],t[3],0,0,t[4],t[5]]);
   const RISK_ALL=[].concat(...RISK_TRADES.map(t=>t[6].map(r=>({t:t[0],tl:t[1],id:r[0],step:r[1],haz:r[2],meas:r[3],lv:r[4],q:r[5]}))));
   const RISK_AFTER={'상':'중','중':'하','하':'하'};
+  /* F1.8s 교육일지 · 산업안전보건법 시행규칙 [별표 5] · 신규자 = 채용 시 교육(다목) 1시간 · 공종을 고르면 특별교육(라목) 추가 → 2시간 · fb.js · Relay.gs 같은 값 */
+  const EDU_HIRE=['산업안전 및 산업재해 예방에 관한 사항 (화재·폭발 사고 발생 시 대피에 관한 사항 포함)','산업보건 및 건강장해 예방에 관한 사항','위험성 평가에 관한 사항','산업안전보건법령 및 산업재해보상보험 제도에 관한 사항','직무스트레스 예방 및 관리에 관한 사항','직장 내 괴롭힘, 고객의 폭언 등으로 인한 건강장해 예방 및 관리에 관한 사항','기계·기구의 위험성과 작업의 순서 및 동선에 관한 사항','작업 개시 전 점검에 관한 사항','정리정돈 및 청소에 관한 사항','사고 발생 시 긴급조치에 관한 사항','물질안전보건자료에 관한 사항'];
+  const EDU_ETC='그 밖에 안전·보건관리에 필요한 사항';
+  const EDU_SPECIAL={
+   13:['운반용 등 하역기계를 5대 이상 보유한 사업장에서의 해당 기계로 하는 작업',['운반하역 기계 및 부속설비의 점검에 관한 사항','작업순서와 방법에 관한 사항','안전운전방법에 관한 사항','화물의 취급 및 작업신호에 관한 사항']],
+   14:['1톤 이상의 크레인을 사용하는 작업',['방호장치의 종류, 기능 및 취급에 관한 사항','걸고리·와이어로프 및 비상정지장치 등의 기계·기구 점검에 관한 사항','화물의 취급 및 안전작업방법에 관한 사항','신호방법 및 공동작업에 관한 사항','인양 물건의 위험성 및 낙하·비래·충돌재해 예방에 관한 사항','인양물이 적재될 지반의 조건, 인양하중, 풍압 등이 인양물과 타워크레인에 미치는 영향']],
+   17:['전압이 75볼트 이상인 정전 및 활선작업',['전기의 위험성 및 전격 방지에 관한 사항','해당 설비의 보수 및 점검에 관한 사항','정전작업·활선작업 시의 안전작업방법 및 순서에 관한 사항','절연용 보호구, 절연용 방호구 및 활선작업용 기구 등의 사용에 관한 사항']],
+   23:['높이가 2미터 이상인 물건을 쌓거나 무너뜨리는 작업',['원부재료의 취급 방법 및 요령에 관한 사항','물건의 위험성·낙하 및 붕괴재해 예방에 관한 사항','적재방법 및 전도 방지에 관한 사항','보호구 착용에 관한 사항']],
+   26:['비계의 조립·해체 또는 변경작업',['비계의 조립순서 및 방법에 관한 사항','비계작업의 재료 취급 및 설치에 관한 사항','추락재해 방지에 관한 사항','보호구 착용에 관한 사항','비계상부 작업 시 최대 적재하중에 관한 사항']],
+   29:['콘크리트 인공구조물(높이 2미터 이상)의 해체 또는 파괴작업',['콘크리트 해체기계의 점검에 관한 사항','파괴 시의 안전거리 및 대피 요령에 관한 사항','작업방법·순서 및 신호 방법 등에 관한 사항','해체·파괴 시의 작업안전기준 및 보호구에 관한 사항']],
+   34:['밀폐공간에서의 작업',['산소농도 측정 및 작업환경에 관한 사항','사고 시의 응급처치 및 비상 시 구출에 관한 사항','보호구 착용 및 보호 장비 사용에 관한 사항','작업내용·안전작업방법 및 절차에 관한 사항','장비·설비 및 시설 등의 안전점검에 관한 사항']],
+   35:['허가 또는 관리 대상 유해물질의 제조 또는 취급작업',['취급물질의 성질 및 상태에 관한 사항','유해물질이 인체에 미치는 영향','국소배기장치 및 안전설비에 관한 사항','안전작업방법 및 보호구 사용에 관한 사항']],
+   38:['가연물이 있는 장소에서 하는 화재위험작업',['작업준비 및 작업절차에 관한 사항','작업장 내 위험물, 가연물의 사용·보관·설치 현황에 관한 사항','화재위험작업에 따른 인근 인화성 액체에 대한 방호조치에 관한 사항','화재위험작업으로 인한 불꽃, 불티 등의 흩날림 방지 조치에 관한 사항','인화성 액체의 증기가 남아 있지 않도록 환기 등의 조치에 관한 사항','화재감시자의 직무 및 피난 교육 등 비상조치에 관한 사항']]};
+  /* 공종 → 특별교육 번호 (없는 공종 = 채용 시 교육만 1시간: 타일·주방) */
+  const TRADE_SPECIAL={DEMO:[29],SCAF:[26],LGW:[38],LGC:[26],METAL:[38],GLASS:[14],PAINT:[35],ELEC:[17],MECH:[14,38],SIGN:[14],HOT:[38],LOAD:[23],STOCK:[23],FORK:[13],CHEM:[35],CONF:[34]};
+  /** 고른 공종 → { tradeKey, tradeName, special: [번호], eduHours: 1|2 } */
+  const eduOf=(k)=>{const t=RISK_TRADES.find(x=>x[0]===k),sp=t?(TRADE_SPECIAL[k]||[]).slice():[];return {tradeKey:t?k:'',tradeName:t?t[1]:'',special:sp,eduHours:sp.length?2:1};};
+  /** 등록 화면 공종 목록 = 계획서에서 고른 공종 (없으면 전체) */
+  const eduTrades=(plan)=>{const w=plan&&Array.isArray(plan.works)&&plan.works.length?plan.works:RISK_TRADES.map(t=>t[0]);return RISK_TRADES.filter(t=>w.includes(t[0])).map(t=>({key:t[0],name:t[1],special:(TRADE_SPECIAL[t[0]]||[]).map(n=>n+'. '+EDU_SPECIAL[n][0])}));};
   /** 계획서의 고른 위험요인 (예전 계획서는 고른 위험작업의 위험요인 전부) */
   const planRisks=(v)=>{v=v||{};const ok=new Set(RISK_ALL.map(r=>r.id));if(Array.isArray(v.risks))return RISK_ALL.filter(r=>v.risks.includes(r.id));const w=Array.isArray(v.works)?v.works:[];return RISK_ALL.filter(r=>w.includes(r.t)&&ok.has(r.id));};
   const PLAN_INDUSTRY_WORKS={'입고도우미':['LOAD','FORK'],'재고조사':['STOCK','LOAD'],'인테리어(마감)':['DEMO','SCAF','LGW','LGC','PAINT'],'사인':['SIGN','SCAF','ELEC'],'냉난방기':['MECH','ELEC','HOT','SCAF'],'집기':['LOAD','SCAF','METAL'],'본사 식당':['KITCHEN','CHEM']};
@@ -669,7 +688,7 @@
     '관계자의 인가없이 작업을 끝낸 후 하자가 발생하면 공사업체 책임자가 책임을 진다.',
     '업체 책임자 및 직원은 관계인의 연락처를 숙지하고, 긴급상황 등 이상 발생 시 즉시 연락을 취한다.'];
   const WORK_PLEDGE = '작업자는 상기의 안전 작업 수칙을 교육 받고, 작업 시 안전 작업 수칙을 준수하며, 안전 작업 서약서에 서명 후 작업을 실시한다.';
-  const WORKER_ROLES = ['관리자', '근로자'], EDU_TYPE = '신규자 교육 (최초 1회)';
+  const WORKER_ROLES = ['관리자', '근로자'], EDU_TYPE = '채용 시 교육';
   const INSP_ITEMS = ['정리정돈 실시상태', '소방설비 관리상태', '복장 및 보호구 착용상태', '안전장치 관리상태', '안전표지 부착', '유해위험작업관리', '안전수칙 준수', '관리감독 이행여부', '유해물질관리', '감전재해 예방관리', '인화성 가스 안전관리'];
   /* F1.8a 순회점검표 = 공통 5항목 + 안전보건관리계획서 위험성평가에서 고른 위험작업별 안전대책
    *  (계획서에 위험작업이 없으면 예전 11항목) · 점검마다 항목 이름을 같이 저장(labels) → 나중에 계획서가 바뀌어도 그날 점검표 그대로 */
@@ -677,10 +696,11 @@
   /* F1.8r 공통 5항목 + 계획서에서 고른 위험요인의 짧은 점검 질문 (예: 해체·폐기물 반출 시 … 떨어질 위험은 없는가?) */
   const inspItemsFor = (plan) => { const r = planRisks(plan); return r.length ? INSP_BASE.concat(r.map((x) => x.q)) : INSP_ITEMS.slice(); };
   /** 업체의 계획서(C02)에서 고른 위험요인 → 점검 항목 */
-  async function inspItemsOf(a, b) {
+  async function planOf(a, b) {
     const f = docs(await db.collection('CONTRACT_FORMS').where('uid', '==', a.uid).get().catch(() => ({ docs: [] }))).find((x) => x.companyId === b.id && x.code === 'C02');
-    return inspItemsFor(parse(f && f.json, {}) || {});
+    return parse(f && f.json, {}) || {};
   }
+  async function inspItemsOf(a, b) { return inspItemsFor(await planOf(a, b)); }
   /* F1.8b 순회점검 때 같이 올리는 교육·비상대응훈련 사진 (한 날만) · 비상훈련 = 대피·CPR·소화기 → 종료 평가 11번 */
   const DRILL_TYPES = { EVAC: '비상대피 훈련', CPR: '심폐소생술(CPR) 교육', FIRE: '소화기 사용 훈련', EDU: '기타 안전교육' }, DRILL_EMERGENCY = ['EVAC', 'CPR', 'FIRE'];
   const drillOf = (x) => { const d = x && x.drill; return d && DRILL_TYPES[d.type] && photoIds(d.photos, 5).length ? { type: d.type, label: DRILL_TYPES[d.type], photos: photoIds(d.photos, 5) } : null; };
@@ -853,18 +873,20 @@
   };
   async function jobPack(a, b, j, jv) {
     const t = today(), [wks, crews, sm0, pms, inss, fds, evs, LB] = await Promise.all([mineOf('WORKERS', a, j.id), mineOf('CREW', a, j.id), siteManagerOf(a, b), mineOf('PERMITS', a, j.id), mineOf('INSPECTIONS', a, j.id), mineOf('FINDINGS', a, j.id),
-      j.status === 'ENDED' ? mineOf('JOB_EVALS', a, j.id).catch(() => []) : [], inspItemsOf(a, b)]);
+      j.status === 'ENDED' ? mineOf('JOB_EVALS', a, j.id).catch(() => []) : [], planOf(a, b)]);
+    const PL = LB, LBI = inspItemsFor(PL);  // F1.8s 계획서 하나로 점검 항목 + 작업자 등록 공종 목록
     const ev = evs.find((e) => e.companyId === b.id && e.status === 'DONE');
     const ws = wks.filter((w) => w.companyId === b.id && w.active !== 'N'), cr = crews.filter((c) => c.companyId === b.id).sort((x, y) => (x.date < y.date ? 1 : -1));
     const day = (c) => ({ date: c.date, count: Number(c.count) || (c.workers || []).length, siteManager: c.siteManager, savedAt: c.savedAt, workers: c.workers || [] }), tc = cr.find((x) => x.date === t);
     return { today: t, job: { id: j.id, title: j.title, storeName: j.storeName, address: j.address, startDate: j.startDate, endDate: j.endDate, hostName: j.hostName },
       company: { id: b.id, company: b.company, trade: jv.trade }, link: location.origin + location.pathname + '?review=WRK-' + jv.workerToken,
-      workers: ws.map((w) => ({ id: w.id, name: w.name, role: w.role, trade: w.trade, method: w.method, eduAt: w.eduAt, email: w.email, certDoc: w.certDoc || '' })),
+      workers: ws.map((w) => ({ id: w.id, name: w.name, role: w.role, trade: w.trade, tradeKey: w.tradeKey || '', special: w.special || [], eduHours: Number(w.eduHours) || 1, method: w.method, eduAt: w.eduAt, email: w.email, certDoc: w.certDoc || '' })),
+      trades: eduTrades(PL),
       todayCrew: tc ? day(tc) : null, history: cr.slice(0, 30).map(day), siteManager: tc ? tc.siteManager : sm0,
       // F1.8a 오늘 인원 기본 체크: 오늘 저장한 인원 → 없으면 가장 최근 날 인원 → 없으면 등록된 전원
       crewDefault: ((tc || cr[0]) ? ((tc || cr[0]).workers || []).map((w) => w.id) : ws.map((w) => w.id)).filter((id) => ws.some((w) => w.id === id)),
       rules: WORK_RULES, pledge: WORK_PLEDGE, roles: WORKER_ROLES,
-      permits: pms.filter((p) => p.companyId === b.id).sort((x, y) => (x.date < y.date ? 1 : -1)).slice(0, 30).map(permitSummary), insp: inspPack(inss.filter((x) => x.companyId === b.id), fds.filter((x) => x.companyId === b.id), LB),
+      permits: pms.filter((p) => p.companyId === b.id).sort((x, y) => (x.date < y.date ? 1 : -1)).slice(0, 30).map(permitSummary), insp: inspPack(inss.filter((x) => x.companyId === b.id), fds.filter((x) => x.companyId === b.id), LBI),
       jobStatus: j.status, permitToday: null, principal: await principal().catch(() => null), evalResult: ev ? { total: Number(ev.total), grade: ev.grade, comment: ev.comment, date: ev.evaluatedAt ? kst(ev.evaluatedAt) : '' } : null };
   }
   /** [업체] 공사 화면 (처음 열 때 작업자 등록 QR 값 생성) */
@@ -882,7 +904,8 @@
   /** [업체] Google 계정이 없는 작업자를 소장이 직접 등록 (교육 실시 확인 필수) */
   API.addWorker = async (a, jobId, info, requestId) => {
     const b = await execVendor(a), { j, jv } = await vendorJobOf(a, b, jobId, true);
-    const name = tidy(info?.name, 40), role = WORKER_ROLES.includes(info?.role) ? info.role : '', trade = tidy(info?.trade, 40) || jv.trade;
+    const E = eduOf(tidy(info?.tradeKey, 20));  // F1.8s 공종 고르면 특별교육 → 2시간
+    const name = tidy(info?.name, 40), role = WORKER_ROLES.includes(info?.role) ? info.role : '', trade = E.tradeName || tidy(info?.trade, 40) || jv.trade;
     const bad = []; if (!name) bad.push('이름'); if (!role) bad.push('구분(관리자/근로자)'); if (!info?.agree) bad.push('교육 실시·수칙 설명 확인 체크');
     if (bad.length) fail('다음 항목을 확인해 주세요:\n- ' + bad.join('\n- '));
     const rid = String(requestId || '').toLowerCase(); if (rid && !/^[a-f0-9]{32}$/.test(rid)) fail('잘못된 요청 식별값입니다.');
@@ -891,12 +914,13 @@
       if (ex.companyId !== b.id || ex.name !== name || ex.role !== role || ex.trade !== trade) fail('등록 요청이 충돌했습니다. 화면을 새로고침해 주세요.');
       await crewAppend(a, b, j, ex, ws);
     } else {
-      const t = now(), w = { id: workerId, jobId: j.id, companyId: b.id, company: b.company, name, role, trade, email: '', uid: '', vendorUid: a.uid, method: 'MANUAL', eduType: EDU_TYPE,
-        eduContent: '작업 안전 수칙 ' + WORK_RULES.length + '개 항목', eduAt: t, rulesAt: t, addedBy: a.email, addedAt: t, active: 'Y' };
+      const t = now(), w = { id: workerId, jobId: j.id, companyId: b.id, company: b.company, name, role, trade, email: '', uid: '', vendorUid: a.uid, method: 'MANUAL', eduType: EDU_TYPE + (E.special.length ? ' · 특별교육' : ''),
+        tradeKey: E.tradeKey, special: E.special, eduHours: E.eduHours,
+        eduContent: '채용 시 교육 ' + EDU_HIRE.length + '개 항목 · 작업 안전 수칙 ' + WORK_RULES.length + '개 항목' + (E.special.length ? ' · 특별교육 ' + E.special.join(',') + '번' : ''), eduAt: t, rulesAt: t, addedBy: a.email, addedAt: t, active: 'Y' };
       await db.collection('WORKERS').doc(workerId).set(w); await crewAppend(a, b, j, w, ws.concat([w]));
       audit(a, b.id, 'WORKER_ADD_MANUAL', j.id + ' ' + name);
     }
-    return { saved: true, workerId, jobId: j.id, companyId: b.id, name, role, trade, date: today() };
+    return { saved: true, workerId, jobId: j.id, companyId: b.id, name, role, trade, tradeKey: E.tradeKey, special: E.special, eduHours: E.eduHours, date: today() };
   };
   /** [업체] 작업자 명단에서 빼기 (기록은 남김) */
   API.removeWorker = async (a, jobId, workerId) => {
