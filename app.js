@@ -57,7 +57,7 @@ function text(id,label,value='',disabled=false){return `<div class="field"><labe
 function value(id){return $('f_'+id)?.value?.trim()||''}
 function switchTab(which){tab=which;toggleMenu(false);stopScan();if($(which+'Tab'))$('pageTitle').textContent=$(which+'Tab').textContent;clearInterval(roomTimer);clearInterval(wkTimer);for(const n of ['my','admin','review','tpl','staff','jobs','notice','vendors']){$(n).classList.toggle('hidden',n!==which);$(n+'Tab').classList.toggle('active',n===which)}if(which==='admin')loadAdmin();if(which==='review')loadReview();if(which==='tpl')loadTemplates();if(which==='staff')loadStaff();if(which==='jobs')loadJobs();if(which==='notice')loadNotices();if(which==='vendors')loadVendors();}
 // ★ 화면 버전: 여기 한 줄만 고침 (GitHub만 올리면 로그인 화면·앱 화면·메뉴에 모두 반영, Code.gs 수정 불필요)
-const UI_VERSION='26.10.24 F1.8t';
+const UI_VERSION='26.10.24 F1.8u';
 /* F1.8o 전화번호 · 사업자번호: 숫자만 쳐도 '-' 자동 (서버는 원래 숫자만 골라 씀) */
 function fmtTel(v){const d=String(v||'').replace(/\D/g,'').slice(0,11);if(d.startsWith('02'))return d.length<3?d:d.length<6?d.slice(0,2)+'-'+d.slice(2):d.length<10?d.slice(0,2)+'-'+d.slice(2,5)+'-'+d.slice(5):d.slice(0,2)+'-'+d.slice(2,6)+'-'+d.slice(6,10);
  return d.length<4?d:d.length<8?d.slice(0,3)+'-'+d.slice(3):d.length<11?d.slice(0,3)+'-'+d.slice(3,6)+'-'+d.slice(6):d.slice(0,3)+'-'+d.slice(3,7)+'-'+d.slice(7)}
@@ -548,8 +548,34 @@ function certCell(w){return w.certDoc?'<button class="linkbtn" type="button" sty
 function eduHtml(v){const W=v.workers.slice().sort((x,y)=>String(y.eduAt||'').localeCompare(String(x.eduAt||''))),ok=W.filter(w=>w.certDoc).length,method=w=>w.method==='SELF'?'본인':'소장';
  const rules=v.history.length?'<details class="hist" style="margin-top:12px"><summary>작업 안전 수칙 서명 기록 '+v.history.length+'일 (등록한 날)</summary>'+v.history.map(h=>'<div class="item"><div class="row" style="justify-content:space-between"><span>'+escapeText(h.date)+' · '+h.count+'명</span><button class="button ghost" type="button" onclick="showRules(\''+escapeText(h.date)+'\')">보기</button></div></div>').join('')+'</details>':'';
  return '<div class="card" id="eduCard"><div class="vh-top"><h2 style="margin:0;font-size:16px">신규교육 현황</h2><span class="pill '+(W.length&&ok===W.length?'ok':'todo')+'">이수증 '+ok+' / '+W.length+'명</span></div>'
-  +(W.length?'<table class="rtable" style="margin-top:10px"><tr><th>이름</th><th>구분·공정</th><th style="width:64px">등록일</th><th style="width:76px">이수증</th></tr>'+W.map(w=>'<tr><td><b>'+escapeText(w.name)+'</b><div class="muted" style="font-size:11px">'+method(w)+' 등록 · <button class="linkbtn" type="button" style="font-size:11px" onclick="dropWorker(\''+escapeText(w.id)+'\',\''+escapeText(w.name)+'\')">빼기</button></div></td><td>'+escapeText(w.role)+(w.trade?' · '+escapeText(w.trade):'')+eduH(w)+'</td><td>'+escapeText(String(fmtTime(w.eduAt)).slice(5,10))+'</td><td>'+certCell(w)+'</td></tr>').join('')+'</table>'
+  +(W.length?'<table class="rtable" style="margin-top:10px"><tr><th>이름</th><th>구분·공정</th><th style="width:64px">등록일</th><th style="width:76px">이수증</th></tr>'+W.map(w=>'<tr><td><b>'+escapeText(w.name)+'</b><div class="muted" style="font-size:11px">'+method(w)+' 등록 · <button class="linkbtn" type="button" style="font-size:11px" onclick="dropWorker(\''+escapeText(w.id)+'\',\''+escapeText(w.name)+'\')">빼기</button></div></td><td>'+escapeText(w.role)+(w.trade?' · '+escapeText(w.trade):'')+eduH(w)+'</td><td>'+escapeText(String(fmtTime(w.eduAt)).slice(5,10))+'</td><td>'+certCell(w)+'<br><button class="linkbtn" type="button" style="font-size:12px" onclick="showEduSheet(\''+escapeText(kstDay(w.eduAt))+'\')" aria-label="'+escapeText(w.name)+' 교육일지 보기">📋 교육일지</button></td></tr>').join('')+'</table>'
    :'<p class="muted" style="margin-top:10px">아직 등록한 작업자가 없습니다.</p>')+rules+'</div>'}
+const kstDay=t=>{try{return new Date(t).toLocaleDateString('sv-SE',{timeZone:'Asia/Seoul'})}catch(e){return ''}};
+/** F1.8u 교육일지 보기 (그날 등록한 사람 전체 · 최종 ZIP의 교육일지 PDF와 같은 내용) */
+function showEduSheet(date){const v=vjob,E=v.edu;if(!E||!date)return;clearInterval(wkTimer);
+ const ws=v.workers.filter(w=>kstDay(w.eduAt)===date).sort((x,y)=>String(x.eduAt).localeCompare(String(y.eduAt))),SPD=E.special||{};
+ const B='border:1px solid #333;padding:5px 6px;font-size:12px;vertical-align:middle',H=B+';background:#eee;font-weight:bold;text-align:center',C=';text-align:center',e=escapeText;
+ const [y,m,d]=date.split('-'),wd=['일','월','화','수','목','금','토'][new Date(date+'T00:00:00Z').getUTCDay()],ck=on=>on?'☑':'☐',hm=t=>{try{return new Date(t).toLocaleTimeString('ko-KR',{timeZone:'Asia/Seoul',hour:'2-digit',minute:'2-digit',hour12:false})}catch(x){return ''}};
+ const ol=l=>'<ol style="margin:0 0 0 18px;padding:0">'+l.map(x=>'<li>'+e(x)+'</li>').join('')+'</ol>';
+ const spOf=w=>(Array.isArray(w.special)?w.special:[]).map(Number).filter(k=>SPD[k]),hrs=w=>spOf(w).length?2:1;
+ const SP=[...new Set([].concat(...ws.map(spOf)))].sort((p,q)=>p-q),n2=ws.filter(w=>hrs(w)===2).length,times=ws.map(w=>w.eduAt).filter(Boolean).sort();
+ const kinds=[['신규채용 시',true],['작업내용 변경 시',false],['특별안전보건교육',SP.length>0],['일반 안전보건교육',false],['기타',false]];
+ const row=(H2,val)=>'<tr><td style="'+H+'">'+H2+'</td><td style="'+B+'" colspan="2">'+val+'</td></tr>';
+ $('execArea').innerHTML='<div class="card"><button class="button ghost" type="button" onclick="renderVJob()">‹ 이전으로</button></div><div class="card sheet" style="overflow-x:auto">'
+  +'<h2 class="sheet-t">안전보건 교육일지</h2><div class="sheet-s">'+e(y)+'년 '+Number(m)+'월 '+Number(d)+'일 '+wd+'요일</div>'
+  +'<table style="width:100%;border-collapse:collapse;margin-top:8px"><tr><td style="'+H+';width:22%">교육명칭</td><td style="'+B+'" colspan="2">'+e(E.type)+(SP.length?' · 특별교육':'')+'</td></tr>'
+  +'<tr><td style="'+B+';vertical-align:top;line-height:1.9">'+'<b>교육구분</b><br>'+kinds.map(k=>ck(k[1])+' '+k[0]).join('<br>')+'</td><td style="'+B+';padding:0" colspan="2"><table style="width:100%;border-collapse:collapse">'
+  +row('교육장소','다이소 '+e(v.job.storeName)+' 현장')+row('교육방법','현장 교육 후 서약 (본인 계정 QR 서명 또는 현장책임자 확인)')
+  +row('교육과목','산업안전보건법 시행규칙 [별표 5] 채용 시 교육'+(SP.length?' · 특별교육 '+SP.join('·')+'번':'')+' · 작업 안전 수칙')
+  +row('교육강사',e(v.company.company)+(v.siteManager?' · '+e(v.siteManager):'')+' (현장책임자)')
+  +row('교육시간','채용 시 교육 1시간'+(n2?' · 특별교육 대상 '+n2+'명 2시간':'')+' · 대상 '+ws.length+'명'+(times.length?' · 확인 '+hm(times[0])+(times.length>1?' ~ '+hm(times[times.length-1]):''):''))
+  +'</table></td></tr>'
+  +'<tr><td style="'+H+'">교육내용</td><td style="'+B+';vertical-align:top" colspan="2">'+ol(E.hire.concat([E.etc]))+'<div style="margin-top:4px">※ 현장 작업 안전 수칙 '+v.rules.length+'개 항목 교육·서약 포함</div></td></tr></table>'
+  +'<table style="width:100%;border-collapse:collapse;margin-top:-1px"><tr><td style="'+H+'" colspan="4">교육참석자 명단</td></tr><tr><td style="'+H+';width:8%">No.</td><td style="'+H+'">직책 및 성명</td><td style="'+H+';width:12%">시간</td><td style="'+H+';width:26%">서명</td></tr>'
+  +(ws.map((w,i)=>'<tr><td style="'+B+C+'">'+(i+1)+'</td><td style="'+B+'">'+e(w.role+' '+w.name+(w.trade?' ('+w.trade+')':''))+'</td><td style="'+B+C+'"><b>'+hrs(w)+'H</b></td><td style="'+B+C+';font-size:11px;color:#1b5e20">'+(w.method==='SELF'?'본인 계정 ':'소장 확인 ')+e(hm(w.eduAt))+'</td></tr>').join('')||'<tr><td style="'+B+C+'" colspan="4">그날 등록한 사람이 없습니다</td></tr>')+'</table>'
+  +(SP.length?'<p style="font-weight:bold;margin:14px 0 4px">특별교육 ([별표 5] 라목 · 교육시간 2시간)</p><p class="muted" style="margin:0 0 4px">공통내용: 채용 시 교육과 같은 내용 · 개별내용: 아래 작업별</p><table style="width:100%;border-collapse:collapse"><tr><td style="'+H+';width:8%">번호</td><td style="'+H+';width:28%">작업명</td><td style="'+H+'">개별 교육내용 · 대상자</td></tr>'
+   +SP.map(k=>'<tr><td style="'+B+C+'">'+k+'</td><td style="'+B+'">'+e(SPD[k][0])+'</td><td style="'+B+'">'+ol(SPD[k][1].concat([E.etc]))+'<div style="margin-top:4px"><b>대상자</b> '+e(ws.filter(w=>spOf(w).includes(k)).map(w=>w.name).join(', '))+'</div></td></tr>').join('')+'</table>':'')
+  +'<p class="muted" style="margin-top:8px">서명 = 본인 Google 계정으로 교육 확인·서약한 시각, 또는 현장책임자가 교육 후 확인한 시각 (시스템 기록) · 최종 공사 자료(ZIP)에는 같은 내용이 PDF로 들어갑니다.</p></div>';window.scrollTo(0,0)}
 /** F1.8a 오늘 현장 업무 순서 안내 (하루 한 번 자동 · ❔ 버튼으로 다시) */
 function dayGuide(force){const v=vjob;if(!v||v.jobStatus==='ENDED')return;const key='dayGuide:'+v.today;let seen=false;try{seen=localStorage.getItem(key)==='1'}catch(e){}
  if(!force&&(seen||$('modal').style.display==='flex'||(typeof tour!=='undefined'&&tour)||vmenu!=='today'))return;try{localStorage.setItem(key,'1')}catch(e){}
