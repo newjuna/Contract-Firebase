@@ -57,7 +57,7 @@ function text(id,label,value='',disabled=false){return `<div class="field"><labe
 function value(id){return $('f_'+id)?.value?.trim()||''}
 function switchTab(which){tab=which;toggleMenu(false);stopScan();if($(which+'Tab'))$('pageTitle').textContent=$(which+'Tab').textContent;clearInterval(roomTimer);clearInterval(wkTimer);for(const n of ['my','admin','review','tpl','staff','jobs','notice','vendors']){$(n).classList.toggle('hidden',n!==which);$(n+'Tab').classList.toggle('active',n===which)}if(which==='admin')loadAdmin();if(which==='review')loadReview();if(which==='tpl')loadTemplates();if(which==='staff')loadStaff();if(which==='jobs')loadJobs();if(which==='notice')loadNotices();if(which==='vendors')loadVendors();}
 // ★ 화면 버전: 여기 한 줄만 고침 (GitHub만 올리면 로그인 화면·앱 화면·메뉴에 모두 반영, Code.gs 수정 불필요)
-const UI_VERSION='26.10.24 F1.8l';
+const UI_VERSION='26.10.24 F1.8m';
 function showVer(){document.querySelectorAll('.verTxt').forEach(x=>x.textContent=UI_VERSION)}
 /** v4.1 ⚙ 마스터 설정: 직원 관리로 바로 이동 (마스터 계정만 보임) */
 function openMaster(){if(!state||!state.isMaster)return;sgo('staff')}
@@ -370,14 +370,14 @@ function showRoom(r){
  // 같은 방을 다시 그릴 때(방 열기·참석 확인 등) 작성 중인 내용 유지
  if(room&&room.id===r.id&&!r.done&&$('roomDocs')){collectDocs();r.joint=room.joint;r.minutes=room.minutes}
  if(!r.joint){const items={};(r.jointItems||[]).forEach((_,i)=>items[i+1]='OK');r.joint={items,notes:{}}}  // 처음엔 전 항목 '양호'로 미리 체크
- r.joint.notes=r.joint.notes||{};r.minutes=r.minutes||{type:'임시',start:r.time||'',end:'',etc:''};
+ r.joint.notes=r.joint.notes||{};r.minutes=r.minutes||{type:'정기',start:r.time||'',end:'',etc:''};/* F1.8m 회의 구분 기본 = 정기 */
  const jm=jobData&&jobData.jobs.flatMap(j=>j.meetings).find(m=>m.id===r.id);if(jm){jm.done=!!r.done;jm.open=!!r.open}
  if(!room||room.id!==r.id)roomTab='att';
  jobsMode='room';roomId=r.id;room=r;clearInterval(roomTimer);
  const K=r.kindCodes||[],tabs=[['att','QR 참석 '+okAtt(r).length+'명']].concat(K.includes('JOINT')?[['joint','합동점검']]:[]).concat(K.includes('COUNCIL')?[['council','협의체 회의록']]:[]);
  if(!tabs.some(t=>t[0]===roomTab))roomTab='att';
  /* F1.8j 미팅 방에서 바로: ← 협의체·합동점검 목록 · + 같은 공사에 미팅 방 하나 더 */
- $('jobs').innerHTML='<div class="card"><div class="row" style="justify-content:space-between"><button class="button ghost" type="button" onclick="clearInterval(roomTimer);sgo(\'meet\')">‹ 협의체·합동점검</button>'+(r.done?'':'<button class="button ghost" type="button" onclick="clearInterval(roomTimer);meetForm(\''+escapeText(r.job.id)+'\')">+ 임시 미팅 추가</button>')+'</div><h2 style="margin-top:12px">'+escapeText(r.title)+' · '+escapeText(r.job.storeName)+'</h2><div class="muted">'+escapeText(r.date)+' '+escapeText(r.time||'')+' · '+escapeText(r.place)+' · '+escapeText(r.kinds.join(', '))+'</div>'
+ $('jobs').innerHTML='<div class="card"><div class="row" style="justify-content:space-between"><button class="button ghost" type="button" onclick="clearInterval(roomTimer);sgo(\'meet\')">‹ 협의체·합동점검</button></div><h2 style="margin-top:12px">'+escapeText(r.title)+' · '+escapeText(r.job.storeName)+'</h2><div class="muted">'+escapeText(r.date)+' '+escapeText(r.time||'')+' · '+escapeText(r.place)+' · '+escapeText(r.kinds.join(', '))+'</div>'
   +'<div class="muted">도급인 책임자: '+escapeText(principalName('ceo',1))+' → 위임 <b>'+escapeText(principalName('delegate'))+'</b>'+(principalName('manager')?' · 담당 '+escapeText(principalName('manager')):'')+'</div>'  /* F1.8k 회의록·점검표에도 같은 줄 */
   +(r.done?'<div class="note" style="margin-top:12px"><b style="color:var(--ok)">✔ 미팅 실시 완료</b> · '+escapeText(fmtTime(r.doneAt))+' · '+escapeText(r.doneBy||'')+'</div>':'')
   /* F1.8l 탭 없이 한 화면에서 ①참석 → ②합동점검 → ③회의록 순서대로 (위 칩을 누르면 그 단계로 이동) */
@@ -388,7 +388,8 @@ function showRoom(r){
  if(r.open)roomTimer=setInterval(async()=>{if(tab!=='jobs'||roomId!==r.id){clearInterval(roomTimer);return}if(loadCount)return;try{const x=await callQuiet('meetingDetail',r.id);if(x.open!==room.open||x.done!==room.done){showRoom(x);return}if(JSON.stringify(x.attendees)!==JSON.stringify(room.attendees)){room.attendees=x.attendees;refreshAtt()}}catch(e){}},8000)}
 function setRoomTab(k){collectDocs();roomTab=k;if(k==='council'||$('rp_council'))refreshResults();const p=$('rp_'+k);if(p)p.previousElementSibling?.scrollIntoView({behavior:'smooth',block:'start'})}
 /** F1.8l [▶ 미팅 시작] = 방 열기 + QR 바로 띄우기 (이미 열렸거나 끝났으면 그냥 들어감) */
-async function meetStart(id){try{let r=await call('meetingDetail',id);if(!r.open&&!r.done)r=await call('setMeetingOpen',id,true);jobAt=0;showRoom(r);window.scrollTo(0,0)}catch(e){}}
+async function meetStart(id){try{let r=await call('meetingDetail',id);if(!r.open&&!r.done)r=await call('setMeetingOpen',id,true);
+ else if(r.open&&!r.done&&!r.attendees.some(x=>x.side==='STAFF'&&x.email===state.email))r=await call('meetJoin',id);/* F1.8m 담당자 자동 참석 */jobAt=0;showRoom(r);window.scrollTo(0,0)}catch(e){}}
 /** F1.8l 미팅 날짜만 바꾸기 (시간은 없음) */
 async function meetDate(id,v){if(!/^\d{4}-\d{2}-\d{2}$/.test(v||''))return;try{jobData=await call('setMeetingDate',id,v);jobAt=Date.now();msg('미팅 날짜를 '+v+'(으)로 바꿨습니다.');renderJobs()}catch(e){}}
 /* ① QR 참석 */
@@ -451,7 +452,7 @@ function footPanel(r){if(!(r.kindCodes||[]).length)return '';return '<div class=
 /** 화면 입력값 모으기 (room에도 반영) */
 function collectDocs(){if(!room||!$('roomDocs')||room.done)return room?{joint:room.joint,minutes:room.minutes}:null;const r=room;
  if($('rp_joint')){const items={},notes={};r.jointItems.forEach((_,i)=>{const n=i+1,v=document.querySelector('input[name=ji'+n+']:checked');items[n]=v?v.value:'';if(items[n]==='BAD'){const old=r.joint.notes[n]||{};const m=$('f_jm'+n);notes[n]={memo:m?m.value.trim():(old.memo||''),photos:old.photos||[]}}});const opinions=Object.assign({},(r.joint&&r.joint.opinions)||{});document.querySelectorAll('.jopin').forEach(t=>opinions[t.dataset.cid]={company:t.dataset.co,text:t.value.trim()});r.joint={items,notes,opinions}}
- if($('rp_council'))r.minutes={type:document.querySelector('input[name=mType]:checked')?.value||'임시',start:value('mStart'),end:value('mEnd'),etc:value('mEtc')};
+ if($('rp_council'))r.minutes={type:document.querySelector('input[name=mType]:checked')?.value||'정기',start:value('mStart'),end:value('mEnd'),etc:value('mEtc')};
  return {joint:r.joint,minutes:r.minutes}}
 async function saveDocs(){const d=collectDocs();try{showRoom(await call('saveMeetingDocs',room.id,d));msg('임시 저장했습니다.')}catch(e){}}
 /** 실시 완료: 빠진 곳이 있으면 그 탭으로 이동 → 칸 붉은 테두리·흔들림 */
