@@ -5,7 +5,7 @@
  *  서버: Code.gs jobBoard(vstats) · vendorList */
 let smenu='dash',svData=null,svFilter='all';
 /* F1.8g 작업허가서 승인 · 순회점검 확인 메뉴 → '현장 확인' 하나로 (예전 이름으로 부르면 현장 확인으로) */
-const SMENU={dash:'대시보드',jobs:'공사 관리',meet:'협의체·합동점검',check:'현장 확인',data:'데이터 관리',permit:'작업허가서 승인',insp:'순회점검 확인',eval:'종료 평가',vendors:'업체 현황',notice:'참조 알림',tpl:'표준양식 관리',staff:'직원 관리'};
+const SMENU={dash:'대시보드',jobs:'공사 관리',meet:'협의체·합동점검',check:'현장 확인',data:'데이터 관리',principal:'도급인 책임자 설정',permit:'작업허가서 승인',insp:'순회점검 확인',eval:'종료 평가',vendors:'업체 현황',notice:'참조 알림',tpl:'표준양식 관리',staff:'직원 관리'};
 const isStaffUI=()=>!!(state&&state.staff);
 const kstToday=()=>new Date(Date.now()+9*3600e3).toISOString().slice(0,10);
 /** 메뉴 보이기 (display 때마다) */
@@ -16,7 +16,7 @@ function setupSMenu(){const on=isStaffUI(),safety=on&&state.staff.role==='SAFETY
  markSMenu();if(tab==='my'&&!/^MEET-/.test(LINK_REVIEW))setTimeout(()=>sgo(smenu),0)}
 function markSMenu(){if(!isStaffUI())return;document.querySelectorAll('.smb').forEach(b=>b.classList.toggle('active',b.id==='sm_'+smenu));$('pageTitle').textContent=SMENU[smenu]||''}
 /** 메뉴 이동 */
-function sgo(m){if(m==='permit'||m==='insp')m='check';if(m==='eval')m='jobs';/* F1.8h 종료 평가는 공사 관리 안에서 */if(['tpl','staff','data'].includes(m)&&!state.isMaster)m='dash';if(m==='notice')m='dash';smenu=m;if(m==='dash'&&typeof dashJob!=='undefined')dashJob='';toggleMenu(false);stopScan();
+function sgo(m){if(m==='permit'||m==='insp')m='check';if(m==='eval')m='jobs';/* F1.8h 종료 평가는 공사 관리 안에서 */if(['tpl','staff','data','principal'].includes(m)&&!state.isMaster)m='dash';if(m==='notice')m='dash';smenu=m;if(m==='dash'&&typeof dashJob!=='undefined')dashJob='';toggleMenu(false);stopScan();
  if(['notice','tpl','staff','vendors'].includes(m)){switchTab(m);markSMenu();return}
  if(tab!=='jobs')switchTab('jobs');else loadJobs();markSMenu();window.scrollTo(0,0)}
 /** 알림 숫자 (showBadges에서 호출) */
@@ -26,7 +26,7 @@ function sBadges(b){if(!isStaffUI())return;b=b||{};const vd=(b.admin||0)+(b.revi
  setBadge($('sm_jobs'),jb);setBadge($('sm_meet'),pa);setBadge($('sm_check'),ck);setBadge($('sm_vendors'),vd);setBadge($('menuBtn'),jb+pa+ck+vd)}
 /* ---------- 공사 화면 (메뉴별로 같은 공사 목록을 다르게 보여 줌) ---------- */
 function renderJobs(){jobsMode='list';roomId='';clearInterval(roomTimer);const d=jobData;if(!d)return;
- const H={dash:sDash,jobs:sJobs,meet:sMeet,check:sCheck,data:sData,permit:sCheck,insp:sCheck,eval:sEval}[smenu]||sJobs;$('jobs').innerHTML=H(d)}
+ const H={dash:sDash,jobs:sJobs,meet:sMeet,check:sCheck,data:sData,principal:sPrincipal,permit:sCheck,insp:sCheck,eval:sEval}[smenu]||sJobs;$('jobs').innerHTML=H(d)}
 const sAct=d=>d.jobs.filter(j=>j.status!=='ENDED'),sEnded=d=>d.jobs.filter(j=>j.status==='ENDED');
 const sum=(l,f)=>l.reduce((s,x)=>s+(Number(f(x))||0),0);
 function sMeta(j){return escapeText(j.storeName)+' · '+escapeText(j.startDate)+(j.endDate?' ~ '+escapeText(j.endDate):'')+' · 주관 '+escapeText(j.hostName)}
@@ -59,7 +59,11 @@ function sJobs(d){const nv=((state&&state.badges&&state.badges.newVendors)||[]);
  return '<div class="card"><div class="vh-top"><h2 style="margin:0">공사 관리</h2><button class="button" type="button" onclick="jobForm()">+ 새 공사 만들기</button></div><p class="muted" style="margin-top:6px">공사를 만들고 업체를 배정합니다. 기간 연장·공사 종료도 여기서 합니다.</p></div>'
   +(nv.length?'<div class="card alertcard"><div class="vh-top"><h2 style="margin:0">공사 배정 대기 업체 <span class="cnt">'+nv.length+'</span></h2><button class="button" type="button" onclick="goNewJob('+escapeText(JSON.stringify(nv.map(v=>v.id)))+')">이 업체로 공사 만들기</button></div>'+nv.map(v=>'<div class="muted">· '+escapeText(v.company)+' ('+escapeText(v.industry)+')</div>').join('')+'</div>':'')
   +(d.jobs.map(j=>'<div class="card"><div class="vh-top"><div><h2 style="margin:0">'+escapeText(j.title)+(j.status==='ENDED'?' <span class="pill todo">종료</span>':'')+'</h2><div class="muted">'+escapeText(j.kindLabel)+' · '+sMeta(j)+'</div></div><div class="row"><button class="button ghost" type="button" onclick="jobForm(\''+escapeText(j.id)+'\')">수정</button><button class="button ghost danger" type="button" onclick="delJob(\''+escapeText(j.id)+'\')">삭제</button></div></div>'
-   +'<div class="desc" style="margin-top:8px"><b>참여 업체 '+j.vendors.length+'곳</b> · '+(j.vendors.map(v=>escapeText(v.company)+' <span class="muted">('+escapeText(v.trade)+')</span>').join(', ')||'없음')+'</div>'+jobEndHtml(j)+'</div>').join('')||sNone('등록된 공사가 없습니다. [+ 새 공사 만들기]로 시작하세요.'))}
+   +'<div class="desc" style="margin-top:8px"><b>참여 업체 '+j.vendors.length+'곳</b> · '+(j.vendors.map(v=>escapeText(v.company)+' <span class="muted">('+escapeText(v.trade)+')</span>').join(', ')||'없음')+'</div>'
+   /* F1.8k 공사 서류 (자동): 도급인 위임장 2장 · 업체별 현장대리인계 */
+   +'<div class="row" style="flex-wrap:wrap;gap:6px;margin-top:8px"><button class="fxchip" type="button" onclick="jobPaperView(\''+escapeText(j.id)+'\',\'COUNCIL\')">📄 협의체 위임장</button><button class="fxchip" type="button" onclick="jobPaperView(\''+escapeText(j.id)+'\',\'JOINT\')">📄 합동점검 위임장</button>'
+   +j.vendors.map(v=>'<button class="fxchip" type="button" onclick="jobPaperView(\''+escapeText(j.id)+'\',\'AGENT\',\''+escapeText(v.companyId)+'\')">📄 현장대리인계 · '+escapeText(v.company)+'</button>').join('')+'</div>'
+   +jobEndHtml(j)+'</div>').join('')||sNone('등록된 공사가 없습니다. [+ 새 공사 만들기]로 시작하세요.'))}
 /* 협의체·합동점검 */
 function sMeetRow(m){return '<div class="item"><div class="row" style="justify-content:space-between"><div><b>'+escapeText(m.title)+'</b> '+(m.done?'<span class="pill ok">✔ 실시 완료</span>':m.open?'<span class="pill ok">방 열림</span>':'<span class="pill todo">실시 전</span>')+'<div class="muted">'+escapeText(m.date)+' '+escapeText(m.time||'')+' · '+escapeText(m.place)+' · 참석 '+m.count+'명'+(m.pending?' · <b class="req">확인 대기 '+m.pending+'</b>':'')+'</div></div><div class="row"><button class="button" type="button" onclick="openRoom(\''+escapeText(m.id)+'\')">방 들어가기</button><button class="button ghost danger" type="button" onclick="delMeet(\''+escapeText(m.id)+'\')">삭제</button></div></div></div>'}
 function sMeet(d){const act=sAct(d),ended=sEnded(d);

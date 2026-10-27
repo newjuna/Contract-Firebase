@@ -68,6 +68,8 @@ async function submitInspNow(){ins.name=value('inName');const miss=[];if(!ins.tb
  try{vjob=await call('submitInspection',vjob.job.id,{tbm:ins.tbm,items:ins.items,notes:ins.notes,name:ins.name,drill:dr.photos.length?{type:dr.type,photos:dr.photos}:null});ins=null;renderVJob();$('inspCard')?.scrollIntoView({block:'start'});popup('순회점검 제출 완료','오늘 순회점검일지를 제출했습니다.'+(bad?'\n지적사항 '+bad+'건은 조치 후 [조치 등록]을 해 주세요.':''),'확인')}
  catch(e){showErr('순회점검을 제출하지 못했습니다',e)}}
 /* ---------- 지적사항 조치 등록 (업체·도급인 공용) ---------- */
+/** F1.8k 도급인 책임자 이름 (서버가 공사 화면과 함께 보내 줌 · 없으면 기본값) */
+function principalName(k,withTitle){const P=(typeof jobData!=='undefined'&&jobData&&jobData.principal)||(typeof vjob!=='undefined'&&vjob&&vjob.principal)||{ceo:{name:'김기호',rank:'부사장',title:'안전보건총괄책임자'},delegate:{name:'곽동민',rank:'부장'}},p=P[k]||{};return withTitle?[p.title,p.name].filter(Boolean).join(' '):[p.name,p.rank].filter(Boolean).join(' ')}
 let rs=null;
 /* F1.8f from='dash': 메인 화면 [조치하기]에서 열었으면 돌아가기·등록 후 메인으로 */
 function openResolve(id,who,from){const list=who==='staff'?inspJob.findings:vjob.insp.open,f=list.find(x=>x.id===id);if(!f)return;rs={f,who,photos:[],from:from||''};renderResolve()}
@@ -100,7 +102,9 @@ async function openInspSheet(id,who){let x,fs,items,job,area;
   +'<div class="card sheet ilog"><h2 class="sheet-t">순 회 점 검 일 지</h2><div class="sheet-s">(2일 1회)</div>'
   +'<table class="rtable" style="margin-top:12px"><tr><th>현장명</th><td>다이소 '+escapeText(job.storeName)+'</td><th>점검일</th><td>'+escapeText(x.date)+'</td></tr>'
   +'<tr><th>점검 실시</th><td colspan="3">'+escapeText(x.company)+' · '+escapeText(x.submittedName)+' <span class="muted">('+escapeText(fmtTime(x.submittedAt))+' 작성)</span></td></tr>'
-  +'<tr><th>도급인 확인</th><td colspan="3">'+(x.checkedAt?'<b>'+escapeText(x.checkedBy)+'</b> <span class="muted">'+escapeText(fmtTime(x.checkedAt))+'</span>':'<span class="req">확인 대기</span>')+'</td></tr></table>'
+  /* F1.8k 작성 = 업체 소장 · 검토 = [확인]을 누른 도급인 담당자 · 승인 = 위임받은 도급인 책임자 (확인할 때 함께) */
+  +'<tr><th>검토 (도급인 담당)</th><td colspan="3">'+(x.checkedAt?'<b>'+escapeText(x.checkedBy)+'</b> <span class="muted">'+escapeText(fmtTime(x.checkedAt))+'</span>':'<span class="req">확인 대기</span>')+'</td></tr>'
+  +'<tr><th>승인 (도급인 책임자)</th><td colspan="3">'+(x.checkedAt?'<b>'+escapeText(principalName('delegate'))+'</b> <span class="stamp">승인</span> <span class="muted">('+escapeText(principalName('ceo',1))+' 위임)</span>':'<span class="muted">검토 후 자동</span>')+'</td></tr></table>'
   +'<div class="stage">TBM 실시 사진</div><div class="row">'+thumbs(x.tbm,'')+'</div>'
   +(x.drill?'<div class="stage">교육 · 비상대응훈련 · '+escapeText(x.drill.label||drillLabel(x.drill.type))+'</div><div class="row">'+thumbs(x.drill.photos,'')+'</div>':'')
   +'<table class="rtable" style="margin-top:12px"><tr><th style="width:44px">No</th><th>점검 항목</th><th style="width:90px">결과</th></tr>'+items.map((t,i)=>{const r=x.items[i+1];return '<tr><td style="text-align:center">'+(i+1)+'</td><td>'+escapeText(t)+'</td><td style="text-align:center"'+(r==='BAD'?' class="req"':'')+'>'+escapeText(INSP_MARK[r]||'-')+'</td></tr>'}).join('')+'</table>'

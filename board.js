@@ -164,3 +164,16 @@ async function admRun(){if(!admPv)return;if(value('admOk')!=='삭제'){inspFlag(
  catch(e){admPv=null;admLoad();return}
  admPv=null;cacheClear();jobData=null;jobAt=0;if(typeof svData!=='undefined')svData=null;
  popup('지우기 완료',title+'\n\n기록 '+n.toLocaleString()+'건'+(tr?'\n드라이브 폴더 '+tr+'개 → 휴지통 (30일 안에 복구 가능)':''),'확인');admLoad()}
+/* ---------- F1.8k [마스터] 도급인 책임자 설정 ----------
+ *  총괄책임자(김기호) → 위임받는 책임자(곽동민) · 담당자(비우면 마스터 직원 이름)
+ *  위임장 2장 · 순회점검 승인 · 회의록·점검표 머리 · 규정 "갑" 현장대리인에 그대로 들어감 */
+const PR_ROWS=[['ceo','총괄책임자 (위임인)'],['delegate','위임받는 책임자 (수임인)'],['manager','도급인 담당자 (검토 · 허가서 승인)']];
+const PR_F=[['name','성명'],['rank','직급'],['title','직책'],['org','소속 및 직책']];
+function sPrincipal(){jobsMode='admin';setTimeout(prLoad,0);return '<div id="prBox"><div class="card"><p class="desc">불러오는 중입니다…</p></div></div>'}
+async function prLoad(){let P;try{P=await call('principalGet')}catch(e){return}const b=$('prBox');if(!b)return;
+ b.innerHTML='<div class="card"><h2 style="margin:0">도급인 책임자 설정</h2><p class="muted" style="margin-top:6px">위임장(협의체 · 합동점검) · 순회점검일지 승인 · 회의록 머리 · 규정 "갑" 현장대리인에 들어갑니다.</p></div>'
+  +PR_ROWS.map(([k,l])=>'<div class="card"><h2>'+escapeText(l)+'</h2><div class="split">'+PR_F.map(([f,fl])=>input('pr_'+k+'_'+f,fl,(P[k]||{})[f]||'','text',false,((P.def||{})[k]||{})[f]||'')).join('')+'</div>'+(k==='manager'?'<p class="muted">비워 두면 마스터 계정 직원 이름이 들어갑니다. 허가서 승인·일지 확인 기록은 실제로 버튼을 누른 사람 이름으로 남습니다.</p>':'')+'</div>').join('')
+  +'<div class="card roomfoot"><button class="button" type="button" style="width:100%" onclick="prSave()">저장</button></div>'}
+async function prSave(){const d={};PR_ROWS.forEach(([k])=>{d[k]={};PR_F.forEach(([f])=>d[k][f]=value('pr_'+k+'_'+f))});
+ if(!d.ceo.name||!d.delegate.name){inspFlag([!d.ceo.name?'f_pr_ceo_name':'f_pr_delegate_name'],'총괄책임자와 위임받는 책임자 이름은 꼭 적어 주세요');return}
+ try{const P=await call('principalSave',d);if(jobData)jobData.principal=P;jobAt=0;msg('저장했습니다. 위임장·일지에 바로 반영됩니다.');prLoad()}catch(e){}}
