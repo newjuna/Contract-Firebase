@@ -57,7 +57,7 @@ function text(id,label,value='',disabled=false){return `<div class="field"><labe
 function value(id){return $('f_'+id)?.value?.trim()||''}
 function switchTab(which){tab=which;toggleMenu(false);stopScan();if($(which+'Tab'))$('pageTitle').textContent=$(which+'Tab').textContent;clearInterval(roomTimer);clearInterval(wkTimer);for(const n of ['my','admin','review','tpl','staff','jobs','notice','vendors']){$(n).classList.toggle('hidden',n!==which);$(n+'Tab').classList.toggle('active',n===which)}if(which==='admin')loadAdmin();if(which==='review')loadReview();if(which==='tpl')loadTemplates();if(which==='staff')loadStaff();if(which==='jobs')loadJobs();if(which==='notice')loadNotices();if(which==='vendors')loadVendors();}
 // ★ 화면 버전: 여기 한 줄만 고침 (GitHub만 올리면 로그인 화면·앱 화면·메뉴에 모두 반영, Code.gs 수정 불필요)
-const UI_VERSION='26.10.24 F1.8p';
+const UI_VERSION='26.10.24 F1.8q';
 /* F1.8o 전화번호 · 사업자번호: 숫자만 쳐도 '-' 자동 (서버는 원래 숫자만 골라 씀) */
 function fmtTel(v){const d=String(v||'').replace(/\D/g,'').slice(0,11);if(d.startsWith('02'))return d.length<3?d:d.length<6?d.slice(0,2)+'-'+d.slice(2):d.length<10?d.slice(0,2)+'-'+d.slice(2,5)+'-'+d.slice(5):d.slice(0,2)+'-'+d.slice(2,6)+'-'+d.slice(6,10);
  return d.length<4?d:d.length<8?d.slice(0,3)+'-'+d.slice(3):d.length<11?d.slice(0,3)+'-'+d.slice(3,6)+'-'+d.slice(6):d.slice(0,3)+'-'+d.slice(3,7)+'-'+d.slice(7)}
@@ -428,11 +428,13 @@ function jointMark(n){collectDocs();const v=room.joint.items[n],el=$('ji_'+n);el
  const bad=Object.values(room.joint.items).filter(x=>x==='BAD').length;$('jSum').innerHTML=bad?'· 불량 <b class="req">'+bad+'</b>건':''}
 /* F1.6b 합동점검 불량 사진: 여러 장 한꺼번에 (항목마다 최대 5장) */
 async function addPhoto(n){const inp=$('jf_'+n);collectDocs();const nt=room.joint.notes[n]=room.joint.notes[n]||{memo:'',photos:[]},left=5-(nt.photos||[]).length,fl=[...(inp.files||[])].slice(0,Math.max(0,left));inp.value='';
- if(!fl.length){if(left<=0)msg('사진은 항목마다 5장까지입니다.');return}if(fl.length>1)msg('사진 '+fl.length+'장을 올리는 중입니다…');
- const rs=await Promise.allSettled(fl.map(async f0=>{const f=await readFile(f0,PHOTO_SITE);const r=await call('uploadMeetingPhoto',room.id,n,f);photoPrev[r.id]='data:'+f.mime+';base64,'+f.data;return r.id}));
- const ids=rs.filter(x=>x.status==='fulfilled').map(x=>x.value),bad=rs.filter(x=>x.status==='rejected');
- if(ids.length){nt.photos=(nt.photos||[]).concat(ids).slice(0,5);$('jbx_'+n).innerHTML=badBox(n,'');msg(n+'번 사진 '+ids.length+'장을 올렸습니다. [임시 저장]을 눌러 보관하세요.')}
- if(bad.length)alert((ids.length?ids.length+'장은 올렸고 ':'')+bad.length+'장은 올리지 못했습니다.\n'+((bad[0].reason&&bad[0].reason.message)||''))}
+ if(!fl.length){if(left<=0)msg('사진은 항목마다 5장까지입니다.');return}
+ /* F1.8p 여기서는 올리지 않음 (미리보기만) → [임시 저장]·[미팅 실시 완료] 때 한꺼번에 */
+ const rid=room.id,ids=fl.map(f0=>{const id=pendAdd(f0,async f=>api('uploadMeetingPhoto',[rid,n,await readFile(f,PHOTO_SITE)]));if(PEND[id].url)photoPrev[id]=PEND[id].url;return id});
+ nt.photos=(nt.photos||[]).concat(ids).slice(0,5);$('jbx_'+n).innerHTML=badBox(n,'')}
+/** F1.8p 합동점검 사진 올리기 → 저장 (체크리스트) */
+async function meetSaveRun(title,saveLabel,fn){const L=Object.values((room.joint&&room.joint.notes)||{}).map(x=>x.photos||[]),np=pendCount(L);let out=null;
+ await subRun(title,[np&&['지적 사진 '+np+'장 올리기',set=>pendUpload(L,set,photoPrev)],[saveLabel,async()=>{out=await fn()}]]);return out}
 async function viewPhoto(id){if(photoPrev[id]){const w=window.open();if(w)w.document.write('<img src="'+photoPrev[id]+'" style="max-width:100%">');return}try{const f=await call('getMeetingPhoto',room.id,id);photoPrev[id]='data:'+f.mime+';base64,'+f.data;const w=window.open();if(w)w.document.write('<img src="'+photoPrev[id]+'" style="max-width:100%">')}catch(e){}}
 /* ③ 협의체 회의록: 참석 자동, 발의내용 = 법정 협의사항 고정, 심의결과 = 합동점검 지적사항 자동 */
 function resultsLines(){const J=room.joint,bad=Object.entries(J.items).filter(([,v])=>v==='BAD').map(([n])=>Number(n)).sort((p,q)=>p-q);
@@ -463,7 +465,7 @@ function collectDocs(){if(!room||!$('roomDocs')||room.done)return room?{joint:ro
  if($('rp_joint')){const items={},notes={};r.jointItems.forEach((_,i)=>{const n=i+1,v=document.querySelector('input[name=ji'+n+']:checked');items[n]=v?v.value:'';if(items[n]==='BAD'){const old=r.joint.notes[n]||{};const m=$('f_jm'+n);notes[n]={memo:m?m.value.trim():(old.memo||''),photos:old.photos||[]}}});const opinions=Object.assign({},(r.joint&&r.joint.opinions)||{});document.querySelectorAll('.jopin').forEach(t=>opinions[t.dataset.cid]={company:t.dataset.co,text:t.value.trim()});r.joint={items,notes,opinions}}
  if($('rp_council'))r.minutes={type:document.querySelector('input[name=mType]:checked')?.value||'정기',start:value('mStart'),end:value('mEnd'),etc:value('mEtc')};
  return {joint:r.joint,minutes:r.minutes}}
-async function saveDocs(){const d=collectDocs();try{showRoom(await call('saveMeetingDocs',room.id,d));msg('임시 저장했습니다.')}catch(e){}}
+async function saveDocs(){const d=collectDocs(),id=room.id;try{showRoom(await meetSaveRun('임시 저장','점검표·회의록 임시 저장',()=>api('saveMeetingDocs',[id,d])));msg('임시 저장했습니다.')}catch(e){showErr('임시 저장하지 못했습니다',e)}}
 /** 실시 완료: 빠진 곳이 있으면 그 탭으로 이동 → 칸 붉은 테두리·흔들림 */
 async function doneMeeting(){const d=collectDocs(),r=room,K=r.kindCodes||[];
  if(!okAtt(r).some(x=>x.side==='VENDOR')){setRoomTab('att');msg('참석한 협력업체가 없습니다. QR로 참석 체크를 받아 주세요.');return}
@@ -471,7 +473,7 @@ async function doneMeeting(){const d=collectDocs(),r=room,K=r.kindCodes||[];
  if(K.includes('JOINT')){const miss=[];r.jointItems.forEach((_,i)=>{const n=i+1;if(!d.joint.items[n])miss.push('ji_'+n);else if(d.joint.items[n]==='BAD'&&!d.joint.notes[n]?.memo)miss.push('f_jm'+n)});
   if(miss.length){setRoomTab('joint');document.querySelectorAll('.miss').forEach(x=>x.classList.remove('miss','shake'));miss.forEach(id=>{const el=$(id);if(!el)return;el.classList.add('miss');void el.offsetWidth;el.classList.add('shake')});setTimeout(()=>{const f=$(miss[0]);f&&f.scrollIntoView({behavior:'smooth',block:'center'});if(f&&f.tagName==='INPUT')f.focus({preventScroll:true})},50);msg(miss[0].startsWith('f_jm')?'불량 항목의 지적 내용·조치를 적어 주세요':'체크하지 않은 점검 항목이 있습니다');return}}
  if(!confirm('미팅 실시를 완료할까요?\n방이 닫히고 점검표·회의록이 확정됩니다. (고칠 때는 [완료 취소])'))return;
- try{const x=await call('completeMeeting',r.id,d);showRoom(x);window.scrollTo(0,0);msg('미팅 실시 완료로 확정했습니다.')}catch(e){if(/응답을 받지 못했/.test(e.message||'')){try{const x=await call('meetingDetail',r.id);if(x.done){showRoom(x);window.scrollTo(0,0);msg('미팅 실시 완료로 확정되었습니다.');return}}catch(z){}}alert(e.message)}}
+ try{const x=await meetSaveRun('미팅 실시 완료','점검표·회의록 확정',()=>api('completeMeeting',[r.id,d]));showRoom(x);window.scrollTo(0,0);msg('미팅 실시 완료로 확정했습니다.')}catch(e){if(/응답을 받지 못했/.test(e.message||'')){try{const x=await call('meetingDetail',r.id);if(x.done){showRoom(x);window.scrollTo(0,0);msg('미팅 실시 완료로 확정되었습니다.');return}}catch(z){}}alert(e.message)}}
 async function reopenDocs(){if(!confirm('실시 완료를 취소하고 내용을 고칠까요?'))return;try{showRoom(await call('reopenMeetingDocs',room.id))}catch(e){}}
 async function toggleRoom(open){if(!open&&!confirm('방을 닫으면 더 이상 참석 체크가 되지 않습니다. 닫을까요?'))return;try{showRoom(await call('setMeetingOpen',roomId,open))}catch(e){}}
 async function confirmAt(id,ok){if(!confirm(ok?'이 참석자를 확인할까요? (본인 신원을 확인한 경우에만)':'이 참석 기록을 제외할까요?'))return;try{showRoom(await call('confirmAttendee',roomId,id,ok))}catch(e){}}
@@ -591,12 +593,15 @@ async function addWorkerForm(e){
  workerSubmitting=true;
  const btn=e.target?.querySelector('button[type=submit]');if(btn){btn.disabled=true;btn.textContent='등록 처리 중…'}
  try{
-  const r=await call('addWorker',jobId,d,workerPending.id);
-  if(!r?.saved||!r.workerId)throw Error('등록 결과를 확인할 수 없습니다.');
+  /* F1.8p 체크리스트 한 번: 작업자 등록 → 이수증 올리기 (예전: 로딩 두 번) */
+  let r=null,vc=null,certErr=null;
+  try{await subRun('작업자 등록',[['작업자 등록 · '+d.name,async()=>{r=await api('addWorker',[jobId,d,workerPending.id]);if(!r?.saved||!r.workerId)throw Error('등록 결과를 확인할 수 없습니다.')}],cert&&['이수증 올리기',async()=>{vc=await api('uploadWorkerCert',[jobId,r.workerId,cert])}]])}
+  catch(x){if(!(r&&r.saved&&r.workerId))throw x;certErr=x}
   workerPending=null;certPick.wCert=null;
-  workerApplyReceipt(r,d);showAdd=false;renderVJob();
-  msg(d.name+' 님이 등록됐습니다.');
-  if(cert){try{vjob=await call('uploadWorkerCert',jobId,r.workerId,cert);renderVJob();msg(d.name+' 님 등록 · 이수증까지 올렸습니다.');return}catch(x){showErr('등록은 됐지만 이수증을 올리지 못했습니다',{message:(x.message||'')+'\n작업자 카드의 [이수증 올리기]로 다시 올려 주세요.'})}}
+  workerApplyReceipt(r,d);showAdd=false;
+  if(vc){vjob=vc;renderVJob();msg(d.name+' 님 등록 · 이수증까지 올렸습니다.');return}
+  renderVJob();msg(d.name+' 님이 등록됐습니다.');
+  if(certErr)showErr('등록은 됐지만 이수증을 올리지 못했습니다',{message:(certErr.message||'')+'\n작업자 카드의 [이수증 올리기]로 다시 올려 주세요.'});
   // 전체 자료 조회는 화면을 가리지 않으며 실패하더라도 방금 완료된 등록을 실패로 처리하지 않는다.
   callQuiet('vendorJob',jobId).then(latest=>{
    if(vjob&&vjob.job.id===jobId&&latest){vjob=latest;renderVJob()}
@@ -691,6 +696,33 @@ const MAX_MB=10;
  *  현장 사진(순회점검·합동점검·조치 후)은 화면에서 더 작게 지정 (긴 변 1024px · 0.5 → 보통 80~150KB) · PDF·문서 파일은 그대로 */
 const PHOTO_DEFAULT={max:1280,q:0.55},PHOTO_SITE={max:1024,q:0.5};
 async function readFile(f0,o){if(!f0)throw Error('파일을 선택해 주세요.');const f=await shrinkImage(f0,o||PHOTO_DEFAULT);return new Promise((res,rej)=>{if(f.size>MAX_MB*1024*1024)return rej(Error('파일은 '+MAX_MB+'MB 이하만 올릴 수 있습니다. (현재 '+(f.size/1048576).toFixed(1)+'MB)'));const ext=(String(f.name||'').match(/\.(jpe?g|png|pdf)$/i)||[])[1],guess=ext?({jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',pdf:'application/pdf'})[ext.toLowerCase()]:'';const r=new FileReader();r.onload=()=>res({name:f.name||('photo_'+Date.now()+'.jpg'),mime:f.type||guess||'application/octet-stream',data:r.result.split(',')[1]});r.onerror=()=>rej(Error('파일을 읽을 수 없습니다.'));r.readAsDataURL(f)})}
+/* ---------- F1.8p 사진·파일은 고를 때 올리지 않고 이 휴대폰에만 두었다가 [제출] 때 한꺼번에 ----------
+ *  고르면: 임시 ID(L-…) + 미리보기 → 제출하면: 진행 체크리스트(사진 올리기 n/N → 저장) 한 번만
+ *  한 번 올라간 사진은 기억해 두어, 저장만 실패해서 다시 눌러도 사진을 또 올리지 않음 */
+const PEND={};let pendSeq=0;
+const isPend=id=>/^L-/.test(String(id||''));
+/** up(file) → {id} (서버 업로드 함수) */
+function pendAdd(f0,up){const id='L-'+Date.now().toString(36)+(pendSeq++);let url='';try{if(/^image\//.test(f0.type||'')||!f0.type)url=URL.createObjectURL(f0)}catch(e){}PEND[id]={f0,up,url,name:f0.name||'',done:''};return id}
+/** 여러 목록 안의 아직 안 올린 사진 수 */
+const pendCount=lists=>new Set(lists.flat().filter(id=>isPend(id)&&PEND[id]&&!PEND[id].done)).size;
+/** 목록 안의 임시 ID를 실제로 올리고 진짜 ID로 바꿈 (목록을 그 자리에서 고침 · 3장씩 동시에) · prev = 미리보기 저장소 */
+async function pendUpload(lists,set,prev){const todo=[...new Set(lists.flat().filter(id=>isPend(id)&&PEND[id]&&!PEND[id].done))],N=todo.length;let k=0,i=0;if(set)set('0/'+N);
+ const one=async()=>{while(i<todo.length){const id=todo[i++],p=PEND[id];const r=await p.up(p.f0);p.done=r.id;if(prev&&p.url)prev[r.id]=p.url;k++;if(set)set(k+'/'+N)}};
+ await Promise.all([one(),one(),one()]);
+ lists.forEach(l=>{for(let j=l.length-1;j>=0;j--){const id=l[j];if(isPend(id)){if(PEND[id]&&PEND[id].done)l[j]=PEND[id].done;else l.splice(j,1)}}})}
+/* 제출 진행 체크리스트 (로그인 때 쓰는 체크리스트와 같은 모양) */
+let SUB=null;
+function subUI(title,labels){let el=$('subBox');if(!el){el=document.createElement('div');el.id='subBox';document.body.appendChild(el)}
+ el.innerHTML='<div class="bootcard" role="status" aria-live="polite"><h2>'+escapeText(title)+'</h2><p class="muted bootsub">창을 닫지 말고 잠시만 기다려 주세요.</p><ol class="bootlist">'+labels.map((l,i)=>'<li id="sb_'+i+'" class="wait"><i aria-hidden="true"></i><span>'+escapeText(l)+'</span><em id="sbs_'+i+'"></em></li>').join('')+'</ol><p class="bootnote" id="subNote"></p></div>';
+ el.hidden=false;if(SUB)clearInterval(SUB.tm);SUB={st:labels.map(()=>'wait'),s0:[],tx:[],tm:setInterval(subTick,500)}}
+function subSet(i,s){if(!SUB)return;const li=$('sb_'+i);SUB.st[i]=s;if(s==='run')SUB.s0[i]=Date.now();if(li)li.className=s;if(s==='done'||s==='fail'){const e=$('sbs_'+i);if(e)e.textContent=s==='fail'?'실패':(SUB.tx[i]?SUB.tx[i]+' · ':'')+((Date.now()-SUB.s0[i])/1000).toFixed(1)+'초'}subTick()}
+function subTick(){if(!SUB)return;const i=SUB.st.indexOf('run'),n=$('subNote');if(i<0){if(n)n.textContent='';return}const e=Math.floor((Date.now()-SUB.s0[i])/1000),t=$('sbs_'+i);if(t)t.textContent=(SUB.tx[i]?SUB.tx[i]+' · ':'')+(e?e+'초':'');
+ if(n)n.textContent=e<8?'':e<25?'사진이 많거나 인터넷이 느리면 시간이 더 걸립니다 · 정상 진행 중입니다':'평소보다 오래 걸리고 있습니다 ('+e+'초). 창을 닫지 말고 조금만 더 기다려 주세요.'}
+function subEnd(){const el=$('subBox');if(el)el.hidden=true;if(SUB)clearInterval(SUB.tm);SUB=null}
+/** steps = [[이름, async(set)=>{…}], …] · set('2/5')로 진행 숫자 표시 · 실패하면 그 단계에 '실패' 표시 후 오류를 그대로 던짐 */
+async function subRun(title,steps){steps=steps.filter(Boolean);subUI(title,steps.map(s=>s[0]));let i=0;
+ try{for(;i<steps.length;i++){const k=i;subSet(k,'run');await steps[k][1](t=>{if(SUB){SUB.tx[k]=t;subTick()}});subSet(k,'done')}await new Promise(r=>setTimeout(r,350))}
+ catch(e){subSet(i,'fail');await new Promise(r=>setTimeout(r,700));throw e}finally{subEnd()}}
 async function register(e){e.preventDefault();try{const fields=['company','regNo','representative','address','contact','phone','approverEmail','industry'];const d=Object.fromEntries(fields.map(n=>[n,value(n)]));d.agree=$('agree').checked;const picked=$('cert').files[0];let f=null;if(picked)f=await readFile(picked);else if(!state.testSkipFiles)throw Error('사업자등록증을 첨부해 주세요.');if(!confirm(f?'입력한 정보로 신청하시겠습니까?':'[테스트 모드] 사업자등록증 없이 신청할까요?\n(운영 시에는 첨부가 필수입니다)'))return;display(await call('registerBusiness',d,f));msg('사업자 등록 신청이 접수됐습니다.')}catch(e){alert(e.message)}}
 async function otp(e){e.preventDefault();try{display(await call('verifyOtp',value('otp')));msg('업체 이메일 인증 완료')}catch(e){}}
 function changed(){if(!state?.company||['SUBMITTED','SAFETY_REVIEW','APPROVED'].includes(state.company.submissionStatus))return;dirty=true;$('saved').textContent='변경사항 있음 · 잠시 후 자동저장';clearTimeout(saveTimer);saveTimer=setTimeout(()=>save(false),1700)}
