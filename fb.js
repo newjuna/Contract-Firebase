@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F1.8u';
+  const VERSION = '26.10.24 F1.8v';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   const CFG = {
     INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
@@ -880,7 +880,7 @@
     const day = (c) => ({ date: c.date, count: Number(c.count) || (c.workers || []).length, siteManager: c.siteManager, savedAt: c.savedAt, workers: c.workers || [] }), tc = cr.find((x) => x.date === t);
     return { today: t, job: { id: j.id, title: j.title, storeName: j.storeName, address: j.address, startDate: j.startDate, endDate: j.endDate, hostName: j.hostName },
       company: { id: b.id, company: b.company, trade: jv.trade }, link: location.origin + location.pathname + '?review=WRK-' + jv.workerToken,
-      workers: ws.map((w) => ({ id: w.id, name: w.name, role: w.role, trade: w.trade, tradeKey: w.tradeKey || '', special: w.special || [], eduHours: Number(w.eduHours) || 1, method: w.method, eduAt: w.eduAt, email: w.email, certDoc: w.certDoc || '' })),
+      workers: ws.map((w) => ({ id: w.id, name: w.name, role: w.role, trade: w.trade, tradeKey: w.tradeKey || '', special: w.special || [], eduHours: Number(w.eduHours) || 1, method: w.method, eduAt: w.eduAt, email: w.email, certDoc: w.certDoc || '', certAt: w.certAt || '' })),
       trades: eduTrades(PL),
       todayCrew: tc ? day(tc) : null, history: cr.slice(0, 30).map(day), siteManager: tc ? tc.siteManager : sm0,
       // F1.8a 오늘 인원 기본 체크: 오늘 저장한 인원 → 없으면 가장 최근 날 인원 → 없으면 등록된 전원
