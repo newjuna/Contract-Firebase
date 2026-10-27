@@ -57,7 +57,7 @@ function text(id,label,value='',disabled=false){return `<div class="field"><labe
 function value(id){return $('f_'+id)?.value?.trim()||''}
 function switchTab(which){tab=which;toggleMenu(false);stopScan();if($(which+'Tab'))$('pageTitle').textContent=$(which+'Tab').textContent;clearInterval(roomTimer);clearInterval(wkTimer);for(const n of ['my','admin','review','tpl','staff','jobs','notice','vendors']){$(n).classList.toggle('hidden',n!==which);$(n+'Tab').classList.toggle('active',n===which)}if(which==='admin')loadAdmin();if(which==='review')loadReview();if(which==='tpl')loadTemplates();if(which==='staff')loadStaff();if(which==='jobs')loadJobs();if(which==='notice')loadNotices();if(which==='vendors')loadVendors();}
 // ★ 화면 버전: 여기 한 줄만 고침 (GitHub만 올리면 로그인 화면·앱 화면·메뉴에 모두 반영, Code.gs 수정 불필요)
-const UI_VERSION='26.10.24 F1.8v';
+const UI_VERSION='26.10.24 F1.8w';
 /* F1.8o 전화번호 · 사업자번호: 숫자만 쳐도 '-' 자동 (서버는 원래 숫자만 골라 씀) */
 function fmtTel(v){const d=String(v||'').replace(/\D/g,'').slice(0,11);if(d.startsWith('02'))return d.length<3?d:d.length<6?d.slice(0,2)+'-'+d.slice(2):d.length<10?d.slice(0,2)+'-'+d.slice(2,5)+'-'+d.slice(5):d.slice(0,2)+'-'+d.slice(2,6)+'-'+d.slice(6,10);
  return d.length<4?d:d.length<8?d.slice(0,3)+'-'+d.slice(3):d.length<11?d.slice(0,3)+'-'+d.slice(3,6)+'-'+d.slice(6):d.slice(0,3)+'-'+d.slice(3,7)+'-'+d.slice(7)}
@@ -529,7 +529,7 @@ function todayHtml(v){
  return reg+permitCardHtml(v)+inspCardHtml(v);
 }
 /** F1.8s 공종 고르기 (계획서에서 고른 공종) · 특별교육 대상 공종이면 교육 2H · 안 고르면 채용 시 교육 1H */
-function tradeSel(id,T){return '<div class="field"><label for="'+id+'">공종 (선택)</label><select id="'+id+'" onchange="tradeHint(this)"><option value="">선택 안 함</option>'+(T||[]).map(t=>'<option value="'+escapeText(t.key)+'" data-sp="'+escapeText((t.special||[]).join(' / '))+'">'+escapeText(t.name)+'</option>').join('')+'</select><div class="muted" id="'+id+'_h" style="font-size:12px;margin-top:2px">채용 시 교육 1H</div></div>'}
+function tradeSel(id,T){return '<div class="field"><label for="'+id+'">특별교육 공종 (해당 시)</label><select id="'+id+'" onchange="tradeHint(this)"><option value="">해당 없음 (채용 시 교육만)</option>'+(T||[]).map(t=>'<option value="'+escapeText(t.key)+'" data-sp="'+escapeText((t.special||[]).join(' / '))+'">'+escapeText(t.name)+'</option>').join('')+'</select><div class="muted" id="'+id+'_h" style="font-size:12px;margin-top:2px">채용 시 교육 1H</div></div>'}
 function tradeHint(s){const o=s.options[s.selectedIndex],sp=o&&o.dataset.sp,h=$(s.id+'_h');if(h)h.textContent=sp?'채용 시 교육 + 특별교육 2H ('+sp+')':'채용 시 교육 1H'}
 const eduH=w=>' · <b>'+(Number(w.eduHours)||1)+'H</b>'+((w.special||[]).length?' 특별':'');
 /** 오늘 등록한 사람 (등록하면 그날 작업 안전 수칙 서명 기록에 들어감) */
@@ -571,7 +571,7 @@ function eduOneHtml(o){const e=o.esc,w=o.w,SPD=o.special||{},B='border:1px solid
   +'<table style="width:100%;border-collapse:collapse;margin-top:8px"><tr><td style="'+H+'" colspan="4">교육대상자</td></tr><tr><td style="'+H+';width:25%">소속</td><td style="'+H+';width:25%">직책</td><td style="'+H+';width:25%">성명</td><td style="'+H+'">공종</td></tr>'
   +'<tr><td style="'+B+C+'">'+e(o.company)+'</td><td style="'+B+C+'">'+e(w.role||'')+'</td><td style="'+B+C+'"><b>'+e(w.name)+'</b></td><td style="'+B+C+'">'+e(w.trade||'-')+'</td></tr></table>'
   +'<table style="width:100%;border-collapse:collapse;margin-top:8px"><tr><td style="'+H+';width:18%">교육내용<div style="font-size:9px;font-weight:normal">[별표 5] 다목</div></td><td style="'+B+';font-size:10.5px">'+ol(o.hire.concat([o.etc]))+'<div style="margin-top:4px;color:#555">※ 현장 작업 안전 수칙 '+o.rulesN+'개 항목 교육·서약 포함</div></td></tr></table>'
-  +(sp.length?'<table style="width:100%;border-collapse:collapse;margin-top:8px"><tr><td style="'+H+';width:18%" rowspan="'+sp.length+'">특별교육<div style="font-size:9px;font-weight:normal">[별표 5] 라목 · 2시간</div></td>'+sp.map((k,i)=>(i?'<tr>':'')+'<td style="'+B+';font-size:10.5px"><b>'+k+'. '+e(SPD[k][0])+'</b>'+ol(SPD[k][1].concat([o.etc]))+'</td></tr>').join('')+'</table>':'')
+  +(sp.length?'<table style="width:100%;border-collapse:collapse;margin-top:8px"><tr><td style="'+H+';width:18%" rowspan="'+sp.length+'">특별교육<div style="font-size:9px;font-weight:normal">[별표 5] 라목 · 2시간</div></td>'+sp.map((k,i)=>(i?'<tr>':'')+'<td style="'+B+';font-size:10.5px"><b>'+k+'. '+e(SPD[k][2]||SPD[k][0])+'</b>'+(SPD[k][2]?'<div style="font-size:9.5px;color:#555">'+e(SPD[k][0])+'</div>':'')+ol(SPD[k][1].concat([o.etc]))+'</td></tr>').join('')+'</table>':'')
   +'<table style="width:100%;border-collapse:collapse;margin-top:8px"><tr><td style="'+H+';width:50%">① 교육 확인 서명</td><td style="'+H+'">② 건설업 기초안전보건교육 이수증</td></tr><tr><td style="'+B+C+';height:250px">'+sign+'</td><td style="'+B+C+'">'+cert+'</td></tr></table>'
   +'<p style="font-size:9px;color:#555;margin:4px 0 0">※ 서명 = 본인 Google 계정으로 교육 확인·서약한 시각, 또는 현장책임자가 교육 후 확인한 시각 (시스템 기록) · 1명당 1장</p>';}
 const kstFull=t=>{try{return new Date(t).toLocaleString('sv-SE',{timeZone:'Asia/Seoul'}).slice(0,16)}catch(e){return ''}};
