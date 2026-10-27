@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F1.8o';
+  const VERSION = '26.10.24 F1.8p';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   const CFG = {
     INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
@@ -1276,7 +1276,7 @@
     };
     const st = await staffOf(a);
     if (st) return rec({ name: st.name, side: 'STAFF', companyId: '', company: '아성다이소', role: '도급인(' + (STAFF_ROLES[st.role] || st.role) + ')', status: 'OK' });
-    const vs = L.vendors || [], own = (await myCompanies(a)).find((x) => x.status === 'VERIFIED') || null, assigned = own && vs.find((v) => v.companyId === own.id);
+    const vs = L.vendors || [], cs = await myCompanies(a), own = cs.find((x) => x.status === 'VERIFIED') || null, assigned = own && vs.find((v) => v.companyId === own.id);
     if (!vs.length) return { ...base, state: 'NO_VENDOR' };
     /* F1.8j QR만 찍으면 바로 참석 (입력 없음)
      *  배정된 업체 대표 계정 → 업체명 + 현장대리인 이름(없으면 업체 담당자) · 관리자
@@ -1286,6 +1286,8 @@
       const w = docs(await db.collection('WORKERS').where('uid', '==', a.uid).get().catch(() => ({ docs: [] }))).find((x) => x.jobId === L.jobId && x.active !== 'N' && vs.some((v) => v.companyId === x.companyId));
       if (w) return rec({ name: w.name, side: 'VENDOR', companyId: w.companyId, company: w.company || (vs.find((v) => v.companyId === w.companyId) || {}).company || '', role: ATTEND_ROLES[1], status: 'OK', workerId: w.id });
     }
+    /* F1.8p 승인된 업체 계정도 아니고 이 공사 작업자도 아니면 참석 불가 → 사업자 등록 안내 (승인 대기 중이면 대기 안내) */
+    if (!own) { const p = cs.find((x) => x.status === 'PENDING'); return { ...base, state: 'NO_COMPANY', pending: p ? p.company : '' }; }
     if (!info) return { ...base, state: 'NEED_INFO', known: assigned ? { companyId: own.id, company: own.company, name: own.contact } : null, myCompany: own && !assigned ? own.company : '', vendors: vs, roles: ATTEND_ROLES };
     const name = tidy(info.name, 40), role = ATTEND_ROLES.includes(info.role) ? info.role : '';
     if (!name || !role) fail('이름과 역할(관리자/근로자)을 입력해 주세요.');
