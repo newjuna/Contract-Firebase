@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F1.8t';
+  const VERSION = '26.10.24 F1.8u';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   const CFG = {
     INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
@@ -886,6 +886,7 @@
       // F1.8a 오늘 인원 기본 체크: 오늘 저장한 인원 → 없으면 가장 최근 날 인원 → 없으면 등록된 전원
       crewDefault: ((tc || cr[0]) ? ((tc || cr[0]).workers || []).map((w) => w.id) : ws.map((w) => w.id)).filter((id) => ws.some((w) => w.id === id)),
       rules: WORK_RULES, pledge: WORK_PLEDGE, roles: WORKER_ROLES,
+      edu: { type: EDU_TYPE, hire: EDU_HIRE, etc: EDU_ETC, special: EDU_SPECIAL },  // F1.8u 앱에서 교육일지 미리 보기 (ZIP PDF와 같은 내용)
       permits: pms.filter((p) => p.companyId === b.id).sort((x, y) => (x.date < y.date ? 1 : -1)).slice(0, 30).map(permitSummary), insp: inspPack(inss.filter((x) => x.companyId === b.id), fds.filter((x) => x.companyId === b.id), LBI),
       jobStatus: j.status, permitToday: null, principal: await principal().catch(() => null), evalResult: ev ? { total: Number(ev.total), grade: ev.grade, comment: ev.comment, date: ev.evaluatedAt ? kst(ev.evaluatedAt) : '' } : null };
   }
