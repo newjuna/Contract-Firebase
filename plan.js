@@ -1,13 +1,14 @@
 /* 계약 전 서류 앱 작성: 안전보건관리규정(C01) + 안전보건관리계획서(C02) — F1.8c 한 번에 이어서 작성
  *  7단계: 규정 → 방침·목표 → 조직·연락 → 위험작업 → 비상대책 → 비상대피훈련 계획 → 산재·증빙·서명
  *  서명은 마지막에 한 번 → 규정 PDF · 계획서 PDF 두 장에 같은 서명이 들어감 (제출 서류도 두 줄 그대로)
- *  위험작업을 고르면 위험성평가·작업허가·점검·교육·설비 표가 자동으로 채워짐 (서버 planHtml_)
+ *  F1.8r 공종 → 위험요인(상중하)을 고르면 위험성평가표(감소대책·개선 후)·작업허가·점검·교육·설비 표가 자동으로 채워짐 (서버 planHtml_)
+ *  고른 위험요인은 순회점검 항목(짧은 질문)이 됨
  *  작성 중 내용은 이 휴대폰에 임시 보관 (닫았다 열어도 이어서 작성)
  *  보완 요청으로 둘 중 하나만 고칠 수 있으면 그 문서만 다시 만듦
  *  서버: 중계 rule · plan · planFile */
 let pl=null,plStep=1;
 /* F1.8k 3단계 = 현장대리인 (협력업체 관리자 1명 · 현장대리인계도 이때 같이 받음 → 공사마다 자동) */
-const PL_STEPS=['규정(자동)','방침·목표','현장대리인','위험작업','비상대책','대피훈련 계획','산재·서명'];
+const PL_STEPS=['규정(자동)','방침·목표','현장대리인','위험성평가','비상대책','대피훈련 계획','산재·서명'];
 const plMgr=()=>pl.org[0]||(pl.org[0]={role:'안전관리책임자 (현장대리인)',name:'',phone:''});
 const PL_LAST=PL_STEPS.length;
 const DRILL_PLAN=[['NEW','신규자 투입 시 대피 경로·집결 장소 안내'],['EVAC','공사 중 비상대피 훈련 1회 이상'],['CPR','심폐소생술(CPR) 교육'],['FIRE','소화기 사용 훈련']];
@@ -33,6 +34,11 @@ function openPlan(){const can=plCan();if(!can.C02&&can.C01){openRule();return}  
  /* F1.8k 조직 = 현장대리인 1명 (예전 3칸 자료는 현장대리인 칸만 남김) · 비어 있으면 사업장 정보의 현장대리인으로 */
  {const d0=(D.org||[])[0]||{},m=pl.org.find(o=>/현장대리인/.test(o.role||''))||{};pl.org=[{role:d0.role||'안전관리책임자 (현장대리인)',name:m.name||d0.name||'',phone:m.phone||d0.phone||''}]}
  pl.agent=Object.assign({birth:'',addr:'',licKind:'',licType:'',licNo:''},D.agent||{},(saved&&saved.agent)||{},pl.agent||{});
+ /* F1.8r 위험성평가: 예전 계획서(위험작업만 고름) → 남아 있는 공종의 위험요인 전부 · 예전 작업 이름이 없어졌으면 업종 기본값 */
+ {const T=F.trades||[],keys=T.map(t=>t[0]),all=T.flatMap(t=>t[3].map(r=>r[0]));pl.works=(pl.works||[]).filter(k=>keys.includes(k));
+  if(!pl.works.length){pl.works=(D.works||[]).slice();pl.risks=(D.risks||[]).slice()}
+  else if(!Array.isArray(pl.risks))pl.risks=T.filter(t=>pl.works.includes(t[0])).flatMap(t=>t[3].map(r=>r[0]));
+  pl.risks=pl.risks.filter(id=>all.includes(id))}
  pl.drill=Object.assign({},D.drill||{},pl.drill||{});if(!Array.isArray(pl.drill.items))pl.drill.items=(D.drill&&D.drill.items||[]).slice();
  /* F1.8o 규정 = 자동 (갑 = 도급인 위임 현장대리인 고정 · 을 = 등록 때 대표이사 · 시행일 = 오늘) */
  pl.rule={hqRep:R.hqRep||'곽동민',vendorRep:b.representative||prev.vendorRep||'',date:R.today};
@@ -56,9 +62,12 @@ function renderPlan(){const F=state.forms.plan,el=$('csheet'),n=plStep,can=plCan
   +'<div class="split"><div class="field"><label for="f_plN0">성명 <span class="req">*</span></label><input id="f_plN0" value="'+escapeText(o.name)+'" placeholder="업체 소장 이름"></div><div class="field"><label for="f_plP0">연락처 <span class="req">*</span></label><input id="f_plP0" type="tel" value="'+escapeText(o.phone)+'" placeholder="숫자만 입력 (- 자동)"></div>'
   +'<div class="field"><label for="f_plGb">생년월일 <span class="req">*</span></label><input id="f_plGb" type="date" value="'+escapeText(g.birth)+'"></div><div class="field"><label for="f_plGa">주소 <span class="req">*</span></label><input id="f_plGa" value="'+escapeText(g.addr)+'" placeholder="예: 서울특별시 강남구 ○○로 00"></div></div>'
   +'<details class="hist"'+(g.licKind||g.licType||g.licNo?' open':'')+'><summary>기술자면허 (있으면)</summary><div class="split">'+[['plGk','종별',g.licKind],['plGt','류별',g.licType],['plGn','번호',g.licNo]].map(([id,l,v])=>'<div class="field"><label for="f_'+id+'">기술자면허 '+l+'</label><input id="f_'+id+'" value="'+escapeText(v)+'"></div>').join('')+'</div></details></div>'}
- if(n===4){const sel=F.works.filter(w=>pl.works.includes(w[0]));body='<div class="card" id="plWorks"><h2>우리 업체가 하는 위험작업 <span class="req">*</span></h2><p class="muted">업종('+escapeText(b.industry)+') 기본값이 체크되어 있습니다. 실제로 하는 작업만 남겨 주세요.</p><div class="pchips">'
-  +F.works.map(w=>'<label class="pchip"><input type="checkbox" '+(pl.works.includes(w[0])?'checked':'')+' onchange="plWork(\''+w[0]+'\',this.checked)"><span>'+escapeText(w[1].split(' (')[0])+'</span></label>').join('')+'</div></div>'
-  +'<div class="card"><h2>자동으로 작성되는 위험성평가</h2>'+(sel.map(w=>{const r=w[4]*w[5];return '<div class="plrisk"><div class="row" style="justify-content:space-between"><b>'+escapeText(w[1])+'</b><span class="pill '+(r>=15?'bad':r>=10?'todo':'ok')+'">위험도 '+r+'</span></div><div class="muted">위험요인 '+escapeText(w[2])+(w[6]?' · <b>작업허가 대상</b>':'')+'</div><div style="font-size:13px">대책: '+escapeText(w[3])+'</div></div>'}).join('')||'<p class="muted">작업을 고르면 여기에 표가 만들어집니다.</p>')+'</div>'}
+ /* F1.8r 위험성평가: 공종을 고르고 → 그 공종의 위험요인 중 해당하는 것만 체크 (감소대책·개선 후 위험성은 미리 등록된 값이 결과에 자동으로 들어감) */
+ if(n===4){const T=F.trades||[],on=new Set(pl.works);body='<div class="card" id="plWorks"><h2>우리 업체가 하는 공종 <span class="req">*</span></h2><p class="muted">업종('+escapeText(b.industry)+') 기본값이 체크되어 있습니다. 실제로 하는 공종만 남겨 주세요.</p><div class="pchips">'
+  +T.map(t=>'<label class="pchip"><input type="checkbox" '+(on.has(t[0])?'checked':'')+' onchange="plTrade(\''+t[0]+'\',this.checked)"><span>'+escapeText(t[1])+'</span></label>').join('')+'</div></div>'
+  +'<div class="card" id="plRisks"><h2>예상되는 위험요인 <span class="req">*</span></h2><p class="muted">해당하는 위험요인만 체크하세요. 감소대책과 개선 후 위험성은 제출하면 결과표에 자동으로 들어가고, 공사 중 순회점검 때 이행 여부를 확인합니다.</p>'
+  +(T.filter(t=>on.has(t[0])).map(t=>'<div class="stage">'+escapeText(t[1])+(t[2]?' <span class="muted">· 작업허가 대상</span>':'')+'</div>'+t[3].map(r=>'<label class="wk"><input type="checkbox" '+(pl.risks.includes(r[0])?'checked':'')+' onchange="plRisk(\''+r[0]+'\',this.checked)"><span>'+escapeText(r[2])+' <span class="pill '+(r[4]==='상'?'bad':r[4]==='중'?'todo':'ok')+'">'+escapeText(r[4])+'</span></span></label>').join('')).join('')||'<p class="muted">위에서 공종을 고르면 위험요인이 나옵니다.</p>')
+  +'<p class="muted" style="margin-top:8px">위험성: 상 = 사망·중상 가능 · 중 = 치료·휴업 · 하 = 경미 (상중하 판단법)</p></div>'}
  if(n===5)body='<div class="card" id="plScen"><h2>비상 시나리오 <span class="req">*</span></h2><p class="muted">사고 유형별 대응 순서가 계획서에 들어갑니다.</p><div class="pchips">'
   +F.scen.map(s=>'<label class="pchip"><input type="checkbox" '+(pl.scen.includes(s[0])?'checked':'')+' onchange="plScen(\''+s[0]+'\',this.checked)"><span>'+escapeText(s[1])+'</span></label>').join('')+'</div>'
   +'<div class="field"><label for="f_plHos">가까운 병원 (선택)</label><input id="f_plHos" value="'+escapeText(pl.hospital)+'" placeholder="예: ○○병원 응급실 02-000-0000"></div></div>';
@@ -92,7 +101,12 @@ function plCollect(){if(!pl)return;const n=plStep,v=id=>$('f_'+id)?$('f_'+id).va
  try{localStorage.setItem(plKey(),JSON.stringify(pl))}catch(e){}}
 function plAdd(k){plCollect();pl[k].push(k==='kpis'?{name:'',target:''}:{role:'',name:'',phone:''});renderPlan()}
 function plDel(k,i){plCollect();pl[k].splice(i,1);renderPlan()}
-function plWork(k,on){plCollect();pl.works=on?[...new Set(pl.works.concat(k))]:pl.works.filter(x=>x!==k);renderPlan()}
+function plWork(k,on){plTrade(k,on)}
+/** F1.8r 공종 고르기: 켜면 그 공종 위험요인 전부 체크 · 끄면 전부 뺌 */
+function plTrade(k,on){plCollect();const t=(state.forms.plan.trades||[]).find(x=>x[0]===k),ids=t?t[3].map(r=>r[0]):[];
+ pl.works=on?[...new Set(pl.works.concat(k))]:pl.works.filter(x=>x!==k);pl.risks=on?[...new Set(pl.risks.concat(ids))]:pl.risks.filter(x=>!ids.includes(x));
+ const o=$('csheet'),y=o?o.scrollTop:0;renderPlan();if(o)o.scrollTop=y}
+function plRisk(id,on){pl.risks=on?[...new Set(pl.risks.concat(id))]:pl.risks.filter(x=>x!==id);$('plRisks')?.classList.remove('miss','shake');try{localStorage.setItem(plKey(),JSON.stringify(pl))}catch(e){}}
 function plScen(k,on){plCollect();pl.scen=on?[...new Set(pl.scen.concat(k))]:pl.scen.filter(x=>x!==k);$('plScen').classList.remove('miss','shake')}
 function plDrillItem(k,on){plCollect();pl.drill.items=on?[...new Set(pl.drill.items.concat(k))]:pl.drill.items.filter(x=>x!==k);$('plDrill')?.classList.remove('miss','shake')}
 function plEvDel(i){pl.evidenceFiles.splice(i,1);$('plEv').innerHTML=plEvHtml()}
@@ -102,7 +116,7 @@ function plUploadFile(f0){if(f0.size>MAX_MB*1024*1024&&!/^image\//.test(f0.type|
 function plGo(d){plCollect();if(d>0){const m=plMiss(plStep);if(m.length){inspFlag(m,'빨간 칸을 채워 주세요');return}}plStep=Math.max(plFirst(),Math.min(PL_LAST,plStep+d));renderPlan()}
 function plMiss(n){const m=[],can=plCan();
  if(n===2){if(!pl.goal)m.push('f_plGoal');if(!pl.kpis.some(k=>k.name))m.push(pl.kpis.length?'f_plK0':'f_plGoal')}
- if(n===3){const o=plMgr(),g=pl.agent;if(!o.name)m.push('f_plN0');if(!o.phone)m.push('f_plP0');if(!/^\d{4}-\d{2}-\d{2}$/.test(g.birth||''))m.push('f_plGb');if(!g.addr)m.push('f_plGa')}if(n===4&&!pl.works.length)m.push('plWorks');if(n===5&&!pl.scen.length)m.push('plScen');
+ if(n===3){const o=plMgr(),g=pl.agent;if(!o.name)m.push('f_plN0');if(!o.phone)m.push('f_plP0');if(!/^\d{4}-\d{2}-\d{2}$/.test(g.birth||''))m.push('f_plGb');if(!g.addr)m.push('f_plGa')}if(n===4){if(!pl.works.length)m.push('plWorks');else if(!pl.risks.length)m.push('plRisks')}if(n===5&&!pl.scen.length)m.push('plScen');
  if(n===6){const d=pl.drill;if(!d.route)m.push('f_plDr');if(!d.assembly)m.push('f_plDa');if(!d.manager)m.push('f_plDm');if(!d.items.length)m.push('plDrill')}
  if(n===7){pl.accidents.forEach((a,i)=>{if(a==='')m.push('f_plA'+i)});if(!sigDirty)m.push('sigBox')}return m}
 /** 서명하고 작성 완료 → 규정 PDF(필요하면) → 계획서 PDF · 같은 서명 · 응답이 끊겨도 실제로 등록됐는지 확인 */
@@ -110,7 +124,7 @@ async function savePlanNow(){plCollect();const m=plMiss(PL_LAST);if(m.length){in
  for(let i=1;i<PL_LAST;i++)if(plMiss(i).length){plStep=i;renderPlan();setTimeout(()=>inspFlag(plMiss(i),PL_STEPS[i-1]+' 단계에 빈 칸이 있습니다'),50);return}
  const sg=sigData();if(!sg){sigBad();inspFlag(['sigBox'],'서명 칸을 다시 준비했습니다. 한 번 더 서명해 주세요');return}
  const can=plCan(),doRule=can.C01&&!pl.ruleDone;
- if(!await askOk('안전보건 서류 작성 완료',(doRule?'안전보건관리규정 + ':'')+'안전보건관리계획서\n위험작업 '+pl.works.length+'개 · 비상 시나리오 '+pl.scen.length+'개 · 대피훈련 계획 · 증빙 '+pl.evidenceFiles.length+'건\n\n서명이 들어간 PDF가 만들어져 제출 서류로 등록됩니다.','작성 완료'))return;
+ if(!await askOk('안전보건 서류 작성 완료',(doRule?'안전보건관리규정 + ':'')+'안전보건관리계획서\n공종 '+pl.works.length+'개 · 위험요인 '+pl.risks.length+'개 · 비상 시나리오 '+pl.scen.length+'개 · 대피훈련 계획 · 증빙 '+pl.evidenceFiles.length+'건\n\n서명이 들어간 PDF가 만들어져 제출 서류로 등록됩니다.','작성 완료'))return;
  const cnt=(s,c)=>((((s||state).docBoard||{}).rows||[]).find(x=>x.code===c)||{uploads:[]}).uploads.length,b1=cnt(null,'C01'),b2=cnt(null,'C02'),btn=$('planSave');
  const busy=t=>{if(btn){btn.disabled=true;btn.textContent=t}};
  const done=s=>{try{localStorage.removeItem(plKey())}catch(z){}const el=$('csheet');if(el)el.style.display='none';document.body.style.overflow='';pl=null;display(s);setTimeout(()=>$('row_docC02')?.scrollIntoView({block:'center'}),100);msg('규정·계획서 작성 완료 · 제출 서류로 등록했습니다.')};
