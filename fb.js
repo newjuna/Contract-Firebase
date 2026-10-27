@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F1.8k';
+  const VERSION = '26.10.24 F1.8l';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   const CFG = {
     INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
@@ -629,11 +629,13 @@
   }
   async function staffOnly(a) { const s = await staffOf(a); if (!s) fail('아성다이소 직원 계정만 사용할 수 있습니다.'); return s; }
   /** [직원] 공사 목록 + 배정 가능한 업체 */
-  API.jobBoard = async (a) => {
+  API.jobBoard = async (a, noAuto) => {
     const s = await staffOnly(a);
     const [choices, all] = await Promise.all([jobVendorChoices(), db.collection('JOBS').get().then(docs)]);
     const jobs = all.filter((j) => canSeeJob(a, s, j)).sort((x, y) => String(y.createdAt).localeCompare(String(x.createdAt))), ids = jobs.map((j) => j.id);
     const L = await Promise.all(['JOB_VENDORS', 'WORKERS', 'CREW', 'PERMITS', 'INSPECTIONS', 'FINDINGS', 'MEETINGS', 'ATTEND', 'JOB_EVALS'].map((n) => byJobs(n, ids)));
+    // F1.8l 착수 미팅 · 법정 주기 미팅 자동 생성 → 만들었으면 한 번 더 읽음
+    if (noAuto !== true && await autoMeetings(a, s, jobs, L[6])) return API.jobBoard(a, true);
     // 업체 고를 때 지난 종료 평가 (C·D등급 경고)
     const le = lastEvals(await db.collection('JOB_EVALS').where('status', '==', 'DONE').get().then(docs), all);
     return { me: { name: s.name, role: s.role }, principal: await principal().catch(() => null), kinds: JOB_KINDS, meetKinds: MEET_KINDS, vendors: choices.map(({ uid, ...v }) => ({ ...v, lastEval: le[v.id] || null })), testMode: CFG.TEST_SKIP_FILES, jobs: jobs.map((j) => jobView(j, ...L)) };
@@ -648,6 +650,7 @@
     const choices = await jobVendorChoices(), want = [...new Set((d?.vendorIds || []).map(String))], pick = want.filter((id) => choices.some((c) => c.id === id));
     let id = tidy(d?.id, 40); const cur = id ? await db.collection('JOBS').doc(id).get() : null;
     if (id && (!cur.exists || !canSeeJob(a, s, cur.data()))) fail('수정할 수 없는 공사입니다.');
+    const oldSd = cur ? String(cur.data().startDate || '') : '';  // F1.8l 시작일이 바뀌었는지 (착수 미팅 날짜 따라가기)
     const have = id ? docs(await db.collection('JOB_VENDORS').where('jobId', '==', id).get()) : [];
     // 계약 전 평가 유효기간(1년)이 지난 업체는 새로 배정하지 않음 (이미 배정된 업체는 그대로)
     const add = pick.filter((c) => !have.some((h) => h.companyId === c)).map((c) => choices.find((x) => x.id === c));
@@ -669,6 +672,9 @@
     await b.commit();
     if (drop.length) audit(a, '', 'JOB_VENDOR_REMOVE', id + ' ' + drop.map((v) => v.company).join(', '));
     audit(a, '', cur ? 'JOB_EDIT' : 'JOB_ADD', id + ' ' + title + ' 업체 ' + pick.length);
+    // F1.8l 시작일을 고치면 아직 시작 안 한 착수 미팅 날짜도 따라감 (새 공사의 착수 미팅은 jobBoard가 자동으로 만듦)
+    if (cur) { try { const ms = await db.collection('MEETINGS').doc('MT-' + id + '-START').get(); const m = ms.exists ? ms.data() : null, nd = sd >= today() ? sd : today();
+      if (m && !m.doneAt && m.open !== 'Y' && m.date !== nd && oldSd !== sd) await API.setMeetingDate(a, m.id, nd); } catch (e) { console.warn('착수 미팅 날짜 변경 실패', e && e.message); } }
     return API.jobBoard(a);
   };
   /** [직원] 공사 삭제 — 업체 배정·작업자·작업 인원 기록까지 함께 (삭제 내역은 접근및작업이력에) */
@@ -1103,16 +1109,61 @@
     const s = await staffOnly(a), j = await staffJob(a, s, jobId);
     const kinds = ((d && d.kinds) || []).filter((k) => MEET_KINDS[k]); if (!kinds.length) fail('포함할 행사를 하나 이상 선택해 주세요.');
     const date = tidy(d && d.date, 10); if (!isDate(date)) fail('미팅 일자를 입력해 주세요.');
-    const id = 'MT-' + rand8(), token = newToken(), vs = await jobVendorsOf(j.id);
-    const m = { id, jobId: j.id, title: tidy(d.title, 80) || '착수 전 현장 미팅', date, time: tidy(d.time, 5), place: tidy(d.place, 120) || j.storeName, kinds, token, open: 'N', openedAt: '', closedAt: '',
-      createdBy: a.email, createdAt: now(), joint: null, minutes: null, doneAt: '', doneBy: '' };
+    const id = await meetMake(a, j, { title: tidy(d.title, 80) || '임시 미팅', date, place: tidy(d.place, 120), kinds });
+    return API.meetingDetail(a, id);
+  };
+  /** 미팅 만들기 공통 (시간 없이 날짜만) · key가 있으면 문서 ID = MT-공사ID-key → 같은 자동 미팅은 한 번만 */
+  async function meetMake(a, j, d) {
+    const id = d.key ? 'MT-' + j.id + '-' + d.key : 'MT-' + rand8();
+    if (d.key) { const ex = await db.collection('MEETINGS').doc(id).get().catch(() => null); if (ex && ex.exists) return null; }
+    const token = newToken(), vs = await jobVendorsOf(j.id);
+    const m = { id, jobId: j.id, title: d.title || '현장 미팅', date: d.date, time: '', place: d.place || j.storeName, kinds: d.kinds, token, open: 'N', openedAt: '', closedAt: '',
+      createdBy: a.email, createdAt: now(), joint: null, minutes: null, doneAt: '', doneBy: '', auto: d.key || '' };
     const B = db.batch();
     B.set(db.collection('MEETINGS').doc(id), m);
-    B.set(db.collection('MEET_LINKS').doc(token), { token, meetingId: id, jobId: j.id, title: m.title, store: j.storeName, date, place: m.place, open: 'N', vendors: vs });
-    await B.commit(); audit(a, '', 'MEETING_ADD', id + ' ' + j.id);
+    B.set(db.collection('MEET_LINKS').doc(token), { token, meetingId: id, jobId: j.id, title: m.title, store: j.storeName, date: m.date, place: m.place, open: 'N', vendors: vs });
+    await B.commit(); audit(a, '', d.key ? 'MEETING_AUTO' : 'MEETING_ADD', id + ' ' + j.id + ' ' + m.date);
     await meetNotice(m, j.storeName, false);
     relay('meetMail', { meetingId: id }).catch(() => {});
-    return API.meetingDetail(a, id);
+    return id;
+  }
+  /* ---------- F1.8l 미팅 자동 생성 ----------
+   *  착수 미팅(협의체 + 합동점검) = 공사 시작일 (이미 지났으면 오늘) · 미팅이 하나도 없는 진행 중 공사에 한 번
+   *  법정 주기: 협의체 매월 · 합동점검 분기마다 1회 — 그 기간에 같은 종류 미팅이 없으면 오늘 날짜로 추가
+   *  (공사를 시작한 달·분기는 착수 전에 한 미팅도 인정 → 30일 안쪽 공사는 착수 미팅 1번으로 끝)
+   *  공사 관리 화면을 열 때(공사 저장 포함) 실행 · 그 공사를 맡은 직원·안전보건팀만 */
+  const lastDayOf = (y, m) => new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10), pad2 = (n) => String(n).padStart(2, '0');
+  function lawNeed(j, t, M) {
+    const y = +t.slice(0, 4), mo = +t.slice(5, 7), qm = Math.floor((mo - 1) / 3) * 3 + 1, out = [];
+    if (j.status === 'ENDED' || j.startDate > lastDayOf(y, mo)) return out;
+    const chk = (kind, ps, pe) => { if (!(j.startDate <= pe && (!j.endDate || j.endDate >= ps))) return;
+      const has = M.some((m) => (m.kinds || []).includes(kind) && m.date >= ps && m.date <= pe) || (j.startDate >= ps && j.startDate <= pe && M.some((m) => (m.kinds || []).includes(kind) && m.date <= pe));
+      if (!has) out.push(kind); };
+    chk('COUNCIL', y + '-' + pad2(mo) + '-01', lastDayOf(y, mo)); chk('JOINT', y + '-' + pad2(qm) + '-01', lastDayOf(y, qm + 2));
+    return out;
+  }
+  async function autoMeetings(a, s, jobs, mts) {
+    const t = today(); let n = 0;
+    for (const j of jobs) {
+      if (j.status === 'ENDED' || !canSeeJob(a, s, j) || !isDate(j.startDate)) continue;
+      const M = mts.filter((m) => m.jobId === j.id);
+      try {
+        if (!M.length) { if (await meetMake(a, j, { key: 'START', title: '착수 미팅', date: j.startDate >= t ? j.startDate : t, kinds: ['COUNCIL', 'JOINT'] })) n++; continue; }
+        const need = lawNeed(j, t, M); if (!need.length) continue;
+        const label = (need.includes('COUNCIL') ? Number(t.slice(5, 7)) + '월 협의체' : '') + (need.length > 1 ? ' + ' : '') + (need.includes('JOINT') ? Math.ceil(Number(t.slice(5, 7)) / 3) + '분기 합동점검' : '');
+        if (await meetMake(a, j, { key: t.slice(0, 7).replace('-', ''), title: label, date: t, kinds: need })) n++;
+      } catch (e) { console.warn('미팅 자동 생성 실패 ' + j.id, e && e.message); }
+    }
+    return n;
+  }
+  /** [직원] 미팅 날짜만 바꾸기 (실시 전 · 방 열기 전) */
+  API.setMeetingDate = async (a, id, date) => {
+    const s = await staffOnly(a), { m, j } = await meetingOf(a, s, id); date = tidy(date, 10);
+    if (!isDate(date)) fail('날짜를 골라 주세요.'); if (m.doneAt) fail('실시 완료된 미팅입니다.'); if (m.open === 'Y') fail('진행 중인 미팅은 날짜를 바꿀 수 없습니다.');
+    const B = db.batch(); B.update(db.collection('MEETINGS').doc(m.id), { date }); B.update(db.collection('MEET_LINKS').doc(m.token), { date });
+    await B.commit(); audit(a, '', 'MEETING_DATE', m.id + ' ' + m.date + '→' + date);
+    await meetNotice({ ...m, date }, j.storeName, false);
+    return API.jobBoard(a);
   };
   /** [직원] 방 열기·닫기 — 열려 있는 동안만 참석 체크 (열 때 참여 업체 목록도 새로) */
   API.setMeetingOpen = async (a, id, open) => {
