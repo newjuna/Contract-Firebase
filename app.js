@@ -57,7 +57,7 @@ function text(id,label,value='',disabled=false){return `<div class="field"><labe
 function value(id){return $('f_'+id)?.value?.trim()||''}
 function switchTab(which){tab=which;toggleMenu(false);stopScan();if($(which+'Tab'))$('pageTitle').textContent=$(which+'Tab').textContent;clearInterval(roomTimer);clearInterval(wkTimer);for(const n of ['my','admin','review','tpl','staff','jobs','notice','vendors']){$(n).classList.toggle('hidden',n!==which);$(n+'Tab').classList.toggle('active',n===which)}if(which==='admin')loadAdmin();if(which==='review')loadReview();if(which==='tpl')loadTemplates();if(which==='staff')loadStaff();if(which==='jobs')loadJobs();if(which==='notice')loadNotices();if(which==='vendors')loadVendors();}
 // ★ 화면 버전: 여기 한 줄만 고침 (GitHub만 올리면 로그인 화면·앱 화면·메뉴에 모두 반영, Code.gs 수정 불필요)
-const UI_VERSION='26.10.24 F1.8u';
+const UI_VERSION='26.10.24 F1.8v';
 /* F1.8o 전화번호 · 사업자번호: 숫자만 쳐도 '-' 자동 (서버는 원래 숫자만 골라 씀) */
 function fmtTel(v){const d=String(v||'').replace(/\D/g,'').slice(0,11);if(d.startsWith('02'))return d.length<3?d:d.length<6?d.slice(0,2)+'-'+d.slice(2):d.length<10?d.slice(0,2)+'-'+d.slice(2,5)+'-'+d.slice(5):d.slice(0,2)+'-'+d.slice(2,6)+'-'+d.slice(6,10);
  return d.length<4?d:d.length<8?d.slice(0,3)+'-'+d.slice(3):d.length<11?d.slice(0,3)+'-'+d.slice(3,6)+'-'+d.slice(6):d.slice(0,3)+'-'+d.slice(3,7)+'-'+d.slice(7)}
@@ -548,34 +548,39 @@ function certCell(w){return w.certDoc?'<button class="linkbtn" type="button" sty
 function eduHtml(v){const W=v.workers.slice().sort((x,y)=>String(y.eduAt||'').localeCompare(String(x.eduAt||''))),ok=W.filter(w=>w.certDoc).length,method=w=>w.method==='SELF'?'본인':'소장';
  const rules=v.history.length?'<details class="hist" style="margin-top:12px"><summary>작업 안전 수칙 서명 기록 '+v.history.length+'일 (등록한 날)</summary>'+v.history.map(h=>'<div class="item"><div class="row" style="justify-content:space-between"><span>'+escapeText(h.date)+' · '+h.count+'명</span><button class="button ghost" type="button" onclick="showRules(\''+escapeText(h.date)+'\')">보기</button></div></div>').join('')+'</details>':'';
  return '<div class="card" id="eduCard"><div class="vh-top"><h2 style="margin:0;font-size:16px">신규교육 현황</h2><span class="pill '+(W.length&&ok===W.length?'ok':'todo')+'">이수증 '+ok+' / '+W.length+'명</span></div>'
-  +(W.length?'<table class="rtable" style="margin-top:10px"><tr><th>이름</th><th>구분·공정</th><th style="width:64px">등록일</th><th style="width:76px">이수증</th></tr>'+W.map(w=>'<tr><td><b>'+escapeText(w.name)+'</b><div class="muted" style="font-size:11px">'+method(w)+' 등록 · <button class="linkbtn" type="button" style="font-size:11px" onclick="dropWorker(\''+escapeText(w.id)+'\',\''+escapeText(w.name)+'\')">빼기</button></div></td><td>'+escapeText(w.role)+(w.trade?' · '+escapeText(w.trade):'')+eduH(w)+'</td><td>'+escapeText(String(fmtTime(w.eduAt)).slice(5,10))+'</td><td>'+certCell(w)+'<br><button class="linkbtn" type="button" style="font-size:12px" onclick="showEduSheet(\''+escapeText(kstDay(w.eduAt))+'\')" aria-label="'+escapeText(w.name)+' 교육일지 보기">📋 교육일지</button></td></tr>').join('')+'</table>'
+  +(W.length?'<table class="rtable" style="margin-top:10px"><tr><th>이름</th><th>구분·공정</th><th style="width:64px">등록일</th><th style="width:76px">이수증</th></tr>'+W.map(w=>'<tr><td><b>'+escapeText(w.name)+'</b><div class="muted" style="font-size:11px">'+method(w)+' 등록 · <button class="linkbtn" type="button" style="font-size:11px" onclick="dropWorker(\''+escapeText(w.id)+'\',\''+escapeText(w.name)+'\')">빼기</button></div></td><td>'+escapeText(w.role)+(w.trade?' · '+escapeText(w.trade):'')+eduH(w)+'</td><td>'+escapeText(String(fmtTime(w.eduAt)).slice(5,10))+'</td><td>'+certCell(w)+'<br><button class="linkbtn" type="button" style="font-size:12px" onclick="showEduSheet(\''+escapeText(w.id)+'\')" aria-label="'+escapeText(w.name)+' 교육일지 보기">📋 교육일지</button></td></tr>').join('')+'</table>'
    :'<p class="muted" style="margin-top:10px">아직 등록한 작업자가 없습니다.</p>')+rules+'</div>'}
 const kstDay=t=>{try{return new Date(t).toLocaleDateString('sv-SE',{timeZone:'Asia/Seoul'})}catch(e){return ''}};
-/** F1.8u 교육일지 보기 (그날 등록한 사람 전체 · 최종 ZIP의 교육일지 PDF와 같은 내용) */
-function showEduSheet(date){const v=vjob,E=v.edu;if(!E||!date)return;clearInterval(wkTimer);
- const ws=v.workers.filter(w=>kstDay(w.eduAt)===date).sort((x,y)=>String(x.eduAt).localeCompare(String(y.eduAt))),SPD=E.special||{};
- const B='border:1px solid #333;padding:5px 6px;font-size:12px;vertical-align:middle',H=B+';background:#eee;font-weight:bold;text-align:center',C=';text-align:center',e=escapeText;
- const [y,m,d]=date.split('-'),wd=['일','월','화','수','목','금','토'][new Date(date+'T00:00:00Z').getUTCDay()],ck=on=>on?'☑':'☐',hm=t=>{try{return new Date(t).toLocaleTimeString('ko-KR',{timeZone:'Asia/Seoul',hour:'2-digit',minute:'2-digit',hour12:false})}catch(x){return ''}};
+/** F1.8v 교육일지 1명당 1장 · 교육시간 고정 08:00~09:00(1H) / 08:00~10:00(2H) · 맨 아래 ① 교육 확인 서명 ② 기초안전보건교육 이수증 · 앱(app.js) · Relay.gs 같은 함수
+ *  o = { esc, w, date, store, company, teacher, type, hire, etc, special, rulesN, signAt, cert(html), certAt } */
+function eduOneHtml(o){const e=o.esc,w=o.w,SPD=o.special||{},B='border:1px solid #333;padding:5px 7px;font-size:11px;vertical-align:middle',H=B+';background:#eee;font-weight:bold;text-align:center',C=';text-align:center';
+ const date=o.date,[y,m,d]=date.split('-'),wd=['일','월','화','수','목','금','토'][new Date(date+'T00:00:00Z').getUTCDay()],ck=on=>on?'☑':'☐';
  const ol=l=>'<ol style="margin:0 0 0 18px;padding:0">'+l.map(x=>'<li>'+e(x)+'</li>').join('')+'</ol>';
- const spOf=w=>(Array.isArray(w.special)?w.special:[]).map(Number).filter(k=>SPD[k]),hrs=w=>spOf(w).length?2:1;
- const SP=[...new Set([].concat(...ws.map(spOf)))].sort((p,q)=>p-q),n2=ws.filter(w=>hrs(w)===2).length,times=ws.map(w=>w.eduAt).filter(Boolean).sort();
- const kinds=[['신규채용 시',true],['작업내용 변경 시',false],['특별안전보건교육',SP.length>0],['일반 안전보건교육',false],['기타',false]];
- const row=(H2,val)=>'<tr><td style="'+H+'">'+H2+'</td><td style="'+B+'" colspan="2">'+val+'</td></tr>';
+ const sp=(Array.isArray(w.special)?w.special:[]).map(Number).filter(k=>SPD[k]),hrs=sp.length?2:1,tm='08:00 ~ '+(hrs===2?'10:00':'09:00')+' ('+hrs+'H)';
+ const kinds=[['신규채용 시',true],['작업내용 변경 시',false],['특별안전보건교육',sp.length>0],['일반 안전보건교육',false],['기타',false]];
+ const cell=(h,v)=>'<td style="'+H+';width:14%">'+h+'</td><td style="'+B+'" colspan="2">'+v+'</td>';
+ const sign='<div style="font-size:24px;font-family:serif;color:#1b5e20;letter-spacing:6px">'+e(w.name)+'</div><div style="color:#1b5e20;margin-top:8px">'+(w.method==='SELF'?'본인 계정 서명':'현장책임자 '+e(o.teacher||'')+' 확인')+(o.signAt?' · '+e(o.signAt):'')+'</div><div style="font-size:10px;color:#555;margin-top:14px">위 교육을 받았고 안전 수칙 준수를 서약합니다.</div>';
+ const cert=o.cert?o.cert+'<div style="font-size:10px;color:#1b5e20;margin-top:4px">✔ 제출'+(o.certAt?' · '+e(o.certAt):'')+'</div>':w.certDoc?'<div style="color:#555">이수증 파일 있음 (사진으로 넣지 못함 · 원본 파일 참조)</div>':'<div style="color:#c00;font-weight:bold">미제출</div>';
+ return '<p style="text-align:center;font-size:20px;font-weight:bold;letter-spacing:6px;margin:0 0 4px">안전보건 교육일지</p><p style="text-align:center;font-size:11px;margin:0 0 10px">'+y+'년 '+Number(m)+'월 '+Number(d)+'일 '+wd+'요일</p>'
+  +'<table style="width:100%;border-collapse:collapse"><tr><td style="'+H+';width:18%">교육명칭</td><td style="'+B+'" colspan="3">'+e(o.type)+(sp.length?' · 특별교육':'')+'</td></tr>'
+  +'<tr><td style="'+B+';vertical-align:top;line-height:1.9" rowspan="5"><b>교육구분</b><br>'+kinds.map(k=>ck(k[1])+' '+k[0]).join('<br>')+'</td>'+cell('교육장소','다이소 '+e(o.store)+' 현장')+'</tr>'
+  +'<tr>'+cell('교육방법','현장 교육 후 서약 (본인 계정 QR 서명 또는 현장책임자 확인)')+'</tr>'
+  +'<tr>'+cell('교육과목','산업안전보건법 시행규칙 [별표 5] 채용 시 교육'+(sp.length?' · 특별교육 '+sp.join('·')+'번':'')+' · 작업 안전 수칙')+'</tr>'
+  +'<tr>'+cell('교육강사',e(o.company)+(o.teacher?' · '+e(o.teacher):'')+' (현장책임자)')+'</tr>'
+  +'<tr>'+cell('교육시간','<b>'+tm+'</b> · '+(sp.length?'채용 시 교육 + 특별교육':'채용 시 교육'))+'</tr></table>'
+  +'<table style="width:100%;border-collapse:collapse;margin-top:8px"><tr><td style="'+H+'" colspan="4">교육대상자</td></tr><tr><td style="'+H+';width:25%">소속</td><td style="'+H+';width:25%">직책</td><td style="'+H+';width:25%">성명</td><td style="'+H+'">공종</td></tr>'
+  +'<tr><td style="'+B+C+'">'+e(o.company)+'</td><td style="'+B+C+'">'+e(w.role||'')+'</td><td style="'+B+C+'"><b>'+e(w.name)+'</b></td><td style="'+B+C+'">'+e(w.trade||'-')+'</td></tr></table>'
+  +'<table style="width:100%;border-collapse:collapse;margin-top:8px"><tr><td style="'+H+';width:18%">교육내용<div style="font-size:9px;font-weight:normal">[별표 5] 다목</div></td><td style="'+B+';font-size:10.5px">'+ol(o.hire.concat([o.etc]))+'<div style="margin-top:4px;color:#555">※ 현장 작업 안전 수칙 '+o.rulesN+'개 항목 교육·서약 포함</div></td></tr></table>'
+  +(sp.length?'<table style="width:100%;border-collapse:collapse;margin-top:8px"><tr><td style="'+H+';width:18%" rowspan="'+sp.length+'">특별교육<div style="font-size:9px;font-weight:normal">[별표 5] 라목 · 2시간</div></td>'+sp.map((k,i)=>(i?'<tr>':'')+'<td style="'+B+';font-size:10.5px"><b>'+k+'. '+e(SPD[k][0])+'</b>'+ol(SPD[k][1].concat([o.etc]))+'</td></tr>').join('')+'</table>':'')
+  +'<table style="width:100%;border-collapse:collapse;margin-top:8px"><tr><td style="'+H+';width:50%">① 교육 확인 서명</td><td style="'+H+'">② 건설업 기초안전보건교육 이수증</td></tr><tr><td style="'+B+C+';height:250px">'+sign+'</td><td style="'+B+C+'">'+cert+'</td></tr></table>'
+  +'<p style="font-size:9px;color:#555;margin:4px 0 0">※ 서명 = 본인 Google 계정으로 교육 확인·서약한 시각, 또는 현장책임자가 교육 후 확인한 시각 (시스템 기록) · 1명당 1장</p>';}
+const kstFull=t=>{try{return new Date(t).toLocaleString('sv-SE',{timeZone:'Asia/Seoul'}).slice(0,16)}catch(e){return ''}};
+/** F1.8v 교육일지 보기 (1명당 1장 · 최종 ZIP의 교육일지 PDF와 같은 내용) · 이수증은 열고 나서 불러옴 */
+function showEduSheet(wid){const v=vjob,E=v.edu,w=(v.workers||[]).find(x=>x.id===wid);if(!E||!w)return;clearInterval(wkTimer);
  $('execArea').innerHTML='<div class="card"><button class="button ghost" type="button" onclick="renderVJob()">‹ 이전으로</button></div><div class="card sheet" style="overflow-x:auto">'
-  +'<h2 class="sheet-t">안전보건 교육일지</h2><div class="sheet-s">'+e(y)+'년 '+Number(m)+'월 '+Number(d)+'일 '+wd+'요일</div>'
-  +'<table style="width:100%;border-collapse:collapse;margin-top:8px"><tr><td style="'+H+';width:22%">교육명칭</td><td style="'+B+'" colspan="2">'+e(E.type)+(SP.length?' · 특별교육':'')+'</td></tr>'
-  +'<tr><td style="'+B+';vertical-align:top;line-height:1.9">'+'<b>교육구분</b><br>'+kinds.map(k=>ck(k[1])+' '+k[0]).join('<br>')+'</td><td style="'+B+';padding:0" colspan="2"><table style="width:100%;border-collapse:collapse">'
-  +row('교육장소','다이소 '+e(v.job.storeName)+' 현장')+row('교육방법','현장 교육 후 서약 (본인 계정 QR 서명 또는 현장책임자 확인)')
-  +row('교육과목','산업안전보건법 시행규칙 [별표 5] 채용 시 교육'+(SP.length?' · 특별교육 '+SP.join('·')+'번':'')+' · 작업 안전 수칙')
-  +row('교육강사',e(v.company.company)+(v.siteManager?' · '+e(v.siteManager):'')+' (현장책임자)')
-  +row('교육시간','채용 시 교육 1시간'+(n2?' · 특별교육 대상 '+n2+'명 2시간':'')+' · 대상 '+ws.length+'명'+(times.length?' · 확인 '+hm(times[0])+(times.length>1?' ~ '+hm(times[times.length-1]):''):''))
-  +'</table></td></tr>'
-  +'<tr><td style="'+H+'">교육내용</td><td style="'+B+';vertical-align:top" colspan="2">'+ol(E.hire.concat([E.etc]))+'<div style="margin-top:4px">※ 현장 작업 안전 수칙 '+v.rules.length+'개 항목 교육·서약 포함</div></td></tr></table>'
-  +'<table style="width:100%;border-collapse:collapse;margin-top:-1px"><tr><td style="'+H+'" colspan="4">교육참석자 명단</td></tr><tr><td style="'+H+';width:8%">No.</td><td style="'+H+'">직책 및 성명</td><td style="'+H+';width:12%">시간</td><td style="'+H+';width:26%">서명</td></tr>'
-  +(ws.map((w,i)=>'<tr><td style="'+B+C+'">'+(i+1)+'</td><td style="'+B+'">'+e(w.role+' '+w.name+(w.trade?' ('+w.trade+')':''))+'</td><td style="'+B+C+'"><b>'+hrs(w)+'H</b></td><td style="'+B+C+';font-size:11px;color:#1b5e20">'+(w.method==='SELF'?'본인 계정 ':'소장 확인 ')+e(hm(w.eduAt))+'</td></tr>').join('')||'<tr><td style="'+B+C+'" colspan="4">그날 등록한 사람이 없습니다</td></tr>')+'</table>'
-  +(SP.length?'<p style="font-weight:bold;margin:14px 0 4px">특별교육 ([별표 5] 라목 · 교육시간 2시간)</p><p class="muted" style="margin:0 0 4px">공통내용: 채용 시 교육과 같은 내용 · 개별내용: 아래 작업별</p><table style="width:100%;border-collapse:collapse"><tr><td style="'+H+';width:8%">번호</td><td style="'+H+';width:28%">작업명</td><td style="'+H+'">개별 교육내용 · 대상자</td></tr>'
-   +SP.map(k=>'<tr><td style="'+B+C+'">'+k+'</td><td style="'+B+'">'+e(SPD[k][0])+'</td><td style="'+B+'">'+ol(SPD[k][1].concat([E.etc]))+'<div style="margin-top:4px"><b>대상자</b> '+e(ws.filter(w=>spOf(w).includes(k)).map(w=>w.name).join(', '))+'</div></td></tr>').join('')+'</table>':'')
-  +'<p class="muted" style="margin-top:8px">서명 = 본인 Google 계정으로 교육 확인·서약한 시각, 또는 현장책임자가 교육 후 확인한 시각 (시스템 기록) · 최종 공사 자료(ZIP)에는 같은 내용이 PDF로 들어갑니다.</p></div>';window.scrollTo(0,0)}
+  +eduOneHtml({esc:escapeText,w,date:kstDay(w.eduAt),store:v.job.storeName,company:v.company.company,teacher:v.siteManager,type:E.type,hire:E.hire,etc:E.etc,special:E.special,rulesN:v.rules.length,signAt:kstFull(w.eduAt),cert:w.certDoc?'<div id="esCert" class="muted">이수증 불러오는 중…</div>':'',certAt:w.certAt?kstFull(w.certAt):''})+'</div>';window.scrollTo(0,0);
+ if(w.certDoc){const put=f=>{const el=$('esCert');if(!el)return;el.outerHTML=/^image\//.test(f.mime||'')?'<img src="data:'+escapeText(f.mime)+';base64,'+f.data+'" alt="'+escapeText(w.name)+' 기초안전보건교육 이수증" style="max-width:100%;max-height:230px">':'<button class="button ghost" type="button" onclick="certView(\''+escapeText(w.certDoc)+'\',\''+escapeText(w.name)+'\')">📄 이수증 PDF 열기</button>'};
+  if(certMem[w.certDoc])put(certMem[w.certDoc]);else callQuiet('viewCert',w.certDoc).then(f=>{certMem[w.certDoc]=f;put(f)}).catch(()=>{const el=$('esCert');if(el)el.textContent='이수증을 불러오지 못했습니다'})}}
 /** F1.8a 오늘 현장 업무 순서 안내 (하루 한 번 자동 · ❔ 버튼으로 다시) */
 function dayGuide(force){const v=vjob;if(!v||v.jobStatus==='ENDED')return;const key='dayGuide:'+v.today;let seen=false;try{seen=localStorage.getItem(key)==='1'}catch(e){}
  if(!force&&(seen||$('modal').style.display==='flex'||(typeof tour!=='undefined'&&tour)||vmenu!=='today'))return;try{localStorage.setItem(key,'1')}catch(e){}
