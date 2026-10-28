@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F1.9d';
+  const VERSION = '26.10.24 F1.9f';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   const CFG = {
     INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
@@ -1543,6 +1543,8 @@
     return m;
   }
 
+  /** F1.9e 평가 결과 (중계 서버가 근거까지 만들어 줌) · ref = CE | CE_업체ID | JE_평가ID */
+  API.evalResult = async (a, ref, jobId) => relay('evalResult', { ref: String(ref || '').slice(0, 60), jobId: String(jobId || '').slice(0, 40) }, true);
   /* ---------- 화면에서 쓰는 창구 ---------- */
   const NEXT = {};  // v5.27의 모든 기능을 옮김 (F1.7). 남은 것은 예전 '제출자료 검토' 화면(reviewList 등 · 메일 링크 검토로 대체)
   async function call(fn, args) {
