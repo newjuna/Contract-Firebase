@@ -169,7 +169,7 @@ async function admRun(){if(!admPv)return;if(value('admOk')!=='삭제'){inspFlag(
  *  위임장 2장 · 순회점검 승인 · 회의록·점검표 머리 · 규정 "갑" 현장대리인에 그대로 들어감 */
 const PR_ROWS=[['ceo','총괄책임자 (위임인)'],['delegate','위임받는 책임자 (수임인)'],['manager','도급인 담당자 (검토 · 허가서 승인)']];
 const PR_F=[['name','성명'],['rank','직급'],['title','직책'],['org','소속 및 직책']];
-function sPrincipal(){jobsMode='admin';setTimeout(prLoad,0);return '<div id="prBox"><div class="card"><p class="desc">불러오는 중입니다…</p></div></div>'}
+function sPrincipal(){setTimeout(()=>{orgTab=3;orgEdit=null;orgMem=null;sgo('staff')},0);return '<div class="card"><p class="desc">조직·구성원 관리 ③ 도급인 책임자로 이동합니다…</p></div>'}  /* F1.9g */
 async function prLoad(){let P;try{P=await call('principalGet')}catch(e){return}const b=$('prBox');if(!b)return;
  b.innerHTML='<div class="card"><h2 style="margin:0">도급인 책임자 설정</h2><p class="muted" style="margin-top:6px">위임장(협의체 · 합동점검) · 순회점검일지 승인 · 회의록 머리 · 규정 "갑" 현장대리인에 들어갑니다.</p></div>'
   +PR_ROWS.map(([k,l])=>'<div class="card"><h2>'+escapeText(l)+'</h2><div class="split">'+PR_F.map(([f,fl])=>input('pr_'+k+'_'+f,fl,(P[k]||{})[f]||'','text',false,((P.def||{})[k]||{})[f]||'')).join('')+'</div>'+(k==='manager'?'<p class="muted">비워 두면 마스터 계정 직원 이름이 들어갑니다. 허가서 승인·일지 확인 기록은 실제로 버튼을 누른 사람 이름으로 남습니다.</p>':'')+'</div>').join('')

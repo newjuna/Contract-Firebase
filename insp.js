@@ -74,7 +74,7 @@ async function submitInspNow(){ins.name=value('inName');const miss=[];if(!ins.tb
  catch(e){showErr('순회점검을 제출하지 못했습니다',e)}}
 /* ---------- 지적사항 조치 등록 (업체·도급인 공용) ---------- */
 /** F1.8k 도급인 책임자 이름 (서버가 공사 화면과 함께 보내 줌 · 없으면 기본값) */
-function principalName(k,withTitle){const P=(typeof jobData!=='undefined'&&jobData&&jobData.principal)||(typeof vjob!=='undefined'&&vjob&&vjob.principal)||{ceo:{name:'김기호',rank:'부사장',title:'안전보건총괄책임자'},delegate:{name:'곽동민',rank:'부장'}},p=P[k]||{};return withTitle?[p.title,p.name].filter(Boolean).join(' '):[p.name,p.rank].filter(Boolean).join(' ')}
+function principalName(k,withTitle){const P=(typeof jobData!=='undefined'&&jobData&&jobData.principal)||(typeof vjob!=='undefined'&&vjob&&vjob.principal)||{ceo:{name:'김기호',rank:'대표이사',title:'안전보건총괄책임자'},delegate:{name:'곽동민',rank:'부장'}},p=P[k]||{};return withTitle?[p.title,p.name].filter(Boolean).join(' '):[p.name,p.rank].filter(Boolean).join(' ')}
 let rs=null;
 /* F1.8f from='dash': 메인 화면 [조치하기]에서 열었으면 돌아가기·등록 후 메인으로 */
 function openResolve(id,who,from){const list=who==='staff'?inspJob.findings:vjob.insp.open,f=list.find(x=>x.id===id);if(!f)return;rs={f,who,photos:[],from:from||''};renderResolve()}
