@@ -1,5 +1,5 @@
-<!doctype html><html lang="ko" data-ver="26.10.24 F1.9s"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover"><title>도급 안전관리</title>
-<!-- F1.9s 홈 화면에 추가 (앱 아이콘 · 주소창 없이 전체 화면) -->
+<!doctype html><html lang="ko" data-ver="26.10.24 F1.9t"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover"><title>도급 안전관리</title>
+<!-- F1.9t 홈 화면에 추가 (앱 아이콘 · 주소창 없이 전체 화면) -->
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#ffffff">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
@@ -7,12 +7,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="도급안전">
-<link rel="stylesheet" href="style.css?v=F1.9s">
+<link rel="stylesheet" href="style.css?v=F1.9t">
 <script src="config.js"></script>
 <script src="https://www.gstatic.com/firebasejs/13.1.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/13.1.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore-compat.js"></script>
-<script src="fb.js?v=F1.9s"></script>
+<script src="fb.js?v=F1.9t"></script>
 </head><body>
 <div id="loginView" class="lv" hidden><main class="lbox">
   <div class="lbrand"><i aria-hidden="true"></i>도급 안전관리</div>
@@ -28,17 +28,17 @@
   <div class="lver" id="loginVer">&nbsp;</div>
 </main></div>
 <div id="appView" hidden><div id="topLoad" aria-hidden="true"></div><div id="topNote" role="status" aria-live="polite">불러오는 중…</div><div class="cover" id="cover" role="status" aria-live="polite"><div class="loadbox"><div class="spin" aria-hidden="true"></div><div id="loadMsg">처리 중입니다</div><div class="loadbar ind" aria-hidden="true"><span id="loadBar"></span></div><div class="loadsec" id="loadSec"></div><div class="muted" id="loadHint">잠시만 기다려 주세요</div><button class="button ghost" type="button" id="loadReload" hidden style="margin-top:12px" onclick="waitReload()">⟳ 새로 고침</button></div></div><header class="topbar"><div class="tb-in"><div class="tb-l"><button id="backBtn" class="backbtn" type="button" hidden aria-label="뒤로 가기" onclick="goBack()">‹</button><div class="brand"><span class="dot" aria-hidden="true"></span><b>도급 안전관리</b></div></div><div class="tb-r"><span id="pageTitle" class="ptitle"></span><button id="refreshBtn" class="gearbtn" type="button" aria-label="새로고침" title="새로고침" onclick="refreshNow()">⟳</button><button id="gearBtn" class="gearbtn" type="button" hidden aria-label="마스터 설정 (직원 관리)" title="마스터 설정 · 직원 관리" onclick="openMaster()">⚙</button><button id="menuBtn" class="menubtn" type="button" aria-label="메뉴 열기" aria-expanded="false" aria-controls="drawer" onclick="toggleMenu()"><span></span><span></span><span></span></button></div></div></header><div id="scrim" class="scrim" onclick="toggleMenu(false)"></div><aside id="drawer" class="drawer" aria-label="메뉴" aria-hidden="true"><div class="dr-head"><b>메뉴</b><button class="xbtn" type="button" onclick="toggleMenu(false)" aria-label="메뉴 닫기">✕</button></div><div id="identity" class="who">Google 계정 확인 중...</div><nav class="tabs" id="navTabs"><button id="myTab" class="active" onclick="switchTab('my')">내 업무</button><button id="vm_dash" class="vmb hidden" onclick="vgo('dash')">🏠 대시보드</button><div class="vmb navg hidden"><button class="navh" type="button" aria-expanded="true" onclick="navFold(this)"><i class="chev" aria-hidden="true"></i><span>현장 업무</span></button><div class="navb"><button id="vm_today" class="vmb hidden" onclick="vgo('today')">📋 오늘 현장 업무</button><button id="vm_edu" class="vmb hidden" onclick="vgo('edu')">🎓 신규교육 현황</button><button id="vm_meet" class="vmb hidden" onclick="vgo('meet')">📷 협의체·합동점검 참여</button></div></div><div class="vmb navg hidden"><button class="navh" type="button" aria-expanded="true" onclick="navFold(this)"><i class="chev" aria-hidden="true"></i><span>서류</span></button><div class="navb"><button id="vm_docs" class="vmb hidden" onclick="vgo('docs')">📄 계약 서류</button></div></div><button id="adminTab" class="hidden" onclick="switchTab('admin')">사업자 승인</button><button id="reviewTab" class="hidden" onclick="switchTab('review')">제출자료 검토</button><button id="tplTab" class="hidden" onclick="switchTab('tpl')">표준양식 관리</button><button id="jobsTab" class="hidden" onclick="switchTab('jobs')">공사·현장미팅</button><button id="noticeTab" class="hidden" onclick="switchTab('notice')">참조 알림</button><button id="staffTab" class="hidden" onclick="switchTab('staff')">직원 관리</button><button id="vendorsTab" class="hidden" onclick="sgo('vendors')">업체 현황</button><button id="sm_dash" class="smb hidden" onclick="sgo('dash')">🏠 대시보드</button><div class="smb navg hidden"><button class="navh" type="button" aria-expanded="true" onclick="navFold(this)"><i class="chev" aria-hidden="true"></i><span>① 계약·준비</span></button><div class="navb"><button id="sm_jobs" class="smb hidden" onclick="sgo('jobs')">🏗 공사 관리</button><button id="sm_vendors" class="smb hidden" onclick="sgo('vendors')">🏢 업체 현황</button><button id="sm_flyer" class="smb hidden" onclick="sgo('flyer')">📄 업체 안내문</button></div></div><div class="smb navg hidden"><button class="navh" type="button" aria-expanded="true" onclick="navFold(this)"><i class="chev" aria-hidden="true"></i><span>② 수행</span></button><div class="navb"><button id="sm_meet" class="smb hidden" onclick="sgo('meet')">🤝 협의체·합동점검</button><button id="sm_check" class="smb hidden" onclick="sgo('check')">✔ 현장 확인 (허가서·순회점검)</button></div></div><div class="smb navg hidden" data-master="1"><button class="navh" type="button" aria-expanded="true" onclick="navFold(this)"><i class="chev" aria-hidden="true"></i><span>관리</span></button><div class="navb"><button id="sm_tpl" class="smb hidden" data-master="1" onclick="sgo('tpl')">📄 표준양식 관리</button><button id="sm_staff" class="smb hidden" data-master="1" onclick="sgo('staff')">👥 조직도</button><button id="sm_principal" class="smb hidden" data-master="1" onclick="sgo('staff')" hidden>✍ 도급인 책임자 (현장대리인)</button><button id="sm_data" class="smb hidden" data-master="1" onclick="sgo('data')">🗄 데이터 관리</button></div></div></nav><button class="logout" type="button" onclick="logout()">로그아웃 · 접속 구분 바꾸기</button><div class="dr-foot">아성다이소 안전보건팀 · <span class="verTxt"></span></div></aside><main class="main"><section id="my"></section><section id="admin" class="hidden"></section><section id="review" class="hidden"></section><section id="tpl" class="hidden"></section><section id="staff" class="hidden"></section><section id="jobs" class="hidden"></section><section id="notice" class="hidden"></section><section id="vendors" class="hidden"></section><div class="appver verTxt"></div></main><div class="toast" id="toast"></div><div id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" style="position:fixed;inset:0;background:#1b243566;z-index:30;display:none;align-items:center;justify-content:center;padding:20px"><div style="background:#fff;border-radius:18px;padding:26px;max-width:380px;width:100%;text-align:center;box-shadow:0 20px 50px #0003"><h2 id="modalTitle" style="margin:0 0 10px;font-size:20px"></h2><p id="modalBody" class="desc" style="white-space:pre-line;margin:0 0 18px"></p><button id="modalBtn" class="button" type="button" style="width:100%"></button><button id="modalCancel" class="button ghost" type="button" style="width:100%;margin-top:8px" hidden>나중에</button></div></div></div>
-<script src="permit.js?v=F1.9s"></script>
-<script src="insp.js?v=F1.9s"></script>
-<script src="eval.js?v=F1.9s"></script>
-<script src="contract.js?v=F1.9s"></script>
-<script src="plan.js?v=F1.9s"></script>
-<script src="vendor.js?v=F1.9s"></script>
-<script src="qr.js?v=F1.9s"></script>
-<script src="staff.js?v=F1.9s"></script>
-<script src="board.js?v=F1.9s"></script>
-<script src="org.js?v=F1.9s"></script>
-<script src="flyer.js?v=F1.9s"></script>
-<script src="guide.js?v=F1.9s"></script>
-<script src="app.js?v=F1.9s"></script>
+<script src="permit.js?v=F1.9t"></script>
+<script src="insp.js?v=F1.9t"></script>
+<script src="eval.js?v=F1.9t"></script>
+<script src="contract.js?v=F1.9t"></script>
+<script src="plan.js?v=F1.9t"></script>
+<script src="vendor.js?v=F1.9t"></script>
+<script src="qr.js?v=F1.9t"></script>
+<script src="staff.js?v=F1.9t"></script>
+<script src="board.js?v=F1.9t"></script>
+<script src="org.js?v=F1.9t"></script>
+<script src="flyer.js?v=F1.9t"></script>
+<script src="guide.js?v=F1.9t"></script>
+<script src="app.js?v=F1.9t"></script>
 </body></html>

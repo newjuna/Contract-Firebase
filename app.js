@@ -58,10 +58,10 @@ function input(id,label,value='',type='text',disabled=false,ph=''){return `<div 
 function text(id,label,value='',disabled=false){return `<div class="field"><label for="f_${id}">${escapeText(label)}</label><textarea id="f_${id}" ${disabled?'disabled':''}>${escapeText(value)}</textarea></div>`}
 function value(id){return $('f_'+id)?.value?.trim()||''}
 function switchTab(which){tab=which;toggleMenu(false);stopScan();if($(which+'Tab'))$('pageTitle').textContent=$(which+'Tab').textContent;clearInterval(roomTimer);clearInterval(wkTimer);for(const n of ['my','admin','review','tpl','staff','jobs','notice','vendors']){$(n).classList.toggle('hidden',n!==which);$(n+'Tab').classList.toggle('active',n===which)}if(which==='admin')loadAdmin();if(which==='review')loadReview();if(which==='tpl')loadTemplates();if(which==='staff')loadStaff();if(which==='jobs')loadJobs();if(which==='notice')loadNotices();if(which==='vendors')loadVendors();}
-/* F1.9s 홈 화면 앱(PWA): 서비스 워커 등록 (저장 안 함 · 홈 화면에 추가할 수 있게만) */
+/* F1.9t 홈 화면 앱(PWA): 서비스 워커 등록 (저장 안 함 · 홈 화면에 추가할 수 있게만) */
 if('serviceWorker' in navigator&&location.protocol==='https:')window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 // ★ 화면 버전: 여기 한 줄만 고침 (GitHub만 올리면 로그인 화면·앱 화면·메뉴에 모두 반영, Code.gs 수정 불필요)
-const UI_VERSION='26.10.24 F1.9s';
+const UI_VERSION='26.10.24 F1.9t';
 /* F1.8o 전화번호 · 사업자번호: 숫자만 쳐도 '-' 자동 (서버는 원래 숫자만 골라 씀) */
 function fmtTel(v){const d=String(v||'').replace(/\D/g,'').slice(0,11);if(d.startsWith('02'))return d.length<3?d:d.length<6?d.slice(0,2)+'-'+d.slice(2):d.length<10?d.slice(0,2)+'-'+d.slice(2,5)+'-'+d.slice(5):d.slice(0,2)+'-'+d.slice(2,6)+'-'+d.slice(6,10);
  return d.length<4?d:d.length<8?d.slice(0,3)+'-'+d.slice(3):d.length<11?d.slice(0,3)+'-'+d.slice(3,6)+'-'+d.slice(6):d.slice(0,3)+'-'+d.slice(3,7)+'-'+d.slice(7)}

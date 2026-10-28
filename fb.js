@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F1.9s';
+  const VERSION = '26.10.24 F1.9t';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   const CFG = {
     INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
@@ -253,7 +253,7 @@
     if (!USER) fail('로그인이 만료되었습니다. 다시 로그인해 주세요.');
     return { uid: USER.uid, email: lower(USER.email), mode: getMode() };
   }
-  /* F1.9s 마스터 = 기본 마스터(MASTER_EMAILS · 못 바꿈) + 데이터 관리 🔑에서 체크한 사람 (SETTINGS/masters.emails) */
+  /* F1.9t 마스터 = 기본 마스터(MASTER_EMAILS · 못 바꿈) + 데이터 관리 🔑에서 체크한 사람 (SETTINGS/masters.emails) */
   let MASTERS = new Set(MASTER_EMAILS), mastersP = null;
   function loadMasters(force) {
     if (!force && mastersP) return mastersP;
@@ -284,7 +284,7 @@
   async function staffOf(a, memo) {
     if (a.mode === 'VENDOR') return null;
     if (memo && 'staff' in memo) return memo.staff;
-    await loadMasters();  // F1.9s 체크로 받은 마스터
+    await loadMasters();  // F1.9t 체크로 받은 마스터
     let s = null;
     try { const d = await db.collection('STAFF').doc(a.email).get(); if (d.exists) s = d.data(); }
     catch (e) { if (e.code !== 'permission-denied') throw e; }
@@ -606,7 +606,7 @@
     await ref.set({ name: m.name, dept, role: m.role, companyEmail: m.companyEmail, loginEmail: m.gmail, active: 'Y', title: m.title, phone: m.phone, unitId: m.unitId, memberId: m.id,
       createdBy: (base && base.createdBy) || a.email, createdAt: (base && base.createdAt) || now(), updatedBy: a.email, updatedAt: now() });
   }
-  /** F1.9s 권한은 소속으로 자동: 안전보건팀(이름)과 그 아래 조직 = 안전보건팀 · 그 외 = 도급인 담당자 · 로그인 Gmail이 없으면 로그인 명단에 안 넣음 */
+  /** F1.9t 권한은 소속으로 자동: 안전보건팀(이름)과 그 아래 조직 = 안전보건팀 · 그 외 = 도급인 담당자 · 로그인 Gmail이 없으면 로그인 명단에 안 넣음 */
   function orgRoleOf(units, unitId, gmail, a) {
     if (!gmail) return 'NONE'; if (MASTER_EMAILS.includes(gmail)) return 'SAFETY';
     let u = units.find((x) => x.id === unitId), g = 0; while (u && g++ < 20) { if (/안전보건팀/.test(u.name)) return 'SAFETY'; const p = u.parent; u = units.find((x) => x.id === p); }
@@ -673,10 +673,10 @@
   API.adminStats = async (a) => { masterGate(a); return relay('adminStats', {}, true, 120000); };
   API.adminPreview = async (a, d) => { masterGate(a); return relay('adminPreview', { d: d || {} }, false, 120000); };
   API.adminDelete = async (a, token) => { masterGate(a); return relay('adminDelete', { token: String(token || '') }, false, 150000); };
-  /* F1.9s 데이터 관리 (왼쪽 목록 · 표로 보기 · 바로 처리) */
+  /* F1.9t 데이터 관리 (왼쪽 목록 · 표로 보기 · 바로 처리) */
   API.adminTree = async (a) => { masterGate(a); return relay('adminTree', {}, true, 120000); };
-  /* F1.9s 🔑 마스터 권한: 조직도 구성원 목록 + 체크 (화면이 Firestore에 바로 · 보안 규칙이 마스터만 허락) */
-  /* F1.9s 📄 업체 안내문: 내 직원 정보 (조직도 → 직원 명단에 맞춰 둔 소속 · 직책 · 연락처 · 회사메일) */
+  /* F1.9t 🔑 마스터 권한: 조직도 구성원 목록 + 체크 (화면이 Firestore에 바로 · 보안 규칙이 마스터만 허락) */
+  /* F1.9t 📄 업체 안내문: 내 직원 정보 (조직도 → 직원 명단에 맞춰 둔 소속 · 직책 · 연락처 · 회사메일) */
   API.flyerInfo = async (a) => {
     const s = await staffOnly(a);
     return { name: s.name || '', dept: s.dept || '', title: s.title || '', phone: s.phone || '', email: lower(s.companyEmail || '') };
@@ -1160,7 +1160,7 @@
     await db.collection('PERMITS').doc(id).set({ id, no, jobId: j.id, companyId: b.id, company: b.company, vendorUid: a.uid, date: t, data: raw, progress: '{}', status: 'ISSUED',
       issuedBy: a.email, issuedAt: now(), updatedAt: now(), approvedBy: '', approvedAt: '', approveNote: '' });
     audit(a, b.id, 'PERMIT_ISSUE', no + ' ' + j.id);
-    /* F1.9d 허가서 발행 메일 없음 · F1.9s 도급인 담당자 Teams (기다리지 않음 · 실패해도 발행은 그대로) */
+    /* F1.9d 허가서 발행 메일 없음 · F1.9t 도급인 담당자 Teams (기다리지 않음 · 실패해도 발행은 그대로) */
     relay('teams', { kind: 'PERMIT', id }).catch(() => {});
     return permitPack(a, b, j, jv, t);
   };
@@ -1283,7 +1283,7 @@
         foundDate: t, status: 'OPEN', actionMemo: '', after: [], actionDate: '', actionBy: '', actionAt: '' });
     });
     await B.commit(); audit(a, b.id, 'INSP_SUBMIT', id);
-    relay('teams', { kind: 'INSP', id }).catch(() => {});  // F1.9s 도급인 담당자 Teams (기다리지 않음)
+    relay('teams', { kind: 'INSP', id }).catch(() => {});  // F1.9t 도급인 담당자 Teams (기다리지 않음)
     return API.vendorJob(a, jobId);
   };
   /** [업체·직원] 지적사항 조치 등록 (조치일은 지적일 ~ 오늘) — 종료된 공사도 가능 */
