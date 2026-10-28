@@ -132,38 +132,119 @@ function renderInspList(){const d=inspJob,t=kstToday(),L=d.list,open=d.findings.
 async function inCheck(all){const ids=all?[]:[...document.querySelectorAll('.inck:checked')].map(x=>x.value),n=all?inspJob.list.filter(x=>!x.checkedAt).length:ids.length;if(!n){msg('확인할 일지를 체크해 주세요.');return}
  if(!confirm('순회점검일지 '+n+'건을 확인할까요?\n일지에 "도급인 확인: '+(state.staff?state.staff.name:'')+'"이 남습니다.'))return;
  try{inspJob=await call('checkInspections',inspJob.job.id,ids);renderInspList();msg(n+'건 확인했습니다.');refreshBadges();const j=jobData&&jobData.jobs.find(x=>x.id===inspJob.job.id);if(j)j.inspUnchecked=inspJob.list.filter(x=>!x.checkedAt).length}catch(e){}}
-/* ---------- F1.8i [마스터] 데이터 관리: 현황 · 지우기 (Firebase 콘솔에 안 들어가도 됨) ----------
- *  지우기 순서: 대상 고르기 → [미리보기](지울 개수) → '삭제' 입력 → [지우기] · 많으면 자동으로 이어서 요청 */
-let admData=null,admPv=null;
-const ADM_GROUP=[['업체 · 계약 전 서류',['COMPANIES','DOCUMENTS','DOC_SUBMISSIONS','CONTRACT_FORMS','PROFILES','EVALUATIONS','REVIEWS','RENEW_BACKUP']],['공사 · 현장',['JOBS','JOB_VENDORS','WORKERS','CREW','PERMITS','INSPECTIONS','FINDINGS','MEETINGS','MEET_LINKS','MEET_NOTICES','ATTEND','JOB_EVALS']],['이력',['NOTICES','AUDIT','MAIL_LOG']],['남기는 것',['STAFF','TEMPLATES']]];
-function sData(){jobsMode='admin';setTimeout(()=>admData?admRender():admLoad(),0);return '<div id="admBox"><div class="card"><p class="desc">데이터 현황을 불러오는 중입니다…</p></div></div>'}
-async function admLoad(){try{admData=await call('adminStats');admRender()}catch(e){const b=$('admBox');if(b)b.innerHTML='<div class="card"><p class="desc">'+escapeText(e.message||'불러오지 못했습니다.')+'</p><button class="button" type="button" onclick="admLoad()">다시 시도</button></div>'}}
-function admRender(){const b=$('admBox');if(!b||!admData)return;const d=admData,C={};d.counts.forEach(x=>C[x.col]=x);const dr=d.drive||{};
- const opt=(L,ph)=>'<option value="">'+ph+'</option>'+L.map(x=>'<option value="'+escapeText(x.id)+'">'+escapeText(x.name)+(x.status==='ENDED'?' · 종료':x.status&&x.status!=='OPEN'&&x.status!=='VERIFIED'?' · '+escapeText(x.status):'')+(x.at?' ('+escapeText(x.at)+')':'')+'</option>').join('');
- b.innerHTML='<div class="card"><div class="vh-top" style="align-items:center"><h2 style="margin:0">데이터 현황</h2><button class="button ghost" type="button" onclick="admLoad()">새로고침</button></div>'
-  +'<div class="dns" style="grid-template-columns:repeat(2,1fr)"><div class="dn"><b style="font-size:22px">'+d.total.toLocaleString()+'</b><span class="muted">Firestore 기록 (문서 수)</span></div><div class="dn"><b style="font-size:22px">'+dr.mb+' MB</b><span class="muted">드라이브 증빙 파일 '+dr.files+'개'+(dr.cut?' 이상':'')+'</span></div></div>'
-  +'<p class="muted" style="margin:8px 0 0">구글 드라이브 계정 전체 '+dr.usedGb+' GB / '+dr.limitGb+' GB · Firebase 무료 한도: 저장 1GB · 하루 읽기 5만 · 쓰기 2만 · 삭제 2만</p>'
-  +ADM_GROUP.map(([g,cols])=>'<details class="hist"'+(g==='남기는 것'?'':' open')+'><summary><b>'+g+'</b> · '+cols.reduce((s,c)=>s+((C[c]||{}).n||0),0).toLocaleString()+'건</summary><table class="rtable">'+cols.map(c=>'<tr><td>'+escapeText((C[c]||{}).label||c)+'</td><td style="text-align:right;width:80px">'+((C[c]||{}).n||0).toLocaleString()+'</td></tr>').join('')+'</table></details>').join('')+'</div>'
-  +'<div class="card"><h2>업체 1곳 지우기</h2><p class="muted">업체 정보 · 계약 전 서류 · 평가 · 그 업체의 작업자·허가서·점검·종료 평가 · 드라이브 업체 폴더</p><select id="f_admCo" class="vjsel" aria-label="지울 업체">'+opt(d.companies,'업체 고르기 ('+d.companies.length+'곳)')+'</select><button class="button ghost" type="button" style="width:100%;margin-top:8px" onclick="admAsk(\'company\')">미리보기</button></div>'
-  +'<div class="card"><h2>공사 1건 지우기</h2><p class="muted">공사 · 배정 · 작업자 · 허가서 · 순회점검 · 지적사항 · 협의체·합동점검 · 종료 평가 · 드라이브 공사 폴더</p><select id="f_admJob" class="vjsel" aria-label="지울 공사">'+opt(d.jobs,'공사 고르기 ('+d.jobs.length+'건)')+'</select><button class="button ghost" type="button" style="width:100%;margin-top:8px" onclick="admAsk(\'job\')">미리보기</button></div>'
-  +'<div class="card"><h2>오래된 이력 지우기</h2><p class="muted">사용 이력(AUDIT) · 메일 이력만 지웁니다. 업무 기록은 그대로입니다.</p><div class="row" style="align-items:center"><input id="f_admDays" type="number" min="7" max="3650" value="90" style="width:90px;padding:10px;border:1px solid var(--line);border-radius:10px;font:inherit" aria-label="며칠 지난 이력"><span>일 지난 이력</span><button class="button ghost" type="button" style="margin-left:auto" onclick="admAsk(\'logs\')">미리보기</button></div></div>'
-  +'<div class="card alertcard"><h2>전체 데이터 지우기 (운영 시작 전 초기화용)</h2><p class="muted">직원 명단 · 표준양식만 남기고 업체 · 서류 · 공사 · 기록을 모두 지웁니다. 드라이브 증빙 파일은 휴지통으로 (30일 안에 복구 가능). 로그인 계정은 남습니다.</p><button class="button ghost danger" type="button" style="width:100%" onclick="admAsk(\'all\')">미리보기</button></div>'
-  +'<div id="admPv"></div>'}
-/** [미리보기] 지울 개수 보여 주고 확인 칸 열기 */
-async function admAsk(kind){const p={kind};if(kind==='company'){p.id=$('f_admCo').value;if(!p.id){msg('지울 업체를 골라 주세요.');return}}if(kind==='job'){p.id=$('f_admJob').value;if(!p.id){msg('지울 공사를 골라 주세요.');return}}if(kind==='logs')p.days=Number($('f_admDays').value)||90;
- try{admPv=await call('adminPreview',p)}catch(e){return}const v=admPv,el=$('admPv');if(!el)return;
- el.innerHTML='<div class="card alertcard"><h2>지울 내용 · '+escapeText(v.title)+'</h2>'+(v.total||v.drive?'<table class="rtable">'+v.items.map(x=>'<tr><td>'+escapeText(x.label)+'</td><td style="text-align:right;width:80px">'+(x.n>=1000?'1000+':x.n)+'</td></tr>').join('')+(v.drive?'<tr><td>드라이브 폴더 (휴지통으로)</td><td style="text-align:right">'+v.drive+'</td></tr>':'')+'</table>'
-  +'<p class="desc" style="margin-top:10px">기록 <b>'+v.total.toLocaleString()+'건</b>은 되돌릴 수 없습니다. 지우려면 아래 칸에 <b>삭제</b>라고 적어 주세요. (10분 안에)</p><input id="f_admOk" autocomplete="off" placeholder="삭제" aria-label="확인 글자 (삭제)" style="width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;font:inherit;font-size:16px">'
-  +'<div class="row" style="margin-top:10px"><button class="button ghost" type="button" style="flex:1" onclick="admCancel()">취소</button><button class="button" type="button" style="flex:1" onclick="admRun()">지우기</button></div>':'<p class="muted">지울 기록이 없습니다.</p><button class="button ghost" type="button" onclick="admCancel()">닫기</button>')+'</div>';
- el.scrollIntoView({behavior:'smooth',block:'start'});setTimeout(()=>$('f_admOk')?.focus({preventScroll:true}),400)}
-function admCancel(){admPv=null;const el=$('admPv');if(el)el.innerHTML=''}
-/** [지우기] 50초씩 나눠서 끝날 때까지 이어서 요청 */
-async function admRun(){if(!admPv)return;if(value('admOk')!=='삭제'){inspFlag(['f_admOk'],'확인 칸에 "삭제"라고 적어 주세요');return}
- const tk=admPv.token,title=admPv.title;let n=0,tr=0;
+/* ---------- F1.9p [마스터] 데이터 관리 (조직도처럼 왼쪽 목록 · 오른쪽 처리) ----------
+ *  왼쪽: ⚠ 손볼 것 · 🏢 업체(상태별) · 🏗 공사(진행·종료) · 📋 표로 보기 · 🧾 오래된 이력 · ⛔ 전체 초기화
+ *  오른쪽: 이름 목록 → 누르면 상태 한 줄 + 바로 처리 버튼 + 빨간 지우기 (확인 1번) · 전체 초기화만 '삭제' 입력
+ *  업체·공사 통째 지우기 · 이력 · 초기화 = 예전 adminPreview(지울 개수 · 10분 확인표) → adminDelete(50초씩 이어서) */
+let admT=null,admS={t:'issues'},admOpen=new Set(['co']),admFold=false,admRowsD=null,admChk=new Set(),admQ='',admXp=new Set(),admCf=null,admEdit=false,admPv=null;
+const ADM_CO_G=[['pend','승인 대기'],['draft','작성·보완'],['sub','검토 중'],['ok','승인'],['rej','반려']],ADM_JOB_G=[['open','진행 중','OPEN'],['ended','종료','ENDED']];
+const ADM_TBL=[['PERMITS','작업허가서'],['INSP','순회점검'],['FIND','지적사항'],['WORKERS','작업자'],['MEET','미팅'],['EVALS','종료 평가'],['MAIL','메일·Teams 기록']];
+const ADM_CO_PILL={pend:['승인 대기','w'],draft:['작성 중','k'],sub:['검토 중','b'],ok:['승인','g'],rej:['반려','r']};
+const admQt=s=>escapeText(String(s==null?'':s).replace(/[^A-Za-z0-9_.:-]/g,''));  // onclick 안에 넣는 ID (글자 제한)
+function admCss(){if(typeof orgCss==='function')orgCss();if($('admCss'))return;const s=document.createElement('style');s.id='admCss';s.textContent=
+ '.ogs.adfold{width:30px;padding:6px 0}.ogsh button{border:0;background:none;color:var(--sub);font-size:14px;padding:0 3px;cursor:pointer}'
+ +'.ogf .adn{margin-left:auto;font-size:11px;color:var(--sub);padding-left:3px}.ogf.on .adn{color:#d1d5db}.ogf .adn.r{color:var(--accent);font-weight:700}.ogf.on .adn.r{color:#fca5a5}.ogf.adsub{padding-left:17px}'
+ +'.adr{display:flex;align-items:center;gap:6px;width:100%;border:0;border-bottom:1px solid #f0f1f4;background:none;text-align:left;font:inherit;color:inherit;padding:11px 2px;font-size:13.5px;cursor:pointer}.adr:hover{background:#fafafa}'
+ +'.adr .nm{flex:1;min-width:0}.adr .nm b{font-weight:600;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.adr .nm small{display:block;font-size:11px;color:var(--sub)}.adr .nm small.r{color:var(--accent)}.adr i{font-style:normal;color:#c0c4cc}'
+ +'.apl{flex:none;font-size:10.5px;border-radius:20px;padding:1px 7px;white-space:nowrap;font-weight:600;vertical-align:middle}.apl.w{background:#fff7ed;color:#b45309}.apl.b{background:#eef2ff;color:#3730a3}.apl.g{background:#ecfdf3;color:#15803d}.apl.r{background:#fdecec;color:var(--accent)}.apl.k{background:#f1f2f5;color:#566070}'
+ +'.adback{border:0;background:none;font:inherit;font-size:12px;color:var(--sub);padding:0 0 8px;cursor:pointer}.adst{font-size:12px;color:var(--sub);margin:-4px 0 14px;word-break:break-all;line-height:1.6}.adst .r{color:var(--accent)}'
+ +'.adbig{display:block;width:100%;border:1px solid var(--line);background:#fff;border-radius:11px;padding:12px 11px;font:inherit;font-size:13.5px;font-weight:600;text-align:left;margin:0 0 8px;color:var(--text);cursor:pointer}.adbig:hover{border-color:#9ca3af}'
+ +'.addel{display:block;width:100%;border:0;border-top:1px solid var(--line);background:none;color:var(--accent);font:inherit;font-size:13px;font-weight:700;padding:12px 0 0;margin-top:14px;text-align:left;cursor:pointer}'
+ +'.adcf{border:2px solid var(--accent);border-radius:12px;padding:12px 11px;margin-top:8px}.adcf.m{border-color:var(--main)}.adcf b{font-size:14px}.adcf p{font-size:12.5px;margin:4px 0 10px;color:#4b5563;white-space:pre-line}'
+ +'.adbtn{display:block;border:0;border-radius:10px;font:inherit;font-weight:700;font-size:13.5px;padding:11px;width:100%;cursor:pointer}.adbtn.d{background:var(--accent);color:#fff}.adbtn.g{background:#f0f2f6;color:#374457;margin-top:6px}.adbtn.m{background:var(--main);color:#fff}.adbtn:disabled{opacity:.4;cursor:default}'
+ +'.adinp{width:100%;border:1px solid #d1d5db;border-radius:9px;padding:10px;font:inherit;font-size:16px;margin:0 0 8px}.adempty{color:var(--sub);font-size:13px;padding:20px 4px;text-align:center}'
+ +'.adtbar{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--sub);padding:4px 2px 6px;border-bottom:2px solid var(--main)}.adtbar label{display:flex;align-items:center;gap:4px}'
+ +'.adtr{border-bottom:1px solid #f0f1f4}.adtr .h{display:flex;align-items:center;gap:7px;padding:9px 2px}.adtr.on{background:#fff8f8}.adtr input[type=checkbox],.adtbar input[type=checkbox]{width:18px;height:18px;flex:none;accent-color:var(--accent)}'
+ +'.adtr .nm{flex:1;min-width:0;cursor:pointer;background:none;border:0;text-align:left;font:inherit;color:inherit;padding:0}.adtr .nm b{display:block;font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.adtr .nm small{display:block;font-size:11px;color:var(--sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
+ +'.adtr .dt{display:none;font-size:12px;background:#f8f9fb;border-radius:8px;margin:0 2px 8px 27px;padding:6px 9px}.adtr.open .dt{display:block}.adtr .dt div{display:flex;gap:8px;padding:2px 0;word-break:break-all}.adtr .dt div span:first-child{color:var(--sub);width:62px;flex:none}'
+ +'.adsel{position:sticky;bottom:0;background:#fff;padding:8px 0 2px;margin-top:6px}.adsrch{width:100%;border:1px solid var(--line);border-radius:9px;padding:8px 10px;font:inherit;font-size:14px;margin:0 0 6px}';document.head.appendChild(s)}
+function sData(){jobsMode='admin';admCss();setTimeout(()=>admT?admDraw():admLoad(),0);return '<div id="admBox"><div class="card"><p class="desc">데이터를 불러오는 중입니다…</p></div></div>'}
+async function admLoad(){try{admT=await call('adminTree')}catch(e){const b=$('admBox');if(b&&!admT)b.innerHTML='<div class="card"><p class="desc">'+escapeText(e.message||'불러오지 못했습니다.')+'</p><button class="button" type="button" onclick="admLoad()">다시 시도</button></div>';return}
+ if(admS.id&&!(admS.t==='co'?admT.co:admT.job).some(x=>x.id===admS.id))admS={t:admS.t,sub:admS.sub};admDraw()}
+function admDraw(){const b=$('admBox');if(!b||!admT)return;admCss();b.innerHTML='<div class="ogw"><nav class="ogs'+(admFold?' adfold':'')+'" aria-label="데이터 종류">'+admSide()+'</nav><section class="ogm" aria-live="polite">'+admMain()+'</section></div>';if(admS.t==='tbl'&&$('admTb'))admTb()}
+function admGo(s){const same=admS.t==='tbl'&&s.t==='tbl'&&admS.sub===s.sub;admS=s;admCf=null;admEdit=false;admPv=null;if(!same){admChk=new Set();admQ='';admXp=new Set()}if(['co','job','tbl'].includes(s.t))admOpen.add(s.t);admDraw();window.scrollTo(0,0)}
+function admTg(k){if(admOpen.has(k)){admOpen.delete(k);admDraw();return}admGo({t:k,sub:{co:'pend',job:'open',tbl:'PERMITS'}[k]})}
+/* 왼쪽 */
+function admSide(){if(admFold)return '<div class="ogsh" style="justify-content:center"><button type="button" onclick="admFold=false;admDraw()" aria-label="목록 펼치기">»</button></div>';
+ const d=admT,on=(t,sub)=>admS.t===t&&(sub===undefined||admS.sub===sub)&&!admS.id?' on':'',on2=(t,sub)=>admS.t===t&&admS.sub===sub?' on':'',n=(v,r)=>'<span class="adn'+(r&&v?' r':'')+'">'+v+'</span>';
+ const grp=(k,l,v)=>'<button type="button" class="ogf" aria-expanded="'+admOpen.has(k)+'" onclick="admTg(\''+k+'\')"><span class="ic">'+(admOpen.has(k)?'▾':'▸')+'</span>'+l+(v===''?'':n(v))+'</button>';
+ const item=(cls,t,sub,label,v,r)=>'<button type="button" class="ogf'+cls+'" onclick="admGo({t:\''+t+'\''+(sub?',sub:\''+sub+'\'':'')+'})"><span class="ic"></span>'+label+(v===''?'':n(v,r))+'</button>';
+ return '<div class="ogsh">데이터<button type="button" onclick="admFold=true;admDraw()" aria-label="목록 접기 (오른쪽 넓게)">«</button></div>'
+  +item(on('issues'),'issues','','⚠ 손볼 것',d.issues.length,1)
+  +grp('co','🏢 업체',d.co.length)+(admOpen.has('co')?ADM_CO_G.map(g=>item(' adsub'+on2('co',g[0]),'co',g[0],g[1],d.co.filter(c=>c.g===g[0]).length)).join(''):'')
+  +grp('job','🏗 공사',d.job.length)+(admOpen.has('job')?ADM_JOB_G.map(g=>item(' adsub'+on2('job',g[0]),'job',g[0],g[1],d.job.filter(j=>j.st===g[2]).length)).join(''):'')
+  +grp('tbl','📋 표로 보기','')+(admOpen.has('tbl')?ADM_TBL.map(g=>item(' adsub'+on2('tbl',g[0]),'tbl',g[0],g[1],d.cnt[g[0]]||0)).join(''):'')
+  +item(on('logs'),'logs','','🧾 오래된 이력','')+item(on('reset'),'reset','','⛔ 전체 초기화','')}
+/* 오른쪽 */
+const admSubOf=(k,id)=>{if(k==='co'){const c=admT.co.find(x=>x.id===id);return c?c.g:'pend'}const j=admT.job.find(x=>x.id===id);return j&&j.st==='ENDED'?'ended':'open'};
+function admMain(){const d=admT,s=admS;
+ if(s.t==='issues')return '<div class="ogt">⚠ 손볼 것</div>'+(d.issues.length?d.issues.map(x=>'<button type="button" class="adr" onclick="admGo({t:\''+x.k+'\',sub:\''+admSubOf(x.k,x.id)+'\',id:\''+admQt(x.id)+'\'})"><span class="nm"><b>'+escapeText(x.n)+'</b><small class="r">'+escapeText(x.w)+'</small></span><i aria-hidden="true">›</i></button>').join(''):'<div class="adempty">✔ 손볼 것이 없습니다</div>')
+  +'<p class="muted" style="font-size:11.5px;margin-top:12px">메일·Teams 실패(7일) · 조직도에 없는 담당 이메일 · 승인/검토 대기 7일 · 종료일 지남 · 종료 후 평가 미확정 3일을 자동으로 찾습니다.</p>';
+ if(s.t==='co'&&!s.id){const g=ADM_CO_G.find(x=>x[0]===s.sub)||ADM_CO_G[0],L=d.co.filter(c=>c.g===g[0]);
+  return '<div class="ogt">'+g[1]+'</div>'+(L.length?L.map(c=>'<button type="button" class="adr" onclick="admGo({t:\'co\',sub:\''+g[0]+'\',id:\''+admQt(c.id)+'\'})"><span class="nm"><b>'+escapeText(c.name)+'</b><small'+(c.fail||c.noOrg?' class="r"':'')+'>'+escapeText(admCoLine(c))+'</small></span><i aria-hidden="true">›</i></button>').join(''):'<div class="adempty">없습니다</div>')}
+ if(s.t==='co')return admCoView();
+ if(s.t==='job'&&!s.id){const g=ADM_JOB_G.find(x=>x[0]===s.sub)||ADM_JOB_G[0],L=d.job.filter(j=>j.st===g[2]);
+  return '<div class="ogt">공사 · '+g[1]+'</div>'+(L.length?L.map(j=>'<button type="button" class="adr" onclick="admGo({t:\'job\',sub:\''+g[0]+'\',id:\''+admQt(j.id)+'\'})"><span class="nm"><b>'+escapeText(j.name)+'</b><small>'+escapeText(j.st==='OPEN'?(j.end?'~ '+j.end+(j.end<d.today?' (지남)':''):'종료일 없음'):j.ended+' 종료'+(j.left?' · 평가 '+j.left+'곳 남음':''))+'</small></span><i aria-hidden="true">›</i></button>').join(''):'<div class="adempty">없습니다</div>')}
+ if(s.t==='job')return admJobView();
+ if(s.t==='tbl')return admTblView();
+ if(s.t==='logs')return '<div class="ogt">🧾 오래된 이력 지우기</div><div class="adst">사용 이력 · 메일·Teams 기록 중 오래된 것만 (지금 '+Number(d.logs||0).toLocaleString()+'건) · 업무 기록은 그대로</div>'
+  +(admCf?admCfBox():[30,90,180].map(n=>'<button type="button" class="adbig" onclick="admAskPv({kind:\'logs\',days:'+n+'})">'+n+'일 지난 것</button>').join(''));
+ if(s.t==='reset')return '<div class="ogt">⛔ 전체 초기화</div><div class="adst">운영 시작 전 테스트 기록을 모두 지울 때만 씁니다. 직원 명단 · 조직도 · 표준양식 · 로그인 계정은 남습니다. 드라이브 파일은 휴지통으로 (30일 안에 복구 가능).</div>'
+  +(admCf?admCfBox():'<div class="adcf"><b>모든 업체 · 공사 · 기록을 지웁니다</b><p>되돌릴 수 없습니다. 아래 칸에 삭제 라고 적어야 버튼이 켜집니다.</p><input class="adinp" id="f_admAll" autocomplete="off" placeholder="삭제" aria-label="확인 글자 (삭제)" oninput="$(\'admAllBtn\').disabled=this.value.trim()!==\'삭제\'"><button type="button" class="adbtn d" id="admAllBtn" disabled onclick="admAskPv({kind:\'all\'})">지울 개수 보기</button></div>');
+ return ''}
+function admCoLine(c){return c.g==='pend'?'신청 '+c.days+'일째'+(c.fail?' · 메일 실패':c.noOrg?' · 조직도에 없는 주소':''):c.g==='sub'?'제출 '+c.days+'일째':c.g==='ok'?'승인 '+c.at:c.g==='rej'?'반려':(c.sub==='CORRECTION'?'보완 요청':'작성 중')+(c.renew?' · 재평가':'')}
+function admCoView(){const c=admT.co.find(x=>x.id===admS.id);if(!c)return '<div class="adempty">이미 지워졌습니다</div>';const p=ADM_CO_PILL[c.g]||['','k'];
+ let h='<button type="button" class="adback" onclick="admGo({t:\'co\',sub:\''+c.g+'\'})">‹ 목록</button><div class="ogt">'+escapeText(c.name)+' <span class="apl '+p[1]+'">'+escapeText(c.g==='draft'&&c.sub==='CORRECTION'?'보완 요청':p[0])+'</span></div>'
+  +'<div class="adst">담당 '+escapeText(c.ap||'-')+(c.fail?'<br><span class="r">⚠ 최근 이 주소로 메일·Teams 보내기 실패</span>':'')+(c.noOrg?'<br><span class="r">⚠ 조직도에 없는 주소입니다 (오타인지 확인)</span>':'')+'</div>';
+ if(admCf)return h+admCfBox();
+ if(admEdit)return h+'<div class="adcf m"><b>새 담당자 이메일</b><p>저장하면 새 주소로 승인 요청이 다시 갑니다 (메일 · Teams).</p><input class="adinp" id="f_admAp" type="email" autocomplete="off" value="'+escapeText(c.ap)+'" aria-label="새 담당자 이메일"><button type="button" class="adbtn m" onclick="admFix(\'apEmail\')">저장하고 다시 보내기</button><button type="button" class="adbtn g" onclick="admEdit=false;admDraw()">취소</button></div>';
+ const B=[];if(c.g==='pend')B.push(['✉ 담당자 이메일 바꾸기','admEdit=true;admDraw();setTimeout(()=>$(\'f_admAp\')?.focus(),50)'],['↻ 승인 요청 다시 보내기','admFix(\'resendApprove\')']);
+ if(c.g==='sub')B.push(['↻ 검토 요청 다시 보내기','admFix(\'resendReview\')'],['↩ 작성 중으로 되돌리기','admFix(\'toDraft\')']);
+ if(c.g==='ok')B.push(['📊 계약 전 평가 결과 보기','openEvalResult(\'CE_'+admQt(c.id)+'\',\'\')']);
+ return h+B.map(b=>'<button type="button" class="adbig" onclick="'+b[1]+'">'+b[0]+'</button>').join('')+'<button type="button" class="addel" onclick="admAskPv({kind:\'company\',id:\''+admQt(c.id)+'\'})">🗑 이 업체 지우기</button>'}
+function admJobView(){const j=admT.job.find(x=>x.id===admS.id);if(!j)return '<div class="adempty">이미 지워졌습니다</div>';const T=admT.today;
+ let h='<button type="button" class="adback" onclick="admGo({t:\'job\',sub:\''+(j.st==='ENDED'?'ended':'open')+'\'})">‹ 목록</button><div class="ogt">'+escapeText(j.name)+' <span class="apl '+(j.st==='OPEN'?'b':'k')+'">'+(j.st==='OPEN'?'진행 중':'종료')+'</span></div>'
+  +'<div class="adst">'+escapeText(j.store?'다이소 '+j.store+' · ':'')+(j.st==='OPEN'?escapeText(j.start+' ~ '+(j.end||''))+(j.end&&j.end<T?' <span class="r">(종료일 지남)</span>':''):escapeText(j.ended+' 종료')+' · '+(j.left?'<span class="r">평가 '+j.left+'곳 남음</span>':'평가 완료'))+'</div>';
+ if(admCf)return h+admCfBox();
+ const B=j.st==='ENDED'?[['↩ 종료 취소 (다시 진행 중으로)','admFix(\'unEnd\')'],['📊 종료 평가 화면 열기','smenu=\'jobs\';markSMenu();openJobEval(\''+admQt(j.id)+'\')']]:[['📂 공사 관리 화면 열기','sgo(\'jobs\')']];
+ return h+B.map(b=>'<button type="button" class="adbig" onclick="'+b[1]+'">'+b[0]+'</button>').join('')+'<button type="button" class="addel" onclick="admAskPv({kind:\'job\',id:\''+admQt(j.id)+'\'})">🗑 이 공사 지우기</button>'}
+/* 확인 창 (오른쪽 칸 안) */
+function admCfBox(){const c=admCf;if(c.k==='tbl')return '<div class="adcf"><b>정말 지울까요?</b><p>'+c.rows+'줄'+(c.kids?' + 딸린 기록 '+c.kids+'건':'')+'이 지워지고 되돌릴 수 없습니다.</p><button type="button" class="adbtn d" onclick="admRowsDel()">지우기</button><button type="button" class="adbtn g" onclick="admCf=null;admDraw()">취소</button></div>';
+ const v=admPv||{};if(!v.total&&!v.drive)return '<div class="adcf m"><b>지울 기록이 없습니다</b><p>'+escapeText(v.title||'')+'</p><button type="button" class="adbtn g" onclick="admCf=null;admPv=null;admDraw()">닫기</button></div>';
+ return '<div class="adcf"><b>정말 지울까요?</b><p>'+escapeText(v.title)+'\n기록 '+Number(v.total).toLocaleString()+'건'+(v.items.some(x=>x.n>=1000)?' 이상':'')+'이 함께 지워지고 되돌릴 수 없습니다.'+(v.drive?'\n드라이브 폴더 '+v.drive+'개는 휴지통으로 (30일 안에 복구 가능)':'')+'</p><button type="button" class="adbtn d" onclick="admRunDel()">지우기</button><button type="button" class="adbtn g" onclick="admCf=null;admPv=null;admDraw()">취소</button></div>'}
+async function admAskPv(p){try{admPv=await call('adminPreview',p)}catch(e){return}admCf={k:'pv',kind:p.kind};admDraw()}
+/** 지우기 (50초씩 나눠서 끝날 때까지 이어서) */
+async function admRunDel(){if(!admPv)return;const tk=admPv.token,title=admPv.title,kind=admCf&&admCf.kind;let n=0,tr=0;
  try{for(let i=0;i<40;i++){const r=await call('adminDelete',tk);n+=r.deleted;tr+=r.trashed||0;if(!r.more)break;msg('지우는 중… '+n.toLocaleString()+'건 (계속)')}}
- catch(e){admPv=null;admLoad();return}
- admPv=null;cacheClear();jobData=null;jobAt=0;if(typeof svData!=='undefined')svData=null;
+ catch(e){admPv=null;admCf=null;admLoad();return}
+ admPv=null;admCf=null;admRowsD=null;cacheClear();jobData=null;jobAt=0;if(typeof svData!=='undefined')svData=null;
+ if(kind==='company'||kind==='job')admS={t:admS.t,sub:admS.sub};if(kind==='all')admS={t:'issues'};
  popup('지우기 완료',title+'\n\n기록 '+n.toLocaleString()+'건'+(tr?'\n드라이브 폴더 '+tr+'개 → 휴지통 (30일 안에 복구 가능)':''),'확인');admLoad()}
+/** 바로 처리 */
+async function admFix(act){const id=admS.id;let email='';
+ if(act==='apEmail'){email=($('f_admAp')?.value||'').trim().toLowerCase();if(!/^[^\s@]+@daiso\.co\.kr$/.test(email)){inspFlag(['f_admAp'],'@daiso.co.kr 회사메일을 적어 주세요');return}}
+ if(act==='toDraft'&&!await askOk('작성 중으로 되돌리기','업체가 서류를 다시 고칠 수 있게 「작성 중」으로 되돌립니다.\n업체가 다시 제출하면 검토 요청이 새로 갑니다.','되돌리기'))return;
+ if(act==='unEnd'&&!await askOk('공사 종료 취소','이 공사를 다시 「진행 중」으로 바꿉니다.\n작성 중이던 종료 평가는 지워지고, 확정된 평가는 그대로 남습니다.','종료 취소'))return;
+ let r;try{r=await call('adminFix',act,id,email)}catch(e){return}admEdit=false;cacheClear();jobData=null;jobAt=0;
+ if(act==='toDraft')admS={t:'co',sub:'draft',id};if(act==='unEnd')admS={t:'job',sub:'open',id};
+ popup('처리 완료',r.msg||'처리했습니다.','확인');admLoad()}
+/* 📋 표로 보기 (예전 시트처럼: 체크해서 지우기) */
+function admTblView(){const k=admS.sub,t=ADM_TBL.find(x=>x[0]===k)||ADM_TBL[0];
+ if(!admRowsD||admRowsD.kind!==k){call('adminRows',k).then(r=>{admRowsD=r;if(admS.t==='tbl'&&admS.sub===k)admDraw()}).catch(()=>{});return '<div class="ogt">📋 '+t[1]+'</div><div class="adempty">불러오는 중입니다…</div>'}
+ const all=admRowsD.rows;[...admChk].forEach(id=>{if(!all.some(r=>r.id===id))admChk.delete(id)});const kids=all.filter(r=>admChk.has(r.id)).reduce((s,r)=>s+(r.kids||0),0);
+ return '<div class="ogt">📋 '+t[1]+' <span class="muted" style="font-weight:400;font-size:12px">'+all.length+'줄'+(admRowsD.more?' (최근 300줄만)':'')+'</span></div>'
+  +'<input class="adsrch" id="f_admQ" placeholder="🔍 업체 · 공사 · 날짜로 거르기" value="'+escapeText(admQ)+'" oninput="admQ=this.value;admTb()" aria-label="표 거르기">'
+  +'<div id="admTb"></div>'
+  +(admCf&&admCf.k==='tbl'?admCfBox():'<div class="adsel">'+(admChk.size?'<button type="button" class="adbtn d" onclick="admCf={k:\'tbl\',rows:'+admChk.size+',kids:'+kids+'};admDraw()">🗑 선택한 '+admChk.size+'줄 지우기'+(kids?' (+딸린 '+kids+'건)':'')+'</button>':'<div class="muted" style="font-size:12px;text-align:center">☐ 체크해서 지울 줄을 고르세요 · 줄을 누르면 내용이 펼쳐집니다</div>')+'</div>')}
+function admTbL(){const q=admQ.trim();return (admRowsD?admRowsD.rows:[]).filter(r=>!q||(r.a+' '+r.b).includes(q))}
+function admTb(){const el=$('admTb');if(!el||!admRowsD)return;const L=admTbL(),allOn=L.length&&L.every(r=>admChk.has(r.id));
+ el.innerHTML='<div class="adtbar"><label><input type="checkbox" '+(allOn?'checked':'')+' onchange="admCkAll(this.checked)"> 보이는 것 모두</label><span style="margin-left:auto">'+L.length+'줄</span></div>'
+  +(L.length?L.map((r,i)=>'<div class="adtr'+(admChk.has(r.id)?' on':'')+(admXp.has(r.id)?' open':'')+'"><div class="h"><input type="checkbox" aria-label="'+escapeText(r.a)+' 선택" '+(admChk.has(r.id)?'checked':'')+' onchange="admCk('+i+',this.checked)"><button type="button" class="nm" aria-expanded="'+admXp.has(r.id)+'" onclick="admXpT('+i+')"><b>'+escapeText(r.a)+'</b><small>'+escapeText(r.b)+'</small></button><span class="apl '+escapeText(r.p[1])+'">'+escapeText(r.p[0])+'</span></div><div class="dt">'+(r.d||[]).filter(x=>x[1]!==''&&x[1]!=null).map(x=>'<div><span>'+escapeText(x[0])+'</span><span>'+escapeText(x[1])+'</span></div>').join('')+'</div></div>').join(''):'<div class="adempty">맞는 줄이 없습니다</div>')}
+function admCk(i,v){const r=admTbL()[i];if(!r)return;v?admChk.add(r.id):admChk.delete(r.id);admCf=null;const q=admQ;admDraw();if(q){const e=$('f_admQ');if(e){e.focus();e.setSelectionRange(q.length,q.length)}}}
+function admCkAll(v){admTbL().forEach(r=>v?admChk.add(r.id):admChk.delete(r.id));admCf=null;admDraw()}
+function admXpT(i){const r=admTbL()[i];if(!r)return;admXp.has(r.id)?admXp.delete(r.id):admXp.add(r.id);admTb()}
+async function admRowsDel(){const k=admS.sub,ids=[...admChk];if(!ids.length)return;let r;try{r=await call('adminRowsDelete',k,ids)}catch(e){return}
+ admChk=new Set();admCf=null;admRowsD=null;cacheClear();jobData=null;jobAt=0;msg(r.rows+'줄'+(r.deleted>r.rows?' (+딸린 '+(r.deleted-r.rows)+'건)':'')+'을 지웠습니다.');admLoad()}
 /* ---------- F1.8k [마스터] 도급인 책임자 설정 ----------
  *  총괄책임자(김기호) → 위임받는 책임자(곽동민) · 담당자(비우면 마스터 직원 이름)
  *  위임장 2장 · 순회점검 승인 · 회의록·점검표 머리 · 규정 "갑" 현장대리인에 그대로 들어감 */
