@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F1.9f';
+  const VERSION = '26.10.24 F1.9g';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   const CFG = {
     INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
@@ -544,7 +544,7 @@
   /** F1.8g 이수증 보기: 파일 내용만 받아 화면 안 창에 띄움 (구글 드라이브 화면 안 열림) */
   API.viewCert = async (a, docId) => relay('certView', { docId: tidy(docId, 60) }, true);
   /* ---------- F1.8k 도급인 책임자 (SETTINGS/principal · 중계 서버 PRINCIPAL_DEF_와 같은 기본값) ---------- */
-  const PRINCIPAL_DEF = { ceo: { name: '김기호', rank: '부사장', title: '안전보건총괄책임자', org: '대표이사' },
+  const PRINCIPAL_DEF = { ceo: { name: '김기호', rank: '대표이사', title: '안전보건총괄책임자', org: '경영진' },
     delegate: { name: '곽동민', rank: '부장', title: '인테리어부장', org: '영업본부 매장지원부문 인테리어부' }, manager: { name: '', rank: '', org: '' } };
   let PRINC = null;
   async function principal(force) {
@@ -557,10 +557,84 @@
   API.principalGet = async (a) => { await staffOnly(a); return { ...(await principal(true)), def: PRINCIPAL_DEF }; };
   API.principalSave = async (a, d) => {
     if (!isMaster(a)) fail('마스터 계정만 고칠 수 있습니다.');
-    const o = {}; ['ceo', 'delegate', 'manager'].forEach((k) => { o[k] = {}; ['name', 'rank', 'title', 'org'].forEach((f) => { o[k][f] = tidy(((d || {})[k] || {})[f], 60); }); });
+    const o = {}; ['ceo', 'delegate', 'manager'].forEach((k) => { o[k] = {}; ['name', 'rank', 'title', 'org', 'memberId'].forEach((f) => { o[k][f] = tidy(((d || {})[k] || {})[f], 60); }); });  // F1.9g memberId = 조직·구성원에서 고른 사람
     if (!o.ceo.name || !o.delegate.name) fail('총괄책임자와 위임받는 책임자 이름은 꼭 적어 주세요.');
     await db.collection('SETTINGS').doc('principal').set({ ...o, updatedAt: now(), updatedBy: a.email }); audit(a, '', 'PRINCIPAL_SAVE', o.ceo.name + ' → ' + o.delegate.name);
     return API.principalGet(a);
+  };
+  /* ---------- F1.9g 조직·구성원 (마스터) ----------
+   *  SETTINGS/org.units = 조직도 [{id, name, kind(경영진·본부·부문·부·팀), parent}] (배열 순서 = 화면 순서)
+   *  ORG_MEMBERS/{M-…}  = 구성원 {unitId, name, title(직책), phone, companyEmail, gmail(로그인), role(SAFETY·CLIENT·NONE)}
+   *  앱 로그인 권한은 예전처럼 STAFF/{로그인 Gmail} — 구성원을 저장할 때 자동으로 맞춤 (NONE이면 STAFF에서 뺌) */
+  const ORG_SEED = [['U-EXEC', '경영진', '경영진', ''], ['U-SALES', '영업본부', '본부', ''], ['U-SSD', '매장지원부문', '부문', 'U-SALES'], ['U-INT', '인테리어부', '부', 'U-SSD'],
+    ['U-INT1', '인테리어1팀', '팀', 'U-INT'], ['U-INT2', '인테리어2팀', '팀', 'U-INT'], ['U-NEW', '신축팀', '팀', 'U-INT'], ['U-FAC', '매장시설관리팀', '팀', 'U-INT'],
+    ['U-HR', '인사총무본부', '본부', ''], ['U-CUL', '기업문화관리부', '부', 'U-HR'], ['U-SAFE', '안전보건팀', '팀', 'U-CUL']].map(([id, name, kind, parent]) => ({ id, name, kind, parent }));
+  const ORG_KINDS = ['경영진', '본부', '부문', '부', '팀'], ORG_ROLE_OK = { SAFETY: 1, CLIENT: 1, NONE: 1 };
+  const orgGate = (a) => { if (!isMaster(a)) fail('마스터 계정만 조직·구성원을 관리할 수 있습니다.'); };
+  async function orgUnits() { const d = await db.collection('SETTINGS').doc('org').get().catch(() => null); return d && d.exists && Array.isArray(d.data().units) ? d.data().units : null; }
+  const memView = (m) => ({ id: m.id, unitId: m.unitId || '', name: m.name || '', title: m.title || '', phone: m.phone || '', companyEmail: m.companyEmail || '', gmail: m.gmail || '', role: ORG_ROLE_OK[m.role] ? m.role : 'NONE' });
+  API.orgGet = async (a) => {
+    orgGate(a);
+    let units = await orgUnits(); if (!units) { units = ORG_SEED; await db.collection('SETTINGS').doc('org').set({ units, updatedAt: now(), updatedBy: a.email }); }
+    let mem = docs(await db.collection('ORG_MEMBERS').get());
+    if (!mem.length) {  // 처음 한 번: 예전 직원 명단 + 도급인 책임자로 채움 (소속은 부서 이름이 같은 팀으로)
+      const st = docs(await db.collection('STAFF').get()), P = await principal(true), B = db.batch(), byName = (n) => (units.find((u) => u.name === String(n || '').trim()) || {}).id || '';
+      const add = (o) => { const id = 'M-' + rand8(); B.set(db.collection('ORG_MEMBERS').doc(id), { id, ...o, createdAt: now(), createdBy: a.email }); mem.push({ id, ...o }); };
+      st.forEach((s) => add({ unitId: byName(s.dept) || (s.role === 'SAFETY' ? 'U-SAFE' : ''), name: s.name || '', title: s.title || '', phone: s.phone || '', companyEmail: s.companyEmail || '', gmail: s.loginEmail || s.id, role: s.active === 'N' ? 'NONE' : s.role === 'SAFETY' ? 'SAFETY' : 'CLIENT' }));
+      if (!mem.some((m) => m.name === P.ceo.name)) add({ unitId: 'U-EXEC', name: P.ceo.name, title: '대표이사', phone: '', companyEmail: '', gmail: '', role: 'NONE' });
+      if (!mem.some((m) => m.name === P.delegate.name)) add({ unitId: 'U-INT', name: P.delegate.name, title: P.delegate.rank || '부장', phone: '', companyEmail: '', gmail: '', role: 'NONE' });
+      await B.commit();
+    }
+    return { me: a.email, units, members: mem.map(memView).sort((x, y) => x.name.localeCompare(y.name, 'ko')), principal: await principal(true) };
+  };
+  /** 구성원 → 로그인 명단(STAFF) 맞추기 */
+  async function staffSync(a, m, units, oldGmail) {
+    const unit = units.find((u) => u.id === m.unitId), dept = unit ? unit.name : '', keep = (g) => g === a.email || MASTER_EMAILS.includes(g);
+    if (oldGmail && oldGmail !== m.gmail && !keep(oldGmail)) await db.collection('STAFF').doc(oldGmail).delete().catch(() => {});
+    if (!m.gmail) return;
+    const ref = db.collection('STAFF').doc(m.gmail), cur = await ref.get().catch(() => null), base = cur && cur.exists ? cur.data() : null;
+    if (m.role === 'NONE') { if (base && !keep(m.gmail)) await ref.delete(); return; }
+    await ref.set({ name: m.name, dept, role: m.role, companyEmail: m.companyEmail, loginEmail: m.gmail, active: 'Y', title: m.title, phone: m.phone, unitId: m.unitId, memberId: m.id,
+      createdBy: (base && base.createdBy) || a.email, createdAt: (base && base.createdAt) || now(), updatedBy: a.email, updatedAt: now() });
+  }
+  API.orgSaveUnits = async (a, units) => {
+    orgGate(a);
+    const L = (Array.isArray(units) ? units : []).slice(0, 200).map((u) => ({ id: tidy(u && u.id, 20), name: tidy(u && u.name, 40), kind: ORG_KINDS.includes(u && u.kind) ? u.kind : '팀', parent: tidy(u && u.parent, 20) })).filter((u) => /^U-[A-Z0-9-]{1,16}$/.test(u.id) && u.name);
+    if (!L.length) fail('조직이 하나도 없습니다.');
+    const ids = new Set(L.map((u) => u.id)); L.forEach((u) => { if (!ids.has(u.parent) || u.parent === u.id) u.parent = ''; });
+    L.forEach((u) => { let p = u.parent, g = 0; while (p && g++ < 20) { if (p === u.id) { u.parent = ''; break; } p = (L.find((x) => x.id === p) || {}).parent; } });  // 돌고 도는 위치 막기
+    await db.collection('SETTINGS').doc('org').set({ units: L, updatedAt: now(), updatedBy: a.email }); audit(a, '', 'ORG_SAVE', L.length + '개 조직');
+    // 팀 이름을 바꾸면 로그인 명단의 부서 표시도 맞춤
+    const mem = docs(await db.collection('ORG_MEMBERS').get());
+    await Promise.all(mem.filter((m) => m.gmail && m.role !== 'NONE').map((m) => { const u = L.find((x) => x.id === m.unitId); return db.collection('STAFF').doc(m.gmail).update({ dept: u ? u.name : '', unitId: m.unitId || '' }).catch(() => {}); }));
+    return API.orgGet(a);
+  };
+  API.orgSaveMember = async (a, d) => {
+    orgGate(a);
+    const units = (await orgUnits()) || ORG_SEED, id = /^M-[A-Za-z0-9]{1,12}$/.test(String((d && d.id) || '')) ? d.id : '';
+    const m = { unitId: tidy(d && d.unitId, 20), name: tidy(d && d.name, 40), title: tidy(d && d.title, 30), phone: tidy(d && d.phone, 30), companyEmail: lower(tidy(d && d.companyEmail, 160)), gmail: lower(tidy(d && d.gmail, 160)), role: ORG_ROLE_OK[d && d.role] ? d.role : 'NONE' };
+    const bad = []; if (!units.some((u) => u.id === m.unitId)) bad.push('소속'); if (!m.name) bad.push('이름'); if (!m.title) bad.push('직책');
+    if (m.companyEmail && !isInternalEmail(m.companyEmail)) bad.push('회사 이메일 (@' + CFG.APPROVER_DOMAINS.join(', @') + ' 주소만)');
+    if (m.gmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(m.gmail)) bad.push('로그인 Gmail 형식'); if (m.role !== 'NONE' && !m.gmail) bad.push('로그인 Gmail (앱을 쓰려면 꼭 필요)');
+    if (bad.length) fail('다음 항목을 확인해 주세요:\n- ' + bad.join('\n- '));
+    if ((m.gmail === a.email || MASTER_EMAILS.includes(m.gmail)) && m.role !== 'SAFETY') fail('마스터 계정은 안전보건팀 권한에서 뺄 수 없습니다.');
+    const all = docs(await db.collection('ORG_MEMBERS').get()); if (m.gmail && all.some((x) => x.gmail === m.gmail && x.id !== id)) fail('이미 다른 구성원에 등록된 로그인 Gmail입니다.');
+    const old = id ? all.find((x) => x.id === id) : null; if (id && !old) fail('고칠 구성원을 찾을 수 없습니다. 화면을 새로 고쳐 주세요.');
+    const mid = id || 'M-' + rand8();
+    await db.collection('ORG_MEMBERS').doc(mid).set({ id: mid, ...m, createdAt: (old && old.createdAt) || now(), createdBy: (old && old.createdBy) || a.email, updatedAt: now(), updatedBy: a.email });
+    await staffSync(a, { id: mid, ...m }, units, old && old.gmail);
+    audit(a, '', id ? 'MEMBER_EDIT' : 'MEMBER_ADD', m.name + ' ' + m.role + ' ' + m.gmail);
+    return API.orgGet(a);
+  };
+  API.orgDeleteMember = async (a, id) => {
+    orgGate(a);
+    const ref = db.collection('ORG_MEMBERS').doc(tidy(id, 20)), s = await ref.get(); if (!s.exists) fail('구성원을 찾을 수 없습니다.');
+    const m = s.data(), P = await principal(true);
+    if (m.gmail === a.email || MASTER_EMAILS.includes(m.gmail)) fail('마스터 계정은 삭제할 수 없습니다.');
+    if (['ceo', 'delegate', 'manager'].some((k) => (P[k] || {}).memberId === m.id)) fail('도급인 책임자로 지정된 사람입니다. ③ 도급인 책임자에서 다른 사람으로 바꾼 뒤 삭제해 주세요.');
+    await ref.delete(); if (m.gmail) await db.collection('STAFF').doc(m.gmail).delete().catch(() => {});
+    audit(a, '', 'MEMBER_DELETE', m.name + ' ' + (m.gmail || ''));
+    return API.orgGet(a);
   };
   /** 위임장 · 현장대리인계 보기 (중계 서버가 양식을 만들어 줌) */
   API.jobPaper = async (a, jobId, kind, companyId) => relay('jobPaper', { jobId: tidy(jobId, 40), kind: tidy(kind, 10), companyId: tidy(companyId, 40) }, true);
