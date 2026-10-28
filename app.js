@@ -23,12 +23,12 @@ function loadStart(name){loadCount++;if(loadCount>1)return;const rd=READS.has(na
  loadTimer=setInterval(()=>{const s=Math.floor((Date.now()-t0)/1000);$('loadSec').textContent=s?s+'초':'';if(s>=12&&$('loadReload'))$('loadReload').hidden=false;/* F1.9i 오래 걸리면 새로 고침 */$('loadHint').textContent=s<3?'잠시만 기다려 주세요':s<10?(rd?'구글 시트에서 자료를 모으고 있습니다 · 정상 진행 중':'입력한 내용을 구글 시트에 기록하고 있습니다 · 정상 진행 중'):s<25?'보통 5~15초 걸립니다 · 오류가 아니니 그대로 기다려 주세요':'서버가 평소보다 느립니다 · 창을 닫지 말고 조금만 더 기다려 주세요'},500)}
 function loadEnd(){loadCount=Math.max(0,loadCount-1);if(loadCount)return;clearInterval(loadTimer);clearTimeout(coverTimer);setTimeout(()=>{if(!loadCount)$('cover').style.display='none'},120)}
 /* v5.8 빠른 화면: 조회는 화면을 가리지 않고 위쪽 얇은 선만 표시 · 저장·제출·파일 만들기만 로딩 창 */
-const READS=new Set(['portalData','myStatus','myJobs','vendorJob','jobBoard','meetingDetail','permitList','permitDetail','getPermit','inspList','inspMine','jobEvalList','noticeList','vendorList','staffList','templateAdminList','reviewList','applications','getReviewData','getMeetingPhoto','getInspPhoto','myBadges','evalResult','orgGet','adminTree','adminRows']);
+const READS=new Set(['portalData','myStatus','myJobs','vendorJob','jobBoard','meetingDetail','permitList','permitDetail','getPermit','inspList','inspMine','jobEvalList','noticeList','vendorList','staffList','templateAdminList','reviewList','applications','getReviewData','getMeetingPhoto','getInspPhoto','myBadges','evalResult','orgGet','adminTree','adminRows','adminPreview','masterList']);
 let barN=0,barT=null;
 function barStart(){barN++;$('topLoad')?.classList.add('on');clearTimeout(barT);barT=setTimeout(()=>{if(barN)$('topNote')?.classList.add('on')},700)}
 function barEnd(){barN=Math.max(0,barN-1);if(!barN){clearTimeout(barT);$('topLoad')?.classList.remove('on');$('topNote')?.classList.remove('on')}}
 /* 한 번 본 화면은 이 기기에 저장해 두고 다음에 바로 보여 줌 (뒤에서 최신으로 바꿈). 로그아웃하면 지움 */
-const CACHE_FN=new Set(['portalData','myJobs','jobBoard','vendorJob','noticeList','vendorList','getPermit']);
+const CACHE_FN=new Set(['adminTree','portalData','myJobs','jobBoard','vendorJob','noticeList','vendorList','getPermit']);
 let CUSER='';try{CUSER=localStorage.getItem('fcUser')||''}catch(e){}
 const ck_=(n,a)=>'fc:'+CUSER+':'+n+':'+JSON.stringify(a||[]);
 function cacheGet(n,a){if(!CUSER||!CACHE_FN.has(n))return null;try{const v=localStorage.getItem(ck_(n,a));return v?JSON.parse(v):null}catch(e){return null}}
@@ -59,7 +59,7 @@ function text(id,label,value='',disabled=false){return `<div class="field"><labe
 function value(id){return $('f_'+id)?.value?.trim()||''}
 function switchTab(which){tab=which;toggleMenu(false);stopScan();if($(which+'Tab'))$('pageTitle').textContent=$(which+'Tab').textContent;clearInterval(roomTimer);clearInterval(wkTimer);for(const n of ['my','admin','review','tpl','staff','jobs','notice','vendors']){$(n).classList.toggle('hidden',n!==which);$(n+'Tab').classList.toggle('active',n===which)}if(which==='admin')loadAdmin();if(which==='review')loadReview();if(which==='tpl')loadTemplates();if(which==='staff')loadStaff();if(which==='jobs')loadJobs();if(which==='notice')loadNotices();if(which==='vendors')loadVendors();}
 // ★ 화면 버전: 여기 한 줄만 고침 (GitHub만 올리면 로그인 화면·앱 화면·메뉴에 모두 반영, Code.gs 수정 불필요)
-const UI_VERSION='26.10.24 F1.9p';
+const UI_VERSION='26.10.24 F1.9q';
 /* F1.8o 전화번호 · 사업자번호: 숫자만 쳐도 '-' 자동 (서버는 원래 숫자만 골라 씀) */
 function fmtTel(v){const d=String(v||'').replace(/\D/g,'').slice(0,11);if(d.startsWith('02'))return d.length<3?d:d.length<6?d.slice(0,2)+'-'+d.slice(2):d.length<10?d.slice(0,2)+'-'+d.slice(2,5)+'-'+d.slice(5):d.slice(0,2)+'-'+d.slice(2,6)+'-'+d.slice(6,10);
  return d.length<4?d:d.length<8?d.slice(0,3)+'-'+d.slice(3):d.length<11?d.slice(0,3)+'-'+d.slice(3,6)+'-'+d.slice(6):d.slice(0,3)+'-'+d.slice(3,7)+'-'+d.slice(7)}
