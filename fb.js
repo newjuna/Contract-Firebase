@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F1.9g';
+  const VERSION = '26.10.24 F1.9h';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   const CFG = {
     INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
@@ -376,10 +376,10 @@
       org: [{ role: '안전관리책임자 (현장대리인)', name: p.siteManager || '', phone: p.siteManagerPhone || '' }],  // F1.8k 협력업체 관리자 = 현장대리인 1명
       agent: { birth: '', addr: '', licKind: '', licType: '', licNo: '' },  // F1.8k 현장대리인계 (공사마다 자동)
       /* F1.8r 위험성평가: 업종 기본 공종의 위험요인을 전부 체크해 두고 업체가 해당 없는 것만 뺌 */
-      works: w.length ? w : ['SCAF', 'LOAD'], risks: RISK_ALL.filter((r) => (w.length ? w : ['SCAF', 'LOAD']).includes(r.t)).map((r) => r.id),
-      scen: ['FIRE'].concat(w.includes('ELEC') ? ['SHOCK'] : []).concat((w.length ? w : ['SCAF']).some((k) => ['SCAF', 'LGC', 'GLASS', 'SIGN', 'STOCK'].includes(k)) ? ['FALL'] : []),
+      works: [], risks: [],  /* F1.9h 처음엔 비어 있음 · 업체가 직접 고름 (업종 w는 참고용) */
+      scen: [],
       hospital: '', years: [y - 3, y - 2, y - 1], accidents: ['', '', ''], evidence: [], practice: '',
-      drill: { route: '', assembly: '', equip: '', manager: p.siteManager || '', items: ['NEW', 'EVAC', 'FIRE'] } };  // F1.8c 비상대피훈련 계획 (중계 서버 planDefaults_와 같게)
+      drill: { route: '', assembly: '', equip: '', manager: p.siteManager || '', items: [] } };  // F1.8c 비상대피훈련 계획 (중계 서버 planDefaults_와 같게)
   }
   /** 업체 화면용: 앱 작성 서류 (규정 C01 · 계획서 C02) */
   function contractFormsView(b, forms, files, p1) {
