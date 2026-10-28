@@ -6,11 +6,11 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F1.8z';
+  const VERSION = '26.10.24 F1.8z2';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   const CFG = {
     INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
-    TEST_SKIP_FILES: true,          // 테스트 기간: 파일 없이도 신청·제출 (운영 전 false)
+    TEST_SKIP_FILES: false,         // F1.8z 운영 (테스트 모드 끔): 계약 전 검토 승인된 업체만 공사 업무·배정 · 규정·계획서 작성 필수
     APPROVER_DOMAINS: ['daiso.co.kr'],
   };
   const MASTER_EMAILS = ['zxcv6309@gmail.com'];  // firestore.rules의 isMaster()와 같게 유지
