@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F1.8x';
+  const VERSION = '26.10.24 F1.8y';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   const CFG = {
     INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
@@ -487,6 +487,12 @@
   API.registerBusiness = async (a, d, cert) => {
     if (a.mode === 'STAFF') fail('다이소 담당자로 접속했습니다. 업체 신청은 로그인 화면에서 [협력업체]로 다시 로그인해 주세요.');
     await relay('register', { d: d || {}, cert: cert && cert.data ? cert : null });
+    return API.portalData(a);
+  };
+  /** F1.8y [업체] 승인 대기 중 신청 내용 고쳐 다시 보내기 (등록증은 새로 고른 경우만) */
+  API.reRegisterBusiness = async (a, d, cert) => {
+    if (a.mode === 'STAFF') fail('다이소 담당자로 접속했습니다.');
+    await relay('reRegister', { d: d || {}, cert: cert && cert.data ? cert : null });
     return API.portalData(a);
   };
   /** [직원] 사업자 등록 신청 목록 */
@@ -988,7 +994,7 @@
     if (p) return { exists: true, today: today(), permit: permitFull(p) };
     if (dt !== today()) fail('해당 날짜의 허가서가 없습니다.');
     const last = list.sort((x, y) => (x.date < y.date ? 1 : -1))[0], ld = last ? permitData(last) : null, sm = await siteManagerOf(a, b);
-    const base = { applicant: { dept: b.company, title: '현장책임자', name: sm }, period: { start: '08:00', end: '17:00' }, place: j.storeName, device: '', workName: '', attach: {}, pre: { procChange: '무', workDiff: '무' }, safety: {}, supp: {},
+    const base = { applicant: { dept: b.company, title: '현장책임자', name: sm }, period: { start: '08:00', end: '17:00' }, place: '다이소 ' + j.storeName, device: '', workName: '', attach: {}, pre: { procChange: '무', workDiff: '무' }, safety: {}, supp: {},
       gas: [], gasNote: '', confirm: { manager: sm, witness: '' }, complete: {}, etc: '', issuer: { dept: b.company, title: '현장책임자', name: sm }, extend: {} };
     if (ld) {
       ['applicant', 'period', 'place', 'device', 'workName', 'attach', 'pre', 'safety', 'supp', 'confirm', 'issuer'].forEach((k) => { if (ld[k] !== undefined) base[k] = ld[k]; });
