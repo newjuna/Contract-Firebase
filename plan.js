@@ -74,12 +74,12 @@ function renderPlan(){const F=state.forms.plan,el=$('csheet'),n=plStep,can=plCan
   +'<div class="field"><label for="f_plGb">생년월일 <span class="req">*</span></label><input id="f_plGb" type="date" value="'+escapeText(g.birth)+'"></div><div class="field"><label for="f_plGa">주소 <span class="req">*</span></label><input id="f_plGa" value="'+escapeText(g.addr)+'" placeholder="예: 서울특별시 강남구 ○○로 00"></div></div>'
   +'<details class="hist"'+(g.licKind||g.licType||g.licNo?' open':'')+'><summary>기술자면허 (있으면)</summary><div class="split">'+[['plGk','종별',g.licKind],['plGt','류별',g.licType],['plGn','번호',g.licNo]].map(([id,l,v])=>'<div class="field"><label for="f_'+id+'">기술자면허 '+l+'</label><input id="f_'+id+'" value="'+escapeText(v)+'"></div>').join('')+'</div></details></div>'}
  /* F1.8r 위험성평가: 공종을 고르고 → 그 공종의 위험요인 중 해당하는 것만 체크 (감소대책·개선 후 위험성은 미리 등록된 값이 결과에 자동으로 들어감) */
- if(n===4){const T=F.trades||[],on=new Set(pl.works);body='<div class="card" id="plWorks"><h2>우리 업체가 하는 공종 <span class="req">*</span></h2><p class="muted">업종('+escapeText(b.industry)+') 기본값이 체크되어 있습니다. 실제로 하는 공종만 남겨 주세요.</p><div class="pchips">'
+ if(n===4){const T=F.trades||[],on=new Set(pl.works);body='<div class="card" id="plWorks"><h2>우리 업체가 하는 공종 <span class="req">*</span></h2><p class="muted">실제로 하는 공종을 눌러 주세요. 누르면 그 공종의 위험요인이 아래에 나옵니다. (업종: '+escapeText(b.industry)+')</p><div class="pchips">'
   +T.map(t=>'<label class="pchip"><input type="checkbox" '+(on.has(t[0])?'checked':'')+' onchange="plTrade(\''+t[0]+'\',this.checked)"><span>'+escapeText(t[1])+'</span></label>').join('')+'</div></div>'
-  +'<div class="card" id="plRisks"><h2>예상되는 위험요인 <span class="req">*</span></h2><p class="muted">해당하는 위험요인만 체크하세요. 감소대책과 개선 후 위험성은 제출하면 결과표에 자동으로 들어가고, 공사 중 순회점검 때 이행 여부를 확인합니다.</p>'
+  +'<div class="card" id="plRisks"><h2>예상되는 위험요인 <span class="req">*</span></h2><p class="muted">해당하는 위험요인만 체크하세요. <b>3개 이상 = 평가 4번 우수</b>. 감소대책과 개선 후 위험성은 제출하면 결과표에 자동으로 들어가고, 공사 중 순회점검 때 이행 여부를 확인합니다.</p>'
   +(T.filter(t=>on.has(t[0])).map(t=>'<div class="stage">'+escapeText(t[1])+(t[2]?' <span class="muted">· 작업허가 대상</span>':'')+'</div>'+t[3].map(r=>'<label class="wk"><input type="checkbox" '+(pl.risks.includes(r[0])?'checked':'')+' onchange="plRisk(\''+r[0]+'\',this.checked)"><span>'+escapeText(r[2])+' <span class="pill '+(r[4]==='상'?'bad':r[4]==='중'?'todo':'ok')+'">'+escapeText(r[4])+'</span></span></label>').join('')).join('')||'<p class="muted">위에서 공종을 고르면 위험요인이 나옵니다.</p>')
   +'<p class="muted" style="margin-top:8px">위험성: 상 = 사망·중상 가능 · 중 = 치료·휴업 · 하 = 경미 (상중하 판단법)</p></div>'}
- if(n===5)body='<div class="card" id="plScen"><h2>비상 시나리오 <span class="req">*</span></h2><p class="muted">사고 유형별 대응 순서가 계획서에 들어갑니다.</p><div class="pchips">'
+ if(n===5)body='<div class="card" id="plScen"><h2>비상 시나리오 <span class="req">*</span></h2><p class="muted">일어날 수 있는 사고를 모두 눌러 주세요. 사고 유형별 대응 순서가 계획서에 들어가고, 필요한 훈련이 [대피훈련 계획]에 자동으로 체크됩니다.</p><div class="pchips">'
   +F.scen.map(s=>'<label class="pchip"><input type="checkbox" '+(pl.scen.includes(s[0])?'checked':'')+' onchange="plScen(\''+s[0]+'\',this.checked)"><span>'+escapeText(s[1])+'</span></label>').join('')+'</div>'
   +'<div class="field"><label for="f_plHos">가까운 병원 (선택)</label><input id="f_plHos" value="'+escapeText(pl.hospital)+'" placeholder="예: ○○병원 응급실 02-000-0000"></div></div>';
  /* F1.8c 비상대피훈련 계획 (계획서 Ⅲ-4) · 공사 중 실제 훈련은 순회점검 때 사진으로 남김 */
@@ -88,7 +88,10 @@ function renderPlan(){const F=state.forms.plan,el=$('csheet'),n=plStep,can=plCan
   +'<div class="field"><label for="f_plDa">집결 장소 <span class="req">*</span></label><input id="f_plDa" value="'+escapeText(d.assembly)+'" placeholder="예: 건물 뒤 주차장 입구"></div>'
   +'<div class="field"><label for="f_plDe">소화기 · 비상구 위치 (선택)</label><input id="f_plDe" value="'+escapeText(d.equip)+'" placeholder="예: 소화기 계산대 옆·창고 입구 / 비상구 매장 뒤편"></div>'
   +'<div class="field"><label for="f_plDm">훈련 담당자 <span class="req">*</span></label><input id="f_plDm" value="'+escapeText(d.manager||plMgr().name||'')+'" placeholder="예: 현장대리인 이름"></div>'
-  +'<div class="stage" id="plDrill">훈련 방법 <span class="req">*</span></div><div class="pchips">'+DRILL_PLAN.map(([k,l])=>'<label class="pchip"><input type="checkbox" '+(d.items.includes(k)?'checked':'')+' onchange="plDrillItem(\''+k+'\',this.checked)"><span>'+escapeText(l)+'</span></label>').join('')+'</div></div>'}
+  +(()=>{const N=plNeedDrill(pl.scen),SN={FIRE:'화재',SHOCK:'감전',FALL:'추락',SICK:'응급환자'},miss=[...N].filter(k=>!d.items.includes(k)),from=k=>k==='NEW'||k==='EVAC'?'모든 시나리오':pl.scen.filter(s=>(PL_SCEN_DRILL[s]||[]).includes(k)).map(s=>SN[s]||s).join('·');
+   return '<div class="stage" id="plDrill">훈련 방법 <span class="req">*</span></div><p class="muted" style="margin:0 0 6px">[비상대책]에서 고른 시나리오에 필요한 훈련이 자동으로 체크됩니다. <span class="req">빨간 테두리 = 필요한데 빠진 훈련</span> (빼면 평가 11번 점수가 내려갑니다)</p><div class="pchips">'
+   +DRILL_PLAN.map(([k,l])=>{const nd=N.has(k),ms=nd&&!d.items.includes(k);return '<label class="pchip"'+(ms?' style="outline:2px solid var(--accent);outline-offset:2px"':'')+'><input type="checkbox" '+(d.items.includes(k)?'checked':'')+' onchange="plDrillItem(\''+k+'\',this.checked)"><span>'+escapeText(l)+(nd?' <span class="muted" style="color:var(--ok)">← '+escapeText(from(k))+'</span>':'')+'</span></label>'}).join('')+'</div>'
+   +(pl.scen.length?'<p class="muted" style="margin:6px 0 0">평가 11번: 필요한 훈련 '+N.size+'개 중 '+(N.size-miss.length)+'개'+(miss.length?' · <b class="req">빠짐 '+miss.length+'개 → 보통</b>':pl.scen.length>=2?' · 우수 조건 충족':' · 시나리오를 2개 이상 고르면 우수')+'</p>':'<p class="muted req" style="margin:6px 0 0">[비상대책]에서 시나리오를 먼저 골라 주세요.</p>')+'</div>'})()}
  if(n===7){sigDirty=false;body='<div class="card" id="plAcc"><h2>최근 3년 산업재해 <span class="req">*</span></h2><div class="placc">'+pl.years.map((y,i)=>'<label for="f_plA'+i+'">'+y+'년</label><input id="f_plA'+i+'" type="number" inputmode="numeric" min="0" value="'+escapeText(pl.accidents[i])+'" placeholder="0"><span class="muted">건</span>').join('')+'</div>'
   +'<div class="stage">증빙 (사진 촬영 · 이미지 · PDF)</div><p class="muted">산재 0건이어도 근로복지공단 확인서 등 증빙이 있으면 올려 주세요.</p><div id="plEv">'+plEvHtml()+'</div></div>'
   /* F1.9b 이행 사례 = 평가 6번 (글 + 증빙 사진 = 우수 · 글만 = 보통 · 없음 = 미흡) · 펼쳐 둠 */
@@ -115,13 +118,17 @@ function plCollect(){if(!pl)return;const n=plStep,v=id=>$('f_'+id)?$('f_'+id).va
 function plAdd(k){plCollect();pl[k].push(k==='kpis'?{name:'',target:''}:{role:'',name:'',phone:''});renderPlan()}
 function plDel(k,i){plCollect();pl[k].splice(i,1);renderPlan()}
 function plWork(k,on){plTrade(k,on)}
-/** F1.8r 공종 고르기: 켜면 그 공종 위험요인 전부 체크 · 끄면 전부 뺌 */
+/** F1.9h 공종 고르기: 켜면 그 공종 위험요인이 아래에 나옴 (체크는 업체가 직접) · 끄면 그 공종 위험요인 체크도 뺌 */
 function plTrade(k,on){plCollect();const t=(state.forms.plan.trades||[]).find(x=>x[0]===k),ids=t?t[3].map(r=>r[0]):[];
- pl.works=on?[...new Set(pl.works.concat(k))]:pl.works.filter(x=>x!==k);pl.risks=on?[...new Set(pl.risks.concat(ids))]:pl.risks.filter(x=>!ids.includes(x));
+ pl.works=on?[...new Set(pl.works.concat(k))]:pl.works.filter(x=>x!==k);pl.risks=on?pl.risks:pl.risks.filter(x=>!ids.includes(x));$('plWorks')?.classList.remove('miss','shake');
  const o=$('csheet'),y=o?o.scrollTop:0;renderPlan();if(o)o.scrollTop=y}
 function plRisk(id,on){pl.risks=on?[...new Set(pl.risks.concat(id))]:pl.risks.filter(x=>x!==id);$('plRisks')?.classList.remove('miss','shake');try{localStorage.setItem(plKey(),JSON.stringify(pl))}catch(e){}}
-function plScen(k,on){plCollect();pl.scen=on?[...new Set(pl.scen.concat(k))]:pl.scen.filter(x=>x!==k);$('plScen').classList.remove('miss','shake')}
-function plDrillItem(k,on){plCollect();pl.drill.items=on?[...new Set(pl.drill.items.concat(k))]:pl.drill.items.filter(x=>x!==k);$('plDrill')?.classList.remove('miss','shake')}
+/* F1.9h 시나리오 → 필요한 훈련 (중계 서버 SCEN_DRILL_과 같게) · 켜면 체크 · 끄면 다른 시나리오에도 필요 없는 훈련만 체크를 풂 */
+const PL_SCEN_DRILL={FIRE:['FIRE'],SHOCK:['CPR'],FALL:['CPR'],SICK:['CPR']};
+function plNeedDrill(sc){const s=new Set();(sc||[]).forEach(k=>{s.add('NEW');s.add('EVAC');(PL_SCEN_DRILL[k]||[]).forEach(x=>s.add(x))});return s}
+function plScen(k,on){plCollect();const before=plNeedDrill(pl.scen);pl.scen=on?[...new Set(pl.scen.concat(k))]:pl.scen.filter(x=>x!==k);const after=plNeedDrill(pl.scen),it=new Set(pl.drill.items);
+ before.forEach(x=>{if(!after.has(x))it.delete(x)});after.forEach(x=>{if(!before.has(x))it.add(x)});pl.drill.items=DRILL_PLAN.map(d=>d[0]).filter(x=>it.has(x));$('plScen').classList.remove('miss','shake');try{localStorage.setItem(plKey(),JSON.stringify(pl))}catch(e){}}
+function plDrillItem(k,on){plCollect();pl.drill.items=on?[...new Set(pl.drill.items.concat(k))]:pl.drill.items.filter(x=>x!==k);const o=$('csheet'),y=o?o.scrollTop:0;renderPlan();if(o)o.scrollTop=y}
 function plEvDel(i){pl.evidenceFiles.splice(i,1);$('plEv').innerHTML=plEvHtml()}
 /* F1.9b 이행 사례 증빙 (산재 증빙과 같은 방식 · 작성 완료 때 한꺼번에 올림) */
 function plPrEvHtml(){return pl.practiceFiles.map((f,i)=>'<div class="plfile"><span>📎 '+escapeText(f.name)+(isPend(f.id)?' <span class="muted">· 완료 때 올림</span>':'')+'</span><button type="button" class="xs" onclick="plPrEvDel('+i+')" aria-label="빼기">✕</button></div>').join('')+'<button class="button ghost" type="button" style="display:block;width:100%;margin-top:6px" onclick="pickPhoto(plPrUploadFile,{title:\'이행 사례 증빙 넣기\',accept:\'image/*,.pdf,application/pdf\'})">📷 촬영 · 파일 올리기</button>'}
