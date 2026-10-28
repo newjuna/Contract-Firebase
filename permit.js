@@ -83,20 +83,23 @@ const PF_BASE=['zone','fire','gear','edu'];  // 모든 작업 공통: 작업구�
 const PF_SAFE={fire:['flam','gasm','spark','vent'],confined:['gasm','vent','light']};
 const nowHM=()=>{const d=new Date();return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2)};
 const pfReq=types=>{const s=new Set(PF_BASE);types.forEach(t=>(PF_SAFE[t]||[]).forEach(k=>s.add(k)));return PERMIT_SAFETY.map(x=>x[0]).filter(k=>s.has(k))};
+/* F1.8y 작업 장소 = 현장(다이소 ○○점 · 공사에서 자동) + 세부 위치(선택) → 허가서에는 '다이소 ○○점 · 2층 창고' */
+const pfSite=()=>(typeof vjob!=='undefined'&&vjob&&vjob.job&&vjob.job.storeName)?'다이소 '+vjob.job.storeName:'';
+function pfDetail(p){p=String(p||'').trim();const s=pfSite(),sn=s.replace(/^다이소 /,'');if(!s)return p;if(p.startsWith(s))return p.slice(s.length).replace(/^\s*[·\-,]\s*/,'');return p===sn?'':p}
 /** 저장된 허가서 내용 → 간편 입력 상태 */
 function pfInit(d){d=d||{};const s=d.safety||{},u=d.supp||{},types=new Set();
  if(d.hot||['flam','spark'].some(k=>s[k]&&s[k].need))types.add('fire');PERMIT_SUPP.forEach(([k])=>{if(u[k]&&u[k].on)types.add(k)});
  const req=pfReq(types),extra=new Set(PERMIT_SAFETY.map(x=>x[0]).filter(k=>s[k]&&s[k].need&&!req.includes(k))),done={},sdone={},texts={};
  PERMIT_SAFETY.forEach(([k])=>done[k]=!!(s[k]&&s[k].done));
  PERMIT_SUPP.forEach(([k,,x])=>{(x.checks||[]).forEach(([c])=>sdone[k+'.'+c]=!!(((u[k]||{}).checks||{})[c]||{}).done);(x.texts||[]).forEach(([t])=>texts[k+'.'+t]=(u[k]||{})[t]||'')});
- return {work:d.workName||'',place:d.place||'',start:pv(d.period,'start','08:00'),end:pv(d.period,'end','17:00'),sm:pv(d.applicant,'name')||pv(d.confirm,'manager')||pv(d.issuer,'name'),wit:pv(d.confirm,'witness'),etc:d.etc||'',types,extra,done,sdone,texts}}
+ return {work:d.workName||'',place:pfDetail(d.place),start:pv(d.period,'start','08:00'),end:pv(d.period,'end','17:00'),sm:pv(d.applicant,'name')||pv(d.confirm,'manager')||pv(d.issuer,'name'),wit:pv(d.confirm,'witness'),etc:d.etc||'',types,extra,done,sdone,texts}}
 /** 화면 → 간편 입력 상태 (다시 그리기 전에 입력값을 잃지 않게) */
 function pfRead(){const f=pm.f;if(!f||!$('pf_work'))return;f.work=tv('pf_work');f.place=tv('pf_place');f.start=tv('pf_start');f.end=tv('pf_end');f.sm=tv('pf_sm');f.wit=tv('pf_wit');f.etc=tv('pf_etc');
  PERMIT_SAFETY.forEach(([k])=>{if($('pfsd_'+k))f.done[k]=ck('pfsd_'+k);if($('pfx_'+k)){if(ck('pfx_'+k))f.extra.add(k);else f.extra.delete(k)}});
  PERMIT_SUPP.forEach(([k,,s])=>{(s.checks||[]).forEach(([c])=>{if($('pfcd_'+k+'_'+c))f.sdone[k+'.'+c]=ck('pfcd_'+k+'_'+c)});(s.texts||[]).forEach(([t])=>{if($('pft_'+k+'_'+t))f.texts[k+'.'+t]=tv('pft_'+k+'_'+t)})})}
 /** 간편 입력 → 허가서 내용 (종이 양식과 같은 모양 · 첨부서류·위험성평가 등은 이전 값 또는 기본값) */
 function pfBuild(){const f=pm.f,d0=pm.permit.data||{},req=pfReq(f.types),co=pm.permit.company||'',who=o=>({dept:pv(o,'dept')||co,title:pv(o,'title')||'현장책임자',name:f.sm});
- const d={...d0,workName:f.work,place:f.place,period:{start:f.start,end:f.end},applicant:who(d0.applicant),issuer:who(d0.issuer),confirm:{manager:f.sm,witness:f.wit},etc:f.etc,hot:f.types.has('fire'),
+ const d={...d0,workName:f.work,place:[pfSite(),f.place].filter(Boolean).join(' · '),period:{start:f.start,end:f.end},applicant:who(d0.applicant),issuer:who(d0.issuer),confirm:{manager:f.sm,witness:f.wit},etc:f.etc,hot:f.types.has('fire'),
   device:d0.device||'',attach:d0.attach||{},pre:d0.pre||{procChange:'무',workDiff:'무'},safety:{},supp:{}};
  PERMIT_SAFETY.forEach(([k])=>{const r=req.includes(k),need=r||f.extra.has(k);d.safety[k]={need,done:need&&(r?!!f.done[k]:true)}});
  PERMIT_SUPP.forEach(([k,,s])=>{const on=f.types.has(k),old=pv(d0.supp,k,{}),x={on,from:on?f.start:'',to:on?f.end:'',checker:on?f.sm:'',checks:{}};
@@ -104,7 +107,7 @@ function pfBuild(){const f=pm.f,d0=pm.permit.data||{},req=pfReq(f.types),co=pm.p
   (s.checks||[]).forEach(([c])=>x.checks[c]={need:on,done:on&&!!f.sdone[k+'.'+c]});d.supp[k]=x});
  return d}
 /** 발행 전 빠진 칸 (화면 칸 id) */
-function pfMissing(){const f=pm.f,m=[];if(!f.work)m.push('pf_work');if(!f.place)m.push('pf_place');if(!f.start)m.push('pf_start');if(!f.end)m.push('pf_end');
+function pfMissing(){const f=pm.f,m=[];if(!f.work)m.push('pf_work');if(!f.place&&!pfSite())m.push('pf_place');if(!f.start)m.push('pf_start');if(!f.end)m.push('pf_end');
  pfReq(f.types).forEach(k=>{if(!f.done[k])m.push('pfs_'+k)});
  PERMIT_SUPP.forEach(([k,,s])=>{if(f.types.has(k))(s.checks||[]).forEach(([c])=>{if(!f.sdone[k+'.'+c])m.push('pfc_'+k+'_'+c)})});
  if(!f.sm)m.push('pf_sm');return m}
@@ -115,7 +118,7 @@ function pfHtml(){const f=pm.f,req=pfReq(f.types),SL=Object.fromEntries(PERMIT_S
  const field=(id,label,val,o)=>{o=o||{};return '<div class="field"><label for="'+id+'">'+escapeText(label)+(o.req?' <span class="req">*</span>':'')+'</label><input id="'+id+'" type="'+(o.type||'text')+'" value="'+escapeText(val||'')+'"'+(o.ph?' placeholder="'+escapeText(o.ph)+'"':'')+'></div>'};
  const suppOn=PERMIT_SUPP.filter(([k])=>f.types.has(k));
  return '<div class="cwrap">'
-  +'<div class="card"><h2>① 오늘 작업</h2>'+field('pf_work','작업명',f.work,{req:1,ph:'예: 천장 철거, 전기 배선'})+field('pf_place','작업 장소',f.place,{req:1,ph:'예: 매장 2층 창고'})
+  +'<div class="card"><h2>① 오늘 작업</h2>'+field('pf_work','작업명',f.work,{req:1,ph:'예: 천장 철거, 전기 배선'})+(pfSite()?'<div class="field"><label>작업 현장 (공사에서 자동)</label><div class="note" style="margin:0"><b>'+escapeText(pfSite())+'</b>'+(vjob.job.address?' <span class="muted">· '+escapeText(vjob.job.address)+'</span>':'')+'</div></div>'+field('pf_place','세부 위치 (선택)',f.place,{ph:'예: 2층 창고, 매장 천장, 계산대 뒤'}):field('pf_place','작업 장소',f.place,{req:1,ph:'예: 매장 2층 창고'}))
   +'<div class="split">'+field('pf_start','시작 시각',f.start,{req:1,type:'time'})+field('pf_end','종료 시각',f.end,{req:1,type:'time'})+'</div></div>'
   +'<div class="card"><h2>② 오늘 하는 위험작업</h2><p class="desc">해당하는 것을 모두 누르세요. 없으면 누르지 않고 넘어가면 됩니다.</p><div id="pfTypes" style="display:flex;flex-wrap:wrap;gap:8px">'
   +PF_TYPES.concat(f.types.has('radiation')?[['radiation','방사선']]:[]).map(([k,l])=>'<button type="button" class="button'+(f.types.has(k)?'':' ghost')+'" aria-pressed="'+f.types.has(k)+'" onclick="pfType(\''+k+'\')">'+(f.types.has(k)?'✔ ':'')+escapeText(l)+'</button>').join('')+'</div>'
@@ -206,7 +209,9 @@ function permitDraft(){if(pm.f&&$('pf_work')){pfRead();const m=pfMissing();if(m.
  const d={...permitCollect(),...progressCollect()},m=permitMissing(d);if(m.length){flagMissing(m,'확인할 칸 '+m.length+'개 · 빨간 칸을 확인해 주세요 (필요 항목은 조치 완료 체크)');return null}return d}
 async function issuePermitNow(){const d=permitDraft();if(!d)return;
  if(!await askOk('작업허가서 발행','발행하면 바로 작업할 수 있고, 도급인 담당자에게 승인 요청이 갑니다.\n발행 뒤에는 작업 완료만 기록합니다. (도급인 승인 전까지는 수정 가능)','발행'))return;
- try{const r=await call('issuePermit',vjob.job.id,d);pmSaved(r);pm={mode:'progress',permit:r.permit,today:r.today};vjob.permits=[{...r.permit}].concat((vjob.permits||[]).filter(p=>p.date!==r.permit.date));showSheet();popup('작업허가서 발행 완료','허가번호 '+r.permit.no+'\n작업을 시작하세요. 작업이 끝나면 이 화면에서 [작업 완료]를 기록해 주세요.','확인')}catch(e){showErr('발행하지 못했습니다',e)}}
+ try{const r=await call('issuePermit',vjob.job.id,d);pmSaved(r);vjob.permits=[{...r.permit}].concat((vjob.permits||[]).filter(p=>p.date!==r.permit.date));
+  /* F1.8y 발행하면 바로 오늘 현장 업무 첫 화면으로 (② 칸이 '오늘 완료'로 바뀜) + 완료 안내 */
+  hideSheet();pm=null;renderVJob();window.scrollTo(0,0);popup('✔ 작업허가서 발행 완료','허가번호 '+r.permit.no+'\n도급인 담당자에게 승인 요청이 갔습니다. 바로 작업을 시작하세요.\n\n작업이 끝나면 ② 작업허가서 칸을 눌러 [작업 완료 저장]을 해 주세요.','확인')}catch(e){showErr('발행하지 못했습니다',e)}}
 /* v4.9 승인 전 수정·제출 취소 (업체) */
 function startEditPermit(){pm.prevMode=pm.mode;pm.mode='edit';pm.f=null;pm.paper=false;showSheet()}
 function cancelEditPermit(){pm.mode=pm.prevMode||'progress';pm.paper=false;showSheet()}
