@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F1.9a';
+  const VERSION = '26.10.24 F1.9c';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   const CFG = {
     INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
@@ -387,9 +387,9 @@
     const r = fresh('C01'), p = fresh('C02'), D = planDefaults(b, p1); let d = p.d;
     // 해가 바뀐 뒤 다시 작성하면 최근 3년이 달라짐 → 같은 연도 값만 옮김
     if (d && Array.isArray(d.years) && JSON.stringify(d.years.map(Number)) !== JSON.stringify(D.years)) { const old = d.years.map(Number), ac = d.accidents || []; d.accidents = D.years.map((y) => { const i = old.indexOf(y); return i >= 0 ? String(ac[i] ?? '') : ''; }); d.years = D.years; }
-    const ev = ((d && d.evidence) || []).map((id) => { const x = files.find((y) => y.id === id); return x ? { id, name: x.name } : null; }).filter(Boolean);
+    const fmap = (ids) => (ids || []).map((id) => { const x = files.find((y) => y.id === id); return x ? { id, name: x.name } : null; }).filter(Boolean), ev = fmap(d && d.evidence), pev = fmap(d && d.practiceEv);  // F1.9b 이행 사례 증빙
     return { today: today(), hq: HQ_NAME, hqRep: b.approverName || '', rule: { title: RULE_TITLE, text: RULE_TEXT }, C01: r.d ? { data: r.d, savedAt: r.f.updatedAt } : null,
-      plan: { works: PLAN_WORKS, trades: RISK_TRADES.map((t) => [t[0], t[1], t[4], t[6]]), after: RISK_AFTER, scen: PLAN_SCEN.map((s) => [s[0], s[1]]), laws: PLAN_LAWS, defaults: D, C02: d ? { data: Object.assign(d, { evidenceFiles: ev }), savedAt: p.f.updatedAt } : null } };
+      plan: { works: PLAN_WORKS, trades: RISK_TRADES.map((t) => [t[0], t[1], t[4], t[6]]), after: RISK_AFTER, scen: PLAN_SCEN.map((s) => [s[0], s[1]]), laws: PLAN_LAWS, defaults: D, C02: d ? { data: Object.assign(d, { evidenceFiles: ev, practiceFiles: pev }), savedAt: p.f.updatedAt } : null } };
   }
   /** 화면에 보여 줄 업체 정보 (기존 publicCompany_와 같은 항목) */
   function publicCompany(b) {
@@ -734,9 +734,15 @@
   }
   /** 공사에 배정할 수 있는 업체 (재평가 중 포함 · 테스트 모드면 승인 전도) */
   async function jobVendorChoices() {
-    return docs(await db.collection('COMPANIES').where('status', '==', 'VERIFIED').get()).filter((x) => canExec(x) || CFG.TEST_SKIP_FILES).map((x) => {
+    const cs = docs(await db.collection('COMPANIES').where('status', '==', 'VERIFIED').get()).filter((x) => canExec(x) || CFG.TEST_SKIP_FILES);
+    /* F1.9b 계약 전 평가(승인된 마지막 회차) 총점 · 우수가 아닌 항목 → 공사 배정 때 70점 미만 경고 */
+    const evs = await Promise.all(cs.map((x) => db.collection('EVALUATIONS').where('companyId', '==', x.id).get().then(docs).catch(() => [])));
+    const pre = (l) => { const e = l.filter((x) => x.result === 'APPROVED').sort((p, q) => String(p.evaluatedAt).localeCompare(String(q.evaluatedAt))).pop(); if (!e) return null;
+      const lv = parse(e.items, {}), its = {}; Object.keys(lv).forEach((n) => { if (EVAL_LEVELS[lv[n]]) its[n] = { lv: lv[n] }; }); const sc = evalScore_(its);
+      return { total: sc.total, grade: sc.grade, limited: sc.limited, at: e.evaluatedAt || '', low: EVAL_ITEMS.filter(([n]) => its[n] && its[n].lv !== 'G').map(([n, , name]) => [n, name, EVAL_LEVELS[its[n].lv]]) }; };
+    return cs.map((x, i) => {
       const v = contractValid(x);
-      return { id: x.id, uid: x.uid, company: x.company, industry: x.industry, approved: canExec(x), renewing: !!x.renewAt, renewStatus: x.renewAt ? x.submissionStatus : '', valid: v, expired: !!(v && v.expired), lastEval: null };
+      return { id: x.id, uid: x.uid, company: x.company, industry: x.industry, approved: canExec(x), renewing: !!x.renewAt, renewStatus: x.renewAt ? x.submissionStatus : '', valid: v, expired: !!(v && v.expired), lastEval: null, preEval: pre(evs[i]) };
     });
   }
   function jobView(j, jvs, wks, crews, pms, inss, fds, mts, ats, evs) {
@@ -1430,11 +1436,18 @@
   /** 수행 기록 → 12항목 자동 체크 + 근거 (v5.27 jobEvalAuto_와 같은 기준) */
   async function jobEvalAuto(j, cid) {
     const by = (col) => db.collection(col).where('jobId', '==', j.id).get().then(docs).then((l) => l.filter((x) => x.companyId === cid));
-    const [crew, pm, ins, fd, wk, evs] = await Promise.all([by('CREW'), by('PERMITS'), by('INSPECTIONS'), by('FINDINGS'), by('WORKERS'), db.collection('EVALUATIONS').where('companyId', '==', cid).get().then(docs).catch(() => [])]);
+    const [crew, pm, ins, fd, wk, evs, mts, ats] = await Promise.all([by('CREW'), by('PERMITS'), by('INSPECTIONS'), by('FINDINGS'), by('WORKERS'), db.collection('EVALUATIONS').where('companyId', '==', cid).get().then(docs).catch(() => []),
+      db.collection('MEETINGS').where('jobId', '==', j.id).get().then(docs).catch(() => []), by('ATTEND').catch(() => [])]);
     const wd = new Set([].concat(crew.map((x) => x.date), pm.map((x) => x.date), ins.map((x) => x.date)).filter(Boolean)).size;
     const lvRate = (r) => (r >= EVAL_RULE.rateGood ? 'G' : r >= EVAL_RULE.rateNormal ? 'N' : 'P'), pct = (r) => Math.round(r * 100) + '%';
     const ev = evs.filter((x) => x.result === 'APPROVED').sort((p, q) => String(p.evaluatedAt).localeCompare(String(q.evaluatedAt))).pop(), pre = ev ? parse(ev.items, {}) : {}, o = {};
-    [1, 2, 3, 4, 9, 10].forEach((n) => { o[n] = { lv: pre[n] || '', why: pre[n] ? '계약 전 평가 결과 (' + EVAL_LEVELS[pre[n]] + ') · 공사 중 이행 상태를 보고 판단' : '계약 전 평가 기록 없음 · 직접 판단', auto: !!pre[n] }; });
+    const preOf = (n, why) => ({ lv: pre[n] || '', why: (why ? why + ' · ' : '') + (pre[n] ? '계약 전 평가 결과 (' + EVAL_LEVELS[pre[n]] + ')' : '계약 전 평가 기록 없음 · 직접 판단'), auto: !!pre[n] });
+    /* F1.9b 종료 평가 = 계약 전 계획을 공사 중에 지켰는가 (실행률) · 공사 중에 따로 잴 수 없는 1·2·3·10은 계약 전 결과 */
+    [1, 2, 3, 10].forEach((n) => { o[n] = preOf(n); });
+    { let ok = 0, bad = 0; ins.forEach((x) => Object.values(x.items || {}).forEach((v) => { if (v === 'OK') ok++; else if (v === 'BAD') bad++; }));
+      o[4] = ok + bad ? { lv: lvRate(ok / (ok + bad)), why: '계획서 위험요인 순회점검 ' + (ok + bad) + '건 중 양호 ' + ok + '건 = ' + pct(ok / (ok + bad)) + (bad ? ' · 불량 ' + bad + '건' : ''), auto: true } : preOf(4, '순회점검 기록 없음'); }
+    { const dm = mts.filter((m) => m.doneAt), went = new Set(ats.filter((x) => x.status !== 'REJECTED').map((x) => x.meetingId)), n = dm.filter((m) => went.has(m.id)).length;
+      o[9] = dm.length ? { lv: lvRate(n / dm.length), why: '협의체·합동점검 참석 ' + n + ' / 실시 ' + dm.length + '회 = ' + pct(n / dm.length), auto: true } : preOf(9, '실시한 협의체·합동점검 없음'); }
     if (!wd) [5, 7, 8].forEach((n) => { o[n] = { lv: '', why: '작업 기록 없음 · 직접 판단', auto: false }; });
     else {
       const need = Math.max(1, Math.ceil(wd / 2)), r5 = ins.length / need; o[5] = { lv: lvRate(r5), why: '순회점검 ' + ins.length + '회 / 필요 ' + need + '회 (작업일 ' + wd + '일 ÷ 2) = ' + pct(r5), auto: true };
