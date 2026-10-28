@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F1.9i';
+  const VERSION = '26.10.24 F1.9j';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   const CFG = {
     INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
@@ -585,7 +585,8 @@
       if (!mem.some((m) => m.name === P.delegate.name)) add({ unitId: 'U-INT', name: P.delegate.name, title: P.delegate.rank || '부장', phone: '', companyEmail: '', gmail: '', role: 'NONE' });
       await B.commit();
     }
-    return { me: a.email, units, members: mem.map(memView).sort((x, y) => x.name.localeCompare(y.name, 'ko')), principal: await principal(true) };
+    const P = await principal(true), pkOf = (id) => (P.ceo.memberId === id ? 'ceo' : P.delegate.memberId === id ? 'delegate' : '');
+    return { me: a.email, units, members: mem.map((m) => ({ ...memView(m), pk: pkOf(m.id) })).sort((x, y) => x.name.localeCompare(y.name, 'ko')), principal: P };
   };
   /** 구성원 → 로그인 명단(STAFF) 맞추기 */
   async function staffSync(a, m, units, oldGmail) {
@@ -597,33 +598,54 @@
     await ref.set({ name: m.name, dept, role: m.role, companyEmail: m.companyEmail, loginEmail: m.gmail, active: 'Y', title: m.title, phone: m.phone, unitId: m.unitId, memberId: m.id,
       createdBy: (base && base.createdBy) || a.email, createdAt: (base && base.createdAt) || now(), updatedBy: a.email, updatedAt: now() });
   }
+  /** F1.9j 권한은 소속으로 자동: 안전보건팀(이름)과 그 아래 조직 = 안전보건팀 · 그 외 = 도급인 담당자 · 로그인 Gmail이 없으면 로그인 명단에 안 넣음 */
+  function orgRoleOf(units, unitId, gmail, a) {
+    if (!gmail) return 'NONE'; if (MASTER_EMAILS.includes(gmail)) return 'SAFETY';
+    let u = units.find((x) => x.id === unitId), g = 0; while (u && g++ < 20) { if (/안전보건팀/.test(u.name)) return 'SAFETY'; const p = u.parent; u = units.find((x) => x.id === p); }
+    return 'CLIENT';
+  }
+  const orgPathOf = (units, id) => { const L = []; let u = units.find((x) => x.id === id), g = 0; while (u && g++ < 20) { L.unshift(u.name); const p = u.parent; u = units.find((x) => x.id === p); } return L; };
+  /** 위임장·규정에 들어가는 사람 (pk = ceo | delegate) → SETTINGS/principal */
+  async function orgPrincipalSet(a, units, m, pk) {
+    const P = await principal(true), cur = {}; ['ceo', 'delegate', 'manager'].forEach((k) => { cur[k] = { ...(P[k] || {}) }; });
+    ['ceo', 'delegate'].forEach((k) => { if (cur[k].memberId === m.id && k !== pk) cur[k].memberId = ''; });  // 다른 역할로 바꾸거나 '해당 없음'이면 지정만 뺌 (이름은 남겨 문서가 비지 않게)
+    if (pk) { const path = orgPathOf(units, m.unitId), unit = path.slice(-1)[0] || '';
+      cur[pk] = { memberId: m.id, name: m.name, rank: m.title, org: path.join(' '), title: pk === 'ceo' ? (cur.ceo.title || '안전보건총괄책임자') : (/장$/.test(m.title) ? unit + '장' : unit + ' ' + m.title) }; }
+    const o = {}; ['ceo', 'delegate', 'manager'].forEach((k) => { o[k] = {}; ['name', 'rank', 'title', 'org', 'memberId'].forEach((f) => { o[k][f] = tidy((cur[k] || {})[f], 60); }); });
+    await db.collection('SETTINGS').doc('principal').set({ ...o, updatedAt: now(), updatedBy: a.email }); PRINC = null;
+    audit(a, '', 'PRINCIPAL_SAVE', o.ceo.name + ' → ' + o.delegate.name);
+  }
   API.orgSaveUnits = async (a, units) => {
     orgGate(a);
-    const L = (Array.isArray(units) ? units : []).slice(0, 200).map((u) => ({ id: tidy(u && u.id, 20), name: tidy(u && u.name, 40), kind: ORG_KINDS.includes(u && u.kind) ? u.kind : '팀', parent: tidy(u && u.parent, 20) })).filter((u) => /^U-[A-Z0-9-]{1,16}$/.test(u.id) && u.name);
+    const L = (Array.isArray(units) ? units : []).slice(0, 200).map((u) => ({ id: tidy(u && u.id, 20), name: tidy(u && u.name, 40), kind: tidy(u && u.kind, 10), parent: tidy(u && u.parent, 20) })).filter((u) => /^U-[A-Z0-9-]{1,16}$/.test(u.id) && u.name);
     if (!L.length) fail('조직이 하나도 없습니다.');
     const ids = new Set(L.map((u) => u.id)); L.forEach((u) => { if (!ids.has(u.parent) || u.parent === u.id) u.parent = ''; });
     L.forEach((u) => { let p = u.parent, g = 0; while (p && g++ < 20) { if (p === u.id) { u.parent = ''; break; } p = (L.find((x) => x.id === p) || {}).parent; } });  // 돌고 도는 위치 막기
-    await db.collection('SETTINGS').doc('org').set({ units: L, updatedAt: now(), updatedBy: a.email }); audit(a, '', 'ORG_SAVE', L.length + '개 조직');
-    // 팀 이름을 바꾸면 로그인 명단의 부서 표시도 맞춤
     const mem = docs(await db.collection('ORG_MEMBERS').get());
-    await Promise.all(mem.filter((m) => m.gmail && m.role !== 'NONE').map((m) => { const u = L.find((x) => x.id === m.unitId); return db.collection('STAFF').doc(m.gmail).update({ dept: u ? u.name : '', unitId: m.unitId || '' }).catch(() => {}); }));
+    if (mem.some((m) => !ids.has(m.unitId) && (units || []).some((u) => u && u.id === m.unitId) === false && m.unitId)) { /* 지운 조직의 사람은 화면에서 이미 막음 */ }
+    await db.collection('SETTINGS').doc('org').set({ units: L, updatedAt: now(), updatedBy: a.email }); audit(a, '', 'ORG_SAVE', L.length + '개 조직');
+    // 조직 이름·위치가 바뀌면 권한(안전보건팀 아래인지)과 부서 표시를 다시 맞춤
+    for (const m of mem) { const role = orgRoleOf(L, m.unitId, m.gmail, a); if (role !== m.role) await db.collection('ORG_MEMBERS').doc(m.id).update({ role }).catch(() => {}); await staffSync(a, { ...m, role }, L, '').catch(() => {}); }
     return API.orgGet(a);
   };
   API.orgSaveMember = async (a, d) => {
     orgGate(a);
-    const units = (await orgUnits()) || ORG_SEED, id = /^M-[A-Za-z0-9]{1,12}$/.test(String((d && d.id) || '')) ? d.id : '';
-    const m = { unitId: tidy(d && d.unitId, 20), name: tidy(d && d.name, 40), title: tidy(d && d.title, 30), phone: tidy(d && d.phone, 30), companyEmail: lower(tidy(d && d.companyEmail, 160)), gmail: lower(tidy(d && d.gmail, 160)), role: ORG_ROLE_OK[d && d.role] ? d.role : 'NONE' };
-    const bad = []; if (!units.some((u) => u.id === m.unitId)) bad.push('소속'); if (!m.name) bad.push('이름'); if (!m.title) bad.push('직책');
+    const units = (await orgUnits()) || ORG_SEED, id = /^M-[A-Za-z0-9]{1,12}$/.test(String((d && d.id) || '')) ? d.id : '', pk = ['ceo', 'delegate'].includes(d && d.pk) ? d.pk : '';
+    const m = { unitId: tidy(d && d.unitId, 20), name: tidy(d && d.name, 40), title: tidy(d && d.title, 30), phone: tidy(d && d.phone, 30), companyEmail: lower(tidy(d && d.companyEmail, 160)), gmail: lower(tidy(d && d.gmail, 160)) };
+    const bad = []; if (!units.some((u) => u.id === m.unitId)) bad.push('소속 조직'); if (!m.name) bad.push('이름'); if (!m.title) bad.push('직책');
     if (m.companyEmail && !isInternalEmail(m.companyEmail)) bad.push('회사 이메일 (@' + CFG.APPROVER_DOMAINS.join(', @') + ' 주소만)');
-    if (m.gmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(m.gmail)) bad.push('로그인 Gmail 형식'); if (m.role !== 'NONE' && !m.gmail) bad.push('로그인 Gmail (앱을 쓰려면 꼭 필요)');
+    if (m.gmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(m.gmail)) bad.push('로그인 Gmail 형식');
     if (bad.length) fail('다음 항목을 확인해 주세요:\n- ' + bad.join('\n- '));
-    if ((m.gmail === a.email || MASTER_EMAILS.includes(m.gmail)) && m.role !== 'SAFETY') fail('마스터 계정은 안전보건팀 권한에서 뺄 수 없습니다.');
-    const all = docs(await db.collection('ORG_MEMBERS').get()); if (m.gmail && all.some((x) => x.gmail === m.gmail && x.id !== id)) fail('이미 다른 구성원에 등록된 로그인 Gmail입니다.');
-    const old = id ? all.find((x) => x.id === id) : null; if (id && !old) fail('고칠 구성원을 찾을 수 없습니다. 화면을 새로 고쳐 주세요.');
+    m.role = orgRoleOf(units, m.unitId, m.gmail, a);
+    if (m.gmail === a.email && m.role !== 'SAFETY') fail('본인 계정은 안전보건팀 아래에 두어야 합니다.');
+    const all = docs(await db.collection('ORG_MEMBERS').get()); if (m.gmail && all.some((x) => x.gmail === m.gmail && x.id !== id)) fail('이미 다른 사람에 등록된 로그인 Gmail입니다.');
+    const old = id ? all.find((x) => x.id === id) : null; if (id && !old) fail('고칠 사람을 찾을 수 없습니다. 화면을 새로 고쳐 주세요.');
     const mid = id || 'M-' + rand8();
     await db.collection('ORG_MEMBERS').doc(mid).set({ id: mid, ...m, createdAt: (old && old.createdAt) || now(), createdBy: (old && old.createdBy) || a.email, updatedAt: now(), updatedBy: a.email });
     await staffSync(a, { id: mid, ...m }, units, old && old.gmail);
-    audit(a, '', id ? 'MEMBER_EDIT' : 'MEMBER_ADD', m.name + ' ' + m.role + ' ' + m.gmail);
+    const P = await principal(true), was = P.ceo.memberId === mid ? 'ceo' : P.delegate.memberId === mid ? 'delegate' : '';
+    if (pk || was) await orgPrincipalSet(a, units, { id: mid, ...m }, pk);  // 지정했거나, 지정돼 있던 사람(이름·직책이 바뀌면 문서에도 반영)
+    audit(a, '', id ? 'MEMBER_EDIT' : 'MEMBER_ADD', m.name + ' ' + m.role + ' ' + m.gmail + (pk ? ' ' + pk : ''));
     return API.orgGet(a);
   };
   API.orgDeleteMember = async (a, id) => {
