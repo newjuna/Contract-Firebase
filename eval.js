@@ -124,6 +124,13 @@ function renderNotices(){const d=noticeData,un=d.list.filter(n=>!n.read).length;
  $('notice').innerHTML='<div class="card"><div class="vh-top"><h2 style="margin:0">참조 알림 '+(un?'<span class="cnt">'+un+'</span>':'')+'</h2>'+(un?'<button class="button ghost" type="button" onclick="readAllNotices()">모두 읽음</button>':'')+'</div><p class="desc">승인할 일은 없습니다. 업체 평가 확정·공사 연장·공사 종료처럼 "이런 일이 있었다"는 기록입니다. 필요하면 공사·현장미팅에서 내용을 확인해 주세요.</p></div>'
   +'<div class="card">'+(d.list.map(n=>'<div class="item"><div>'+(n.read?'':'<span class="pill bad">새 알림</span> ')+'<span class="pill lock">'+escapeText(d.labels[n.type]||n.type)+'</span> <span class="muted">'+escapeText(fmtTime(n.time))+'</span></div><div class="desc" style="margin-top:4px;'+(n.read?'':'font-weight:600;color:var(--text)')+'">'+escapeText(n.text)+'</div></div>').join('')||'<p class="muted">아직 알림이 없습니다.</p>')+'</div>'}
 async function readAllNotices(){try{noticeData=await call('readNotices');renderNotices();refreshBadges()}catch(e){}}
+/* F1.9b 공사 만들기: 계약 전 평가 점수 · 70점 미만이면 고를 때 경고 창 (배정은 막지 않음) */
+const PRE_LOW=70;
+function preEvalHtml(v){const p=v.preEval;if(!p)return '';
+ return p.total<PRE_LOW?' <span class="pill bad">⚠ 계약 전 평가 '+p.total+'점 · 70점 미만</span>':' <span class="muted">· 계약 전 평가 '+p.total+'점 '+escapeText(p.grade)+'</span>'}
+function jvWarn(cb){if(!cb.checked)return;const v=((jobData&&jobData.vendors)||[]).find(x=>x.id===cb.value),p=v&&v.preEval;if(!p||p.total>=PRE_LOW)return;
+ popup('⚠ 70점 미만 협력업체입니다',v.company+' · 계약 전 평가 '+p.total+'점 ('+p.grade+'등급)\n배정은 할 수 있습니다. 다만 아래 항목은 업체에 보완을 지시해 주세요.\n\n'
+  +(p.low.map(([n,name,l])=>'· '+n+'. '+name+' — '+l).join('\n')||'· (항목 기록 없음)')+'\n\n보완 지시: 착수 미팅(협의체) 때 위 항목을 안내하고, 공사 중 순회점검으로 이행을 확인해 주세요.','확인')}
 /* ---------- 공사 만들기: 업체 고를 때 지난 종료 평가 (C·D등급은 경고) ---------- */
 function lastEvalHtml(v){const l=v.lastEval;if(!l)return '';
  if(!['C','D'].includes(l.grade))return ' <span class="muted">· 지난 평가 '+escapeText(l.grade)+'등급</span>';
