@@ -108,7 +108,7 @@ function renderDash(){const el=$('execArea');if(!el||!vjobs)return;if(!vDashTime
  const due=act.reduce((n,j)=>n+((j.stats&&j.stats.inspDue&&!j.stats.inspToday&&j.startDate<=t)?1:0)+((j.stats&&j.stats.openFindings)||0),0);setBadge($('vm_today'),due);setBadge($('menuBtn'),due);
  // v5.17 계약 전 평가 유효기간 30일 이내·만료·재평가 중이면 대시보드 위에 안내
  const cb=state.company||{},cv=cb.valid,rn=cb.renewAt?{DRAFT:'작성 중',CORRECTION:'보완 요청',SUBMITTED:'본사 검토 중',SAFETY_REVIEW:'본사 검토 중'}[cb.submissionStatus]||'진행 중':'';
- el.innerHTML=gdRow('vdash')+'<div class="card"><h2 style="margin:0">'+escapeText(d.company)+'</h2><div class="muted">'+escapeText(t)+' · 진행 중 공사 '+act.length+'건'+(ended.length?' · 종료 '+ended.length+'건':'')+'</div>'
+ el.innerHTML=gdRow('vdash')+'<div class="card"><h2 style="margin:0">'+escapeText(d.company)+'</h2><button class="linkbtn" type="button" style="font-size:13px;margin:2px 0" onclick="openEvalResult(\'CE\')">📊 계약 전 평가 결과 보기</button><div class="muted">'+escapeText(t)+' · 진행 중 공사 '+act.length+'건'+(ended.length?' · 종료 '+ended.length+'건':'')+'</div>'
   +(rn?'<button class="vtodo" type="button" onclick="vgo(\'docs\')"><span>신규 작성 (다음 계약 준비)</span><span class="req">'+escapeText(rn)+' ›</span></button>':cv&&(cv.expired||cv.days<=30)?validNote(cb)+'<button class="vtodo" type="button" onclick="openNewContract()"><span>신규 작성 (다음 계약 준비)</span><span class="req">'+(cv.expired?'만료':'D-'+cv.days)+' ›</span></button>':'')+'</div>'
   +meetAlertHtml(d)+dayStartHtml(act)+fixCardHtml()  // F1.8f 메인: 미팅 알림 → 큰 버튼 → 지적사항 조치
   +(d.jobs.length?'<div class="card"><h2>공사 일정</h2>'+act.concat(ended).map(j=>ganttRow(j,t)).join('')+'</div>'
@@ -116,7 +116,7 @@ function renderDash(){const el=$('execArea');if(!el||!vjobs)return;if(!vDashTime
    +'<div class="dns">'+donut(S.inspNeed?S.insp/S.inspNeed:null,'순회점검',S.inspNeed?S.insp+' / '+S.inspNeed+'회':'기록 없음')+donut(wd?S.permitDays/wd:null,'작업허가서',wd?S.permitDays+' / '+wd+'일':'기록 없음')+donut(j.workers?1:null,'신규자 교육',j.workers?j.workers+'명 등록':'등록 없음')+'</div>'
    +'<p class="muted" style="text-align:center;margin:4px 0 0">작업일 '+wd+'일 기준 이행률</p></div>'}).join('')
   +(!rn&&ended.length&&!act.length?newContractCard():'')  // v5.17 공사가 모두 끝났으면 종료 목록 위에 [신규 작성]
-  +(ended.length?'<div class="card"><h2>종료된 공사</h2>'+ended.map(j=>'<button class="jobitem" type="button" onclick="vgo(\'workers\',\''+escapeText(j.id)+'\')"><div><b>'+escapeText(j.title)+'</b> <span class="pill todo">종료</span><div class="muted">'+escapeText(j.storeName)+' · '+escapeText(j.startDate)+' ~ '+escapeText(j.endDate||'')+'</div></div><span aria-hidden="true">›</span></button>').join('')+'</div>':'')
+  +(ended.length?'<div class="card"><h2>종료된 공사</h2>'+ended.map(j=>'<button class="jobitem" type="button" onclick="vgo(\'workers\',\''+escapeText(j.id)+'\')"><div><b>'+escapeText(j.title)+'</b> <span class="pill todo">종료</span><div class="muted">'+escapeText(j.storeName)+' · '+escapeText(j.startDate)+' ~ '+escapeText(j.endDate||'')+'</div></div><span aria-hidden="true">›</span></button><button class="button ghost" type="button" style="width:100%;margin:4px 0 8px;font-size:13px" onclick="openEvalResult(\'JE\',\'\',\''+escapeText(j.id)+'\')">📊 종료 평가 결과 보기</button>').join('')+'</div>':'')
   +(!rn&&act.length&&ended.length?newContractCard():'')  // 진행 중 공사가 있으면 맨 아래
   :'<div class="card"><div class="note">아직 배정된 공사가 없습니다.<br>도급인 담당자가 공사에 업체를 배정하면 여기에 나타납니다.</div></div>')}
 /* ---------- 비상대피훈련 · 계약 서류 ---------- */

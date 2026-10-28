@@ -66,8 +66,9 @@ async function saveEval(final){const c=evCur;c.comment=value('evCmt');
 function renderEvalDone(e){const d=evData,au=e.auto.items||{};jobsMode='eval';evCur=null;
  $('jobs').innerHTML='<div class="card"><button class="button ghost" type="button" onclick="renderEvalList()">← 업체 목록</button><h2 style="margin-top:12px">종료 평가 결과 · '+escapeText(e.company)+'</h2><div class="muted">'+escapeText(d.job.title)+' · '+escapeText(e.evaluator)+' · '+escapeText(fmtTime(e.evaluatedAt))+' · 안전보건팀 사후 검토 대상</div>'
   +'<div style="margin-top:12px"><b style="font-size:22px">'+e.total+'점</b> '+gradePill(e.grade)+'</div>'
+  +'<button class="button ghost" type="button" style="width:100%;margin-top:10px" onclick="openEvalResult(\'JE_'+escapeText(e.id)+'\')">📊 평가 결과 화면 (가이드 · 평가 기준)</button>'
   +'<button class="button" type="button" style="width:100%;margin-top:12px" onclick="evFile(\''+escapeText(e.id)+'\')">📦 전체 활동내역 ZIP 내려받기</button><p class="muted" style="margin-top:6px">1.계약 전 서류 · 2.계약 전 평가 · 3.수행 기록 · 4.작업 종료 폴더로 나뉜 PDF 묶음 + 원본파일 ZIP(사진·서류, 35MB씩 나눔) · 같은 파일이 Drive에도 보관</p></div>'
-  +'<div class="card"><table class="rtable"><tr><th style="width:36px">No</th><th>항목</th><th style="width:60px">결과</th><th style="width:56px">점수</th></tr>'+d.evalItems.map(([no,,name])=>{const x=e.items[no]||{},P=d.points[no];return '<tr><td style="text-align:center">'+no+'</td><td><b>'+escapeText(name)+'</b><div class="muted">'+escapeText((au[no]||{}).why||'')+(x.memo?'<br>의견: '+escapeText(x.memo):'')+'</div></td><td style="text-align:center"'+(x.lv==='P'?' class="req"':'')+'>'+escapeText(EV_LV[x.lv]||'-')+'</td><td style="text-align:center">'+(x.lv?P['GNP'.indexOf(x.lv)]:0)+'/'+P[0]+'</td></tr>'}).join('')+'</table>'
+  +'<div class="card">'+(erCss(),'')+erTable(d.evalItems.map(([no,sec,name])=>{const x=e.items[no]||{},P=d.points[no];return {no,sec:String(sec).charAt(0),name,lv:x.lv||'',pts:x.lv?P['GNP'.indexOf(x.lv)]:0,max:P[0],why:(au[no]||{}).why||'',memo:x.memo?'의견: '+x.memo:''}}),e.total,e.grade)
   +'<div class="stage">개선사항</div><p class="desc" style="white-space:pre-line">'+escapeText(e.comment||'없음')+'</p></div>'
   +'<div class="card"><button class="button ghost" type="button" style="width:100%" onclick="reopenEval(\''+escapeText(e.id)+'\')">다시 수정</button></div>';window.scrollTo(0,0)}
 /* F1.7b ZIP 바로 내려받기: [내려받기]를 누르면 드라이브 화면을 거치지 않고 다운로드 폴더로 받음 (본인 계정에만 보기 권한)
@@ -135,3 +136,72 @@ function jvWarn(cb){if(!cb.checked)return;const v=((jobData&&jobData.vendors)||[
 function lastEvalHtml(v){const l=v.lastEval;if(!l)return '';
  if(!['C','D'].includes(l.grade))return ' <span class="muted">· 지난 평가 '+escapeText(l.grade)+'등급</span>';
  return '<span class="note" style="display:block;margin:6px 0 0 24px;font-size:13px"><b class="req">⚠ 지난 공사 종료 평가 '+l.total+'점 '+escapeText(l.grade)+'등급</b> <span class="muted">('+escapeText(l.job)+' · '+escapeText(l.date)+')</span>'+(l.comment?'<br>개선사항: '+escapeText(l.comment):'')+'<br><span class="muted">배정은 할 수 있습니다. 현장설명 때 개선사항을 안내해 주세요.</span></span>'}
+/* =====================================================================
+ * F1.9e 평가 결과 화면 (메일 버튼 · 종료 평가 · 업체 현황 · 업체 첫 화면에서 열림)
+ *  총점 · 분야별 점수 · 12항목(점수·근거·의견) · 개선사항
+ *  [❔ 사용 가이드] = 왜 이 점수인지 따라가기 (깎인 점수가 큰 항목부터) · [📋 평가 기준] = 같이 정한 기준
+ * ===================================================================== */
+let evRes=null;
+const ER_PILL={G:'ok',N:'erN',P:'bad'},ER_SEC={A:['A','안전보건관리체제',20],B:['B','실행수준',40],C:['C','운영관리',20],D:['D','재해발생 수준',20]};
+/** F1.9f 평가 항목표 (시안 2: No · 평가항목·근거 · 결과 · 점수 · 분야는 회색 줄 · 합계는 검정 줄)
+ *  items = [{no, sec(A~D), name, lv, pts, max, why, memo}] */
+function erTable(items,total,grade){let h='<table class="ertb"><thead><tr><th style="width:26px">No</th><th>평가항목 · 근거</th><th style="width:44px">결과</th><th style="width:52px;text-align:right">점수</th></tr></thead><tbody>';
+ ['A','B','C','D'].forEach(k=>{const L=items.filter(x=>x.sec===k);if(!L.length)return;const sum=L.reduce((s,x)=>s+(x.pts||0),0),S=ER_SEC[k],lo=k!=='D'&&sum<S[2]/2;
+  h+='<tr class="g" id="er_sg'+k+'"><td colspan="3">'+S[0]+'. '+escapeText(S[1])+(lo?' <span class="req">· 절반 미만 → D등급</span>':'')+'</td><td class="r">'+sum+'/'+S[2]+'</td></tr>';
+  L.forEach(x=>{h+='<tr id="er_it'+escapeText(x.no)+'"><td class="muted">'+escapeText(x.no)+'</td><td>'+escapeText(x.name)+((x.why||x.memo)?'<div class="muted">'+escapeText(x.why||'')+(x.why&&x.memo?' · ':'')+escapeText(x.memo||'')+'</div>':'')+'</td><td class="lv '+escapeText(x.lv||'')+'">'+(EV_LV[x.lv]||'-')+'</td><td class="r">'+(x.pts||0)+'<span class="muted" style="font-weight:400">/'+x.max+'</span></td></tr>'})});
+ return h+'<tr class="tot" id="er_sum"><td colspan="3">합계 · 등급</td><td class="r">'+total+' · '+escapeText(grade)+'</td></tr></tbody></table>'}
+/** 메일 버튼(?evres=…&go=gd|crit)으로 들어오면 로그인 뒤 한 번 열기 */
+function evresPending(){let p=null;try{p=JSON.parse(localStorage.getItem('evresGo')||'null')}catch(e){}if(!p||!p.r)return;try{localStorage.removeItem('evresGo')}catch(e){}if(Date.now()-Number(p.t||0)>7200000)return;openEvalResult(p.r,p.g)}
+async function openEvalResult(ref,go,jobId){let r;try{r=await call('evalResult',ref,jobId||'')}catch(e){return}evRes=r;renderEvalResult();if(go==='gd')setTimeout(()=>startTour('evres'),500);else if(go==='crit')setTimeout(evCritOpen,300)}
+function erCss(){if($('erCss'))return;const s=document.createElement('style');s.id='erCss';s.textContent=
+ '#evres{position:fixed;inset:0;z-index:80;background:var(--bg);overflow:auto;-webkit-overflow-scrolling:touch}.pill.erN{background:#fff7ed;color:#b45309}'
+ +'.erbig{font-size:36px;font-weight:800;line-height:1.1;color:var(--main)}.erbar{height:8px;background:#e5e7eb;border-radius:8px;overflow:hidden;margin:3px 0 10px}.erbar span{display:block;height:100%;background:var(--main)}.erbar span.low{background:var(--accent)}'
+ +'.erit{display:flex;gap:8px;align-items:center;padding:10px 0;border:0;border-top:1px solid var(--line);width:100%;background:none;text-align:left;font:inherit;color:inherit;cursor:pointer}.erit .no{width:22px;color:#9ca3af;font-weight:700;flex:none}.erit .pt{margin-left:auto;font-weight:700;white-space:nowrap}'
+ +'.erwhy{display:none;font-size:13px;background:var(--bg);border-radius:8px;padding:8px 10px;margin:0 0 8px;line-height:1.6}.eritw.open .erwhy{display:block}'
+ +'.ertb{width:100%;border-collapse:collapse;font-size:13px}.ertb th{font-size:12px;color:var(--sub);font-weight:600;text-align:left;padding:6px 4px;border-bottom:2px solid var(--main)}.ertb td{padding:8px 4px;border-bottom:1px solid var(--line);vertical-align:top}.ertb td.r{text-align:right;white-space:nowrap;font-weight:700}.ertb tr.g td{background:var(--bg);font-weight:700;font-size:12px;padding:5px 4px}.ertb .lv{font-weight:700;white-space:nowrap}.ertb .lv.P{color:var(--accent)}.ertb .lv.N{color:#b45309}.ertb .lv.G{color:var(--ok)}.ertb tr.tot td{background:var(--main);color:#fff;font-weight:700;font-size:14px;border:0;padding:10px 8px}.ertb tr.tot td:first-child{text-align:right;border-radius:0 0 0 8px}.ertb tr.tot td.r{border-radius:0 0 8px 0}'
+ +'#evcrit{position:fixed;inset:0;z-index:82;background:rgba(15,23,42,.55);display:flex;align-items:flex-end;justify-content:center}#evcrit .sheet{background:#fff;width:100%;max-width:560px;max-height:88vh;overflow:auto;border-radius:18px 18px 0 0;padding:18px 16px 24px}'
+ +'#evcrit table{width:100%;border-collapse:collapse}#evcrit td{font-size:13px;padding:7px 4px;border-top:1px solid var(--line);vertical-align:top}#evcrit .hd td{background:var(--bg);font-weight:700}#evcrit h3{font-size:15px;margin:16px 0 6px}'
+ +'.ertabs{display:flex;gap:6px;margin:10px 0}.ertabs button{flex:1;border:1px solid var(--line);background:#fff;border-radius:9px;padding:8px 4px;font:inherit;font-size:13px;cursor:pointer}.ertabs button[aria-selected=true]{background:var(--main);color:#fff;border-color:var(--main)}';document.head.appendChild(s)}
+function renderEvalResult(){const r=evRes;if(!r)return;erCss();let el=$('evres');if(!el){el=document.createElement('div');el.id='evres';el.setAttribute('role','dialog');el.setAttribute('aria-modal','true');el.addEventListener('keydown',e=>{if(e.key==='Escape'&&!(typeof tour!=='undefined'&&tour)&&!$('evcrit'))closeEvalResult()});document.body.appendChild(el)}
+ el.setAttribute('aria-label',r.title);document.body.style.overflow='hidden';
+ const gl=['S','A'].includes(r.grade)?'G':r.grade==='B'?'N':'P',low=r.items.filter(x=>x.lv&&x.lv!=='G').sort((p,q)=>(q.max-q.pts)-(p.max-p.pts)),good=r.items.filter(x=>x.lv==='G');
+ el.innerHTML='<div class="pbar"><button class="button ghost" type="button" onclick="closeEvalResult()">‹ 이전으로</button><b class="pbt">'+escapeText(r.title)+'</b><span style="width:64px"></span></div><div class="cwrap" style="max-width:640px;margin:0 auto">'
+  +'<div class="card" id="er_tot"><div class="row" style="justify-content:space-between;gap:6px"><b>'+escapeText(r.title)+'</b><span class="row" style="gap:6px">'+gdBtn('evres')+'<button type="button" class="button ghost" style="padding:4px 8px;font-size:12px" id="erCrit" onclick="evCritOpen()">📋 평가 기준</button></span></div>'
+  +'<div class="muted" style="margin-top:4px">'+escapeText(r.sub)+(r.evaluator?' · 평가 '+escapeText(r.evaluator):'')+'</div>'
+  +'<div class="row" style="align-items:flex-end;gap:8px;margin-top:10px"><span class="erbig">'+r.total+'</span><span class="muted" style="font-size:14px">/ 100점</span><span class="pill '+ER_PILL[gl]+'" style="margin-left:auto">'+escapeText(r.grade)+'등급</span></div></div>'
+  +'<div class="card" id="er_items" style="padding:12px"><b>평가 항목표</b><div style="margin-top:8px;overflow-x:auto">'+erTable(r.items,r.total,r.grade)+'</div></div>'
+  +'<div class="card" id="er_cmt"><b>'+(r.kind==='JE'?'개선사항 (다음 계약 때 안내)':'검토 의견')+'</b><p style="margin:6px 0 0;white-space:pre-line">'+escapeText(r.comment||'없음')+'</p></div></div>';
+ el.scrollTop=0;
+ /* 가이드: 총점 → 가장 많이 깎인 분야 → 깎인 항목(큰 순) → 우수 항목 → 의견 → 기준 버튼 */
+ const sl=r.sec.slice().sort((a,b)=>(b[3]-b[2])/b[3]-(a[3]-a[2])/a[3])[0],T=t=>String(t||'').replace(/\s*\n\s*/g,' · ');
+ TOUR_STEPS.evres=[{sel:'#gd_evres',text:'평가 결과 가이드입니다. 왜 이 점수가 나왔는지 하나씩 따라가 봅니다.'},
+  {sel:'#er_tot',text:'총점 '+r.total+'점이라 '+r.grade+'등급입니다. (S 90 · A 80 · B 70 · C 60점 이상 · D 60점 미만)'+(r.limited?' 한 분야가 배점의 절반이 안 돼서 총점과 상관없이 D등급입니다.':'')},
+  {sel:'#er_sg'+sl[0],text:sl[2]>=sl[3]?'모든 분야가 만점입니다.':sl[1]+' 분야가 '+sl[2]+'/'+sl[3]+'점으로 가장 많이 깎였습니다.'+(sl[0]!=='D'&&sl[2]<sl[3]/2?' 절반이 안 돼서 D등급이 됩니다.':'')}]
+  .concat(low.map(x=>({sel:'#er_it'+x.no,text:T(x.no+'번 '+x.name+' '+EV_LV[x.lv]+' ('+x.pts+'/'+x.max+'점 · -'+(x.max-x.pts)+'점) — '+(x.why||'')+(x.memo?' · '+x.memo:''))})))
+  .concat([{sel:'#er_it'+((good[0]||r.items[0]).no),text:low.length?'우수 항목('+good.map(x=>x.no).join('·')+'번)은 기준을 다 채운 것입니다. 항목 이름 아래 작은 글씨가 근거입니다.':'12개 항목 모두 우수입니다.'},
+   {sel:'#er_sum',text:'맨 아래 검정 줄이 합계와 등급입니다. 분야별 소계(회색 줄)를 더한 점수입니다.'},
+   {sel:'#er_cmt',text:r.kind==='JE'?'평가자가 남긴 개선사항입니다. 다음 계약 때 이 부분을 보완하면 점수가 올라갑니다.':'검토자 의견입니다. 보완 요청이면 이 내용대로 고쳐서 다시 제출합니다.'},
+   {sel:'#erCrit',tap:1,text:'기준이 궁금하면 [📋 평가 기준]을 누르세요. 배점·등급·자동 체크 규칙이 모두 나옵니다.'}]);
+ setTimeout(()=>$('gd_evres')?.focus({preventScroll:true}),50)}
+function erToggle(b){const w=b.parentNode;w.classList.toggle('open');b.setAttribute('aria-expanded',w.classList.contains('open'))}
+function closeEvalResult(){if(typeof tour!=='undefined'&&tour)endTour(true);$('evcrit')?.remove();$('evres')?.remove();document.body.style.overflow='';evRes=null}
+/** 📋 평가 기준 (그동안 정한 기준 · 탭 3개) */
+const ER_CRIT=[['점수·등급','<h3>배점 (100점) · 우수 / 보통 / 미흡</h3><table><tr class="hd"><td>분야</td><td>항목 (우수/보통/미흡 점수)</td><td>합계</td></tr>'
+ +'<tr><td>A 관리체제</td><td>1 방침 5/3/1 · 2 목표·지표 10/5/1 · 3 조직 5/3/1</td><td>20</td></tr><tr><td>B 실행수준</td><td>4 위험성평가 5/3/1 · 5 점검 10/5/1 · 6 이행확인 10/5/1 · 7 교육 5/3/1 · 8 작업허가 10/5/1</td><td>40</td></tr>'
+ +'<tr><td>C 운영관리</td><td>9 신호·연락 5/3/1 · 10 설비 10/5/1 · 11 비상대책 5/3/1</td><td>20</td></tr><tr><td>D 재해</td><td>12 산재 20/10/1</td><td>20</td></tr></table>'
+ +'<h3>등급</h3><table><tr><td>S 90점 이상 · A 80 · B 70 · C 60 · D 60점 미만</td></tr><tr><td>A·B·C 분야 중 하나라도 배점의 <b>절반 미만</b>이면 총점과 상관없이 <b>D</b></td></tr><tr><td>미흡은 0점이 아니라 <b>1점</b></td></tr></table>'
+ +'<h3>등급에 따라</h3><table><tr><td><b>70점 미만</b> → 도급인에게 경고 (서류 검토 화면 · 공사 배정 때) · 막지는 않음</td></tr><tr><td><b>D등급</b> → 업체가 계약 전 서류를 제출할 수 없음 · 부족한 항목 안내 + [바로 고치기]</td></tr><tr><td>종료 평가 C·D등급 → 다음 공사 배정 때 경고</td></tr></table>'],
+ ['계약 전 평가','<h3>업체가 쓴 계획서로 자동 체크 → 검토자가 확인·수정</h3><table><tr class="hd"><td>항목</td><td>우수 조건</td></tr>'
+ +'<tr><td>1 방침</td><td>규정 서명 + 방침 3줄 이상</td></tr><tr><td>2 목표</td><td>목표 + 성과지표 3개 이상</td></tr><tr><td>3 조직</td><td>현장대리인 이름·연락처 (이름만 = 보통)</td></tr>'
+ +'<tr><td>4 위험성평가</td><td>해당 위험요인 3개 이상 체크</td></tr><tr><td>5 · 7 · 10</td><td>법정 기본값을 앱이 미리 채움 → 우수 (영세업체 배려 · 꼭 해야 하는 법적 사항)</td></tr>'
+ +'<tr><td>6 이행확인</td><td>이행 사례 20자 이상 + 증빙 사진 = 우수 · 글만 = 보통 · 비우면 미흡</td></tr><tr><td>8 작업허가</td><td>작업허가 대상 공종이 있음</td></tr><tr><td>9 신호·연락</td><td>현장대리인 연락처</td></tr>'
+ +'<tr><td>11 비상대책</td><td>시나리오 2개 이상 + 비상대피훈련 계획</td></tr><tr><td>12 산재</td><td>건수 기준 · 증빙 있음 + 0건 = 우수 · 2건 이하 = 보통 · <b>증빙 없으면 미제출 → 미흡</b></td></tr></table><p class="muted">평가 유효기간: 승인일부터 1년</p>'],
+ ['종료 평가','<h3>종료 평가 = 계약 전 계획을 공사 중에 지켰는가 (실행률)</h3><table><tr class="hd"><td>항목</td><td>보는 것</td></tr>'
+ +'<tr><td>1 · 2 · 3 · 10</td><td>계약 전 평가 결과 그대로</td></tr><tr><td>4 위험성평가</td><td>계획서 위험요인이 순회점검에서 \'양호\'였던 비율</td></tr><tr><td>5 점검</td><td>순회점검 횟수 ÷ (작업일 ÷ 2)</td></tr>'
+ +'<tr><td>6 이행확인</td><td>미조치가 있으면 미흡 · 평균 3일 안에 조치 = 우수</td></tr><tr><td>7 교육</td><td>작업자 기초안전보건교육 이수증 제출 비율</td></tr><tr><td>8 작업허가</td><td>허가서를 쓴 날 ÷ 작업일</td></tr>'
+ +'<tr><td>9 신호·연락</td><td>협의체·합동점검 참석률</td></tr><tr><td>11 비상대책</td><td>비상대피·CPR·소화기 훈련 사진 1회 이상 = 우수 · 기타 교육만 = 보통</td></tr><tr><td>12 재해</td><td>공사 중 사고 여부 (담당자 입력 · 무재해 = 우수)</td></tr></table>'
+ +'<p class="muted">비율: 90% 이상 우수 · 60% 이상 보통 · 그 아래 미흡 · 공사가 끝날 때 하는 평가 = 반기 평가</p>']];
+function evCritOpen(i){erCss();$('evcrit')?.remove();i=i==null?(evRes&&evRes.kind==='CE'?1:evRes&&evRes.kind==='JE'?2:0):i;const w=document.createElement('div');w.id='evcrit';w.setAttribute('role','dialog');w.setAttribute('aria-modal','true');w.setAttribute('aria-label','평가 기준');
+ w.innerHTML='<div class="sheet"><div class="row" style="justify-content:space-between"><b style="font-size:17px">📋 평가 기준</b><button class="button ghost" type="button" id="evcritX" style="padding:6px 10px">✕ 닫기</button></div>'
+  +'<div class="ertabs" role="tablist">'+ER_CRIT.map((c,k)=>'<button type="button" role="tab" aria-selected="'+(k===i)+'" onclick="evCritOpen('+k+')">'+escapeText(c[0])+'</button>').join('')+'</div>'+ER_CRIT[i][1]+'</div>';
+ document.body.appendChild(w);const close=()=>w.remove();$('evcritX').onclick=close;w.addEventListener('click',e=>{if(e.target===w)close()});w.addEventListener('keydown',e=>{if(e.key==='Escape')close()});setTimeout(()=>w.querySelector('[aria-selected=true]')?.focus(),30)}
