@@ -9,6 +9,8 @@ if(!SESSION)try{SESSION=sessionStorage.getItem('dsk')||''}catch(e){}
 function sessSave(k){try{localStorage.setItem(SESS_KEY,JSON.stringify({k,t:Date.now()}))}catch(e){}try{sessionStorage.setItem('dsk',k)}catch(e){}}
 function sessTouch(){try{const s=JSON.parse(localStorage.getItem(SESS_KEY)||'null');if(s&&s.k===SESSION&&Date.now()-Number(s.t||0)>600000){s.t=Date.now();localStorage.setItem(SESS_KEY,JSON.stringify(s))}}catch(e){}}
 function sessClear(){try{localStorage.removeItem(SESS_KEY)}catch(e){}try{sessionStorage.removeItem('dsk')}catch(e){}}
+/* F1.9e 메일의 [자세히 보기·가이드·평가 기준] 버튼 (?evres=CE|CE_업체|JE_평가&go=gd|crit) → 로그인 뒤 평가 결과 화면 */
+(function(){try{const q=new URLSearchParams(location.search),r=(q.get('evres')||'').replace(/[^A-Za-z0-9_-]/g,'').slice(0,60);if(r){localStorage.setItem('evresGo',JSON.stringify({r,g:(q.get('go')||'').replace(/[^a-z]/g,'').slice(0,5),t:Date.now()}));history.replaceState(null,'',location.pathname)}}catch(e){}})();
 const LINK_REVIEW=(new URLSearchParams(location.search).get('review')||'').replace(/[^A-Za-z0-9-]/g,'').slice(0,40);
 let state=null,activeStep=1,saveTimer=null,dirty=false,tab='my',reviewing=null;
 const $=id=>document.getElementById(id),escapeText=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -21,7 +23,7 @@ function loadStart(name){loadCount++;if(loadCount>1)return;const rd=READS.has(na
  loadTimer=setInterval(()=>{const s=Math.floor((Date.now()-t0)/1000);$('loadSec').textContent=s?s+'초':'';$('loadHint').textContent=s<3?'잠시만 기다려 주세요':s<10?(rd?'구글 시트에서 자료를 모으고 있습니다 · 정상 진행 중':'입력한 내용을 구글 시트에 기록하고 있습니다 · 정상 진행 중'):s<25?'보통 5~15초 걸립니다 · 오류가 아니니 그대로 기다려 주세요':'서버가 평소보다 느립니다 · 창을 닫지 말고 조금만 더 기다려 주세요'},500)}
 function loadEnd(){loadCount=Math.max(0,loadCount-1);if(loadCount)return;clearInterval(loadTimer);clearTimeout(coverTimer);setTimeout(()=>{if(!loadCount)$('cover').style.display='none'},120)}
 /* v5.8 빠른 화면: 조회는 화면을 가리지 않고 위쪽 얇은 선만 표시 · 저장·제출·파일 만들기만 로딩 창 */
-const READS=new Set(['portalData','myStatus','myJobs','vendorJob','jobBoard','meetingDetail','permitList','permitDetail','getPermit','inspList','inspMine','jobEvalList','noticeList','vendorList','staffList','templateAdminList','reviewList','applications','getReviewData','getMeetingPhoto','getInspPhoto','myBadges']);
+const READS=new Set(['portalData','myStatus','myJobs','vendorJob','jobBoard','meetingDetail','permitList','permitDetail','getPermit','inspList','inspMine','jobEvalList','noticeList','vendorList','staffList','templateAdminList','reviewList','applications','getReviewData','getMeetingPhoto','getInspPhoto','myBadges','evalResult']);
 let barN=0,barT=null;
 function barStart(){barN++;$('topLoad')?.classList.add('on');clearTimeout(barT);barT=setTimeout(()=>{if(barN)$('topNote')?.classList.add('on')},700)}
 function barEnd(){barN=Math.max(0,barN-1);if(!barN){clearTimeout(barT);$('topLoad')?.classList.remove('on');$('topNote')?.classList.remove('on')}}
@@ -57,7 +59,7 @@ function text(id,label,value='',disabled=false){return `<div class="field"><labe
 function value(id){return $('f_'+id)?.value?.trim()||''}
 function switchTab(which){tab=which;toggleMenu(false);stopScan();if($(which+'Tab'))$('pageTitle').textContent=$(which+'Tab').textContent;clearInterval(roomTimer);clearInterval(wkTimer);for(const n of ['my','admin','review','tpl','staff','jobs','notice','vendors']){$(n).classList.toggle('hidden',n!==which);$(n+'Tab').classList.toggle('active',n===which)}if(which==='admin')loadAdmin();if(which==='review')loadReview();if(which==='tpl')loadTemplates();if(which==='staff')loadStaff();if(which==='jobs')loadJobs();if(which==='notice')loadNotices();if(which==='vendors')loadVendors();}
 // ★ 화면 버전: 여기 한 줄만 고침 (GitHub만 올리면 로그인 화면·앱 화면·메뉴에 모두 반영, Code.gs 수정 불필요)
-const UI_VERSION='26.10.24 F1.9d';
+const UI_VERSION='26.10.24 F1.9f';
 /* F1.8o 전화번호 · 사업자번호: 숫자만 쳐도 '-' 자동 (서버는 원래 숫자만 골라 씀) */
 function fmtTel(v){const d=String(v||'').replace(/\D/g,'').slice(0,11);if(d.startsWith('02'))return d.length<3?d:d.length<6?d.slice(0,2)+'-'+d.slice(2):d.length<10?d.slice(0,2)+'-'+d.slice(2,5)+'-'+d.slice(5):d.slice(0,2)+'-'+d.slice(2,6)+'-'+d.slice(6,10);
  return d.length<4?d:d.length<8?d.slice(0,3)+'-'+d.slice(3):d.length<11?d.slice(0,3)+'-'+d.slice(3,6)+'-'+d.slice(6):d.slice(0,3)+'-'+d.slice(3,7)+'-'+d.slice(7)}
@@ -72,7 +74,7 @@ async function refreshNow(){const editing=dirty||(typeof ins!=='undefined'&&!!in
  dirty=false;try{sessionStorage.removeItem('verReload');sessionStorage.removeItem('htmlReload')}catch(e){}location.reload()}
 /** v4.1 ⚙ 마스터 설정: 직원 관리로 바로 이동 (마스터 계정만 보임) */
 function openMaster(){if(!state||!state.isMaster)return;sgo('staff')}
-function display(s){state=s;setTimeout(perfUI,0);showVer(s);$('gearBtn').hidden=!s.isMaster;setTimeout(()=>{showBadges(s.badges);startBadges()},0);$('identity').textContent=(s.mode==='STAFF'?'[다이소 담당자로 접속] ':s.mode==='VENDOR'?'[협력업체로 접속] ':'')+'접속 계정: '+s.email+(s.staff?' · 아성다이소 '+s.staff.roleLabel+' '+s.staff.name:'');$('staffTab').classList.toggle('hidden',!(s.staff&&s.staff.role==='SAFETY'));$('jobsTab').classList.toggle('hidden',!s.staff);$('noticeTab').classList.toggle('hidden',!(s.staff&&s.staff.role==='SAFETY'));if(s.staff&&!s.company&&tab==='my'){$('myTab').textContent='내 업무';}$('adminTab').classList.toggle('hidden',!(['ADMIN','SAFETY'].includes(s.role)||s.isApprover));$('tplTab').classList.toggle('hidden',!['ADMIN','SAFETY'].includes(s.role));$('reviewTab').classList.toggle('hidden',!['ADMIN','SAFETY','CONTRACT'].includes(s.role));if($(tab+'Tab'))$('pageTitle').textContent=$(tab+'Tab').textContent;setupVMenu();setupSMenu();renderMy();}
+function display(s){state=s;setTimeout(()=>typeof evresPending==='function'&&evresPending(),500);setTimeout(perfUI,0);showVer(s);$('gearBtn').hidden=!s.isMaster;setTimeout(()=>{showBadges(s.badges);startBadges()},0);$('identity').textContent=(s.mode==='STAFF'?'[다이소 담당자로 접속] ':s.mode==='VENDOR'?'[협력업체로 접속] ':'')+'접속 계정: '+s.email+(s.staff?' · 아성다이소 '+s.staff.roleLabel+' '+s.staff.name:'');$('staffTab').classList.toggle('hidden',!(s.staff&&s.staff.role==='SAFETY'));$('jobsTab').classList.toggle('hidden',!s.staff);$('noticeTab').classList.toggle('hidden',!(s.staff&&s.staff.role==='SAFETY'));if(s.staff&&!s.company&&tab==='my'){$('myTab').textContent='내 업무';}$('adminTab').classList.toggle('hidden',!(['ADMIN','SAFETY'].includes(s.role)||s.isApprover));$('tplTab').classList.toggle('hidden',!['ADMIN','SAFETY'].includes(s.role));$('reviewTab').classList.toggle('hidden',!['ADMIN','SAFETY','CONTRACT'].includes(s.role));if($(tab+'Tab'))$('pageTitle').textContent=$(tab+'Tab').textContent;setupVMenu();setupSMenu();renderMy();}
 /** ☰ 메뉴 열기·닫기 */
 function toggleMenu(open){const d=$('drawer');if(!d)return;const v=open===undefined?!d.classList.contains('open'):!!open;
  /* 닫힌 메뉴 안에 포커스가 남지 않게 (aria-hidden 경고) */if(!v&&d.contains(document.activeElement))document.activeElement.blur();
