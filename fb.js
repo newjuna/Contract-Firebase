@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F1.9n';
+  const VERSION = '26.10.24 F1.9p';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   const CFG = {
     INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
@@ -598,7 +598,7 @@
     await ref.set({ name: m.name, dept, role: m.role, companyEmail: m.companyEmail, loginEmail: m.gmail, active: 'Y', title: m.title, phone: m.phone, unitId: m.unitId, memberId: m.id,
       createdBy: (base && base.createdBy) || a.email, createdAt: (base && base.createdAt) || now(), updatedBy: a.email, updatedAt: now() });
   }
-  /** F1.9n 권한은 소속으로 자동: 안전보건팀(이름)과 그 아래 조직 = 안전보건팀 · 그 외 = 도급인 담당자 · 로그인 Gmail이 없으면 로그인 명단에 안 넣음 */
+  /** F1.9p 권한은 소속으로 자동: 안전보건팀(이름)과 그 아래 조직 = 안전보건팀 · 그 외 = 도급인 담당자 · 로그인 Gmail이 없으면 로그인 명단에 안 넣음 */
   function orgRoleOf(units, unitId, gmail, a) {
     if (!gmail) return 'NONE'; if (MASTER_EMAILS.includes(gmail)) return 'SAFETY';
     let u = units.find((x) => x.id === unitId), g = 0; while (u && g++ < 20) { if (/안전보건팀/.test(u.name)) return 'SAFETY'; const p = u.parent; u = units.find((x) => x.id === p); }
@@ -665,6 +665,11 @@
   API.adminStats = async (a) => { masterGate(a); return relay('adminStats', {}, true, 120000); };
   API.adminPreview = async (a, d) => { masterGate(a); return relay('adminPreview', { d: d || {} }, false, 120000); };
   API.adminDelete = async (a, token) => { masterGate(a); return relay('adminDelete', { token: String(token || '') }, false, 150000); };
+  /* F1.9p 데이터 관리 (왼쪽 목록 · 표로 보기 · 바로 처리) */
+  API.adminTree = async (a) => { masterGate(a); return relay('adminTree', {}, true, 120000); };
+  API.adminRows = async (a, kind) => { masterGate(a); return relay('adminRows', { kind: String(kind || '') }, true, 120000); };
+  API.adminRowsDelete = async (a, kind, ids) => { masterGate(a); return relay('adminRowsDelete', { kind: String(kind || ''), ids: (ids || []).slice(0, 200).map(String) }, false, 150000); };
+  API.adminFix = async (a, act, id, email) => { masterGate(a); return relay('adminFix', { act: String(act || ''), id: String(id || ''), email: String(email || '') }, false, 120000); };
 
   /* ---------- F1.2 계약 전 서류 ---------- */
   /** [업체] 사업장 정보 저장 (자동저장) — Firestore에 바로 씀. 상태·보완 항목은 보안 규칙이 다시 확인 */
@@ -1122,7 +1127,7 @@
     await db.collection('PERMITS').doc(id).set({ id, no, jobId: j.id, companyId: b.id, company: b.company, vendorUid: a.uid, date: t, data: raw, progress: '{}', status: 'ISSUED',
       issuedBy: a.email, issuedAt: now(), updatedAt: now(), approvedBy: '', approvedAt: '', approveNote: '' });
     audit(a, b.id, 'PERMIT_ISSUE', no + ' ' + j.id);
-    /* F1.9d 허가서 발행 메일 없음 · F1.9n 도급인 담당자 Teams (기다리지 않음 · 실패해도 발행은 그대로) */
+    /* F1.9d 허가서 발행 메일 없음 · F1.9p 도급인 담당자 Teams (기다리지 않음 · 실패해도 발행은 그대로) */
     relay('teams', { kind: 'PERMIT', id }).catch(() => {});
     return permitPack(a, b, j, jv, t);
   };
@@ -1245,7 +1250,7 @@
         foundDate: t, status: 'OPEN', actionMemo: '', after: [], actionDate: '', actionBy: '', actionAt: '' });
     });
     await B.commit(); audit(a, b.id, 'INSP_SUBMIT', id);
-    relay('teams', { kind: 'INSP', id }).catch(() => {});  // F1.9n 도급인 담당자 Teams (기다리지 않음)
+    relay('teams', { kind: 'INSP', id }).catch(() => {});  // F1.9p 도급인 담당자 Teams (기다리지 않음)
     return API.vendorJob(a, jobId);
   };
   /** [업체·직원] 지적사항 조치 등록 (조치일은 지적일 ~ 오늘) — 종료된 공사도 가능 */
