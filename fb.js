@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F1.8y';
+  const VERSION = '26.10.24 F1.8z';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   const CFG = {
     INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
@@ -489,7 +489,7 @@
     await relay('register', { d: d || {}, cert: cert && cert.data ? cert : null });
     return API.portalData(a);
   };
-  /** F1.8y [업체] 승인 대기 중 신청 내용 고쳐 다시 보내기 (등록증은 새로 고른 경우만) */
+  /** F1.8z [업체] 승인 대기 중 신청 내용 고쳐 다시 보내기 (등록증은 새로 고른 경우만) */
   API.reRegisterBusiness = async (a, d, cert) => {
     if (a.mode === 'STAFF') fail('다이소 담당자로 접속했습니다.');
     await relay('reRegister', { d: d || {}, cert: cert && cert.data ? cert : null });
