@@ -5,7 +5,7 @@
  *  서버: Code.gs jobBoard(vstats) · vendorList */
 let smenu='dash',svData=null,svFilter='all';
 /* F1.8g 작업허가서 승인 · 순회점검 확인 메뉴 → '현장 확인' 하나로 (예전 이름으로 부르면 현장 확인으로) */
-const SMENU={dash:'대시보드',jobs:'공사 관리',meet:'협의체·합동점검',check:'현장 확인',data:'데이터 관리',principal:'도급인 책임자',permit:'작업허가서 승인',insp:'순회점검 확인',eval:'종료 평가',vendors:'업체 현황',notice:'참조 알림',tpl:'표준양식 관리',staff:'조직도'};
+const SMENU={flyer:'업체 안내문',dash:'대시보드',jobs:'공사 관리',meet:'협의체·합동점검',check:'현장 확인',data:'데이터 관리',principal:'도급인 책임자',permit:'작업허가서 승인',insp:'순회점검 확인',eval:'종료 평가',vendors:'업체 현황',notice:'참조 알림',tpl:'표준양식 관리',staff:'조직도'};
 const isStaffUI=()=>!!(state&&state.staff);
 const kstToday=()=>new Date(Date.now()+9*3600e3).toISOString().slice(0,10);
 /** 메뉴 보이기 (display 때마다) */
@@ -26,7 +26,7 @@ function sBadges(b){if(!isStaffUI())return;b=b||{};const vd=(b.admin||0)+(b.revi
  setBadge($('sm_jobs'),jb);setBadge($('sm_meet'),pa);setBadge($('sm_check'),ck);setBadge($('sm_vendors'),vd);setBadge($('menuBtn'),jb+pa+ck+vd)}
 /* ---------- 공사 화면 (메뉴별로 같은 공사 목록을 다르게 보여 줌) ---------- */
 function renderJobs(){jobsMode='list';roomId='';clearInterval(roomTimer);const d=jobData;if(!d)return;
- const H={dash:sDash,jobs:sJobs,meet:sMeet,check:sCheck,data:sData,principal:sPrincipal,permit:sCheck,insp:sCheck,eval:sEval}[smenu]||sJobs;$('jobs').innerHTML=H(d)}
+ const H={flyer:sFlyer,dash:sDash,jobs:sJobs,meet:sMeet,check:sCheck,data:sData,principal:sPrincipal,permit:sCheck,insp:sCheck,eval:sEval}[smenu]||sJobs;$('jobs').innerHTML=H(d)}
 const sAct=d=>d.jobs.filter(j=>j.status!=='ENDED'),sEnded=d=>d.jobs.filter(j=>j.status==='ENDED');
 const sum=(l,f)=>l.reduce((s,x)=>s+(Number(f(x))||0),0);
 function sMeta(j){return escapeText(j.storeName)+' · '+escapeText(j.startDate)+(j.endDate?' ~ '+escapeText(j.endDate):'')+' · 주관 '+escapeText(j.hostName)}

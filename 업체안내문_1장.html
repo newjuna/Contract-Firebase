@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>도급 안전관리 앱 · 협력업체 사전 준비 안내</title>
+<style>
+@page{size:A4;margin:0}
+:root{--r:#E60012;--n:#111827;--s:#6b7280;--l:#e5e7eb;--bg:#f4f5f7}
+*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+html,body{margin:0;background:#cfd3da;font-family:"Malgun Gothic","맑은 고딕",sans-serif;color:#1f2937}
+.bar{position:sticky;top:0;z-index:5;background:#111827;color:#fff;padding:9px 14px;font-size:13px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.bar button{border:0;border-radius:8px;padding:7px 12px;font:inherit;font-weight:700;cursor:pointer}.bar .p{background:var(--r);color:#fff}.bar .g{background:#374151;color:#fff}
+.page{width:210mm;height:297mm;margin:14px auto;background:#fff;overflow:hidden;position:relative;box-shadow:0 4px 18px rgba(0,0,0,.18);display:flex;flex-direction:column}
+.fill{background:#fff7c2;outline:1px dashed #e0b400;border-radius:3px;padding:0 3px;min-width:30px;display:inline-block}
+.fill:focus{outline:2px solid var(--r);background:#fff}
+@media print{html,body{background:#fff}.bar{display:none}.page{margin:0;box-shadow:none}.fill{background:none;outline:none;padding:0}}
+/* 머리 */
+.top{background:var(--r);color:#fff;display:flex;align-items:center;justify-content:space-between;padding:3mm 10mm}
+.top .lg{font-family:"Arial Black",Arial,sans-serif;font-weight:900;letter-spacing:4px;font-size:15pt}.top small{font-size:8.5pt}
+.hd{background:var(--n);color:#fff;padding:4mm 10mm;display:flex;gap:4.5mm;align-items:center}
+.hd img{width:15mm;height:15mm;border-radius:3.5mm;flex:none}
+.hd h1{margin:0;font-size:17pt;letter-spacing:-.5px}.hd p{margin:1mm 0 0;font-size:9.5pt;color:#d1d5db}
+.body{padding:4mm 10mm 0;flex:1;display:flex;flex-direction:column;gap:3.4mm}
+.due{border:2px solid var(--r);border-radius:3mm;display:flex;overflow:hidden}
+.due .k{background:var(--r);color:#fff;font-weight:800;font-size:11pt;padding:2.6mm 4mm;display:flex;align-items:center;white-space:nowrap}
+.due .v{padding:2.2mm 4mm;font-size:10pt;line-height:1.55}.due .v b{font-size:12.5pt;color:var(--r)}
+/* 칸 */
+.st{border:1px solid var(--l);border-radius:3mm;padding:3.4mm 4mm}
+.st h2{margin:0 0 2.4mm;font-size:12.5pt;display:flex;align-items:center;gap:2mm}
+.st h2 i{font-style:normal;background:var(--n);color:#fff;border-radius:50%;width:6.5mm;height:6.5mm;display:inline-flex;align-items:center;justify-content:center;font-size:10pt;flex:none}
+.st.hot{border:2px solid var(--r);background:#fff8f8}.st.hot h2 i{background:var(--r)}
+.row{display:flex;gap:3.4mm}.row>.st{flex:1;min-width:0}
+/* ① QR */
+.qrb{text-align:center}.qrb img{width:46mm;height:46mm;display:block;margin:0 auto;border:1px solid var(--l);border-radius:2mm}
+.url{font-family:Consolas,monospace;font-size:10.5pt;font-weight:700;background:var(--bg);border-radius:1.5mm;padding:1.2mm 3mm;display:inline-block;margin:2.4mm 0 1mm}
+.cap{font-size:9pt;color:var(--s)}
+/* ② 설치 */
+.os{border-radius:2.4mm;background:var(--bg);padding:2.6mm 3mm;margin-bottom:2.6mm}.os:last-child{margin-bottom:0}
+.os b{font-size:10.5pt;display:block;margin-bottom:1.4mm}
+.flow{display:flex;align-items:center;gap:1.4mm;flex-wrap:wrap;font-size:9.4pt}
+.k2{display:inline-block;border:1px solid #9ca3af;border-radius:1.4mm;padding:.5mm 2mm;background:#fff;white-space:nowrap;font-weight:700}
+.ar{color:var(--s)}
+.home{display:flex;align-items:center;gap:2mm;margin-top:2mm;font-size:9pt;color:var(--s)}.home img{width:9mm;height:9mm;border-radius:2mm}
+/* ③ 로그인 화면 (앱 실제 화면과 같은 모양) */
+.lg3{display:flex;gap:5mm;align-items:center;padding:0 0 5mm 4mm}
+.phone{width:60mm;flex:none;border:2.2mm solid #1f2937;border-radius:7mm;background:#f4f5f7;padding:4mm 3mm;position:relative}
+.lbox{background:#fff;border:1px solid var(--l);border-radius:3.5mm;padding:4.5mm 3.8mm 4mm}
+.lbrand{display:flex;align-items:center;gap:1.6mm;font-size:8.5pt;font-weight:700;margin-bottom:3.6mm}.lbrand i{width:2mm;height:2mm;border-radius:50%;background:var(--r)}
+.lbox h4{margin:0 0 1mm;font-size:12pt}.lsub{margin:0 0 3.2mm;font-size:7pt;color:var(--s)}
+.lseg{display:flex;background:var(--bg);border-radius:2.4mm;padding:.8mm;margin:0 0 3.6mm;position:relative}
+.lseg span{flex:1;text-align:center;padding:1.8mm 1mm;border-radius:1.8mm;font-size:8pt;font-weight:600;color:var(--s)}
+.lseg span.on{background:#fff;color:var(--n);box-shadow:0 0 0 .7mm var(--r)}
+.gbtn{display:flex;align-items:center;justify-content:center;gap:1.8mm;height:8.6mm;border:1px solid #dadce0;border-radius:4.3mm;background:#fff;color:#3c4043;font-size:8pt;font-weight:600;box-shadow:0 0 0 .7mm var(--r)}
+.pin{position:absolute;width:6mm;height:6mm;border-radius:50%;background:var(--r);color:#fff;font-weight:800;font-size:9.5pt;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 .8mm #fff}
+.steps3{flex:1;min-width:0}
+.s3{display:flex;gap:2.4mm;align-items:flex-start;margin-bottom:2.8mm}.s3 b.n{flex:none;width:6mm;height:6mm;border-radius:50%;background:var(--r);color:#fff;display:flex;align-items:center;justify-content:center;font-size:9.5pt}
+.s3 div{font-size:10.5pt;line-height:1.5}.s3 small{display:block;font-size:8.8pt;color:var(--s)}
+.only{border:1.5px solid var(--n);border-radius:2.4mm;padding:2.2mm 3mm;font-size:9.6pt;line-height:1.55}
+.only b{color:var(--r)}
+/* ④ 이메일 */
+.mail{display:flex;gap:3.4mm;align-items:stretch}
+.mail .ok{flex:1;background:#fff;border:2px solid var(--n);border-radius:2.4mm;padding:4mm 5mm}
+.mail .ok .em{font-family:Consolas,monospace;font-size:21pt;font-weight:700;color:var(--n);margin:2mm 0}
+.mail .no{flex:1;background:#fff;border:1px solid var(--l);border-radius:2.4mm;padding:3mm;font-size:9.4pt;line-height:1.75}
+.ft{margin-top:auto;border-top:1px solid var(--l);padding:3mm 10mm 4mm;display:flex;justify-content:space-between;align-items:center;font-size:9pt;color:#374151}.ft b{color:var(--n)}
+</style></head><body>
+<div class="bar"><b>✏ 노란 칸을 눌러 날짜 · 장소 · 담당자를 고친 뒤</b><button class="p" onclick="window.print()">🖨 PDF로 저장 / 인쇄</button><button class="g" onclick="if(confirm('처음 내용으로 되돌릴까요?')){localStorage.removeItem('dgFlyer');location.reload()}">↺ 처음으로</button><span style="opacity:.8">인쇄 창에서 대상 = 「PDF로 저장」 · 용지 A4 · 여백 「없음」 · 「배경 그래픽」 체크</span></div>
+
+<div class="page">
+ <div class="top"><span class="lg">DAISO</span><small>아성다이소 · 협력업체 안전보건 관리</small></div>
+ <div class="hd"><img src="app-icon.png" alt=""><div><h1>도급 안전관리 앱 · 사전 준비 안내</h1><p>현장설명회 전까지 휴대폰에 앱을 설치하고, 사업자 등록 신청까지 마치고 와 주세요. (10분 · 비용 없음)</p></div></div>
+
+ <div class="body">
+  <div class="due"><div class="k">📅 준비 기한</div><div class="v"><b class="fill" data-k="due">2026. 11. __ (__) __시</b> 까지<br>현장설명회: <span class="fill" data-k="place">일시 · 장소 (예: 11. __ (__) 14시 · 다이소 ○○점)</span></div></div>
+
+  <div class="row">
+   <div class="st"><h2><i>1</i>QR 찍고 앱 열기</h2>
+    <div class="qrb"><img src="app-qr.png" alt="앱 주소 QR 코드"><div class="url">newjuna.github.io/Contract-Firebase</div><div class="cap">휴대폰 카메라로 찍거나, 위 주소를 주소창에 입력</div></div></div>
+   <div class="st"><h2><i>2</i>홈 화면에 추가 (앱처럼 쓰기)</h2>
+    <div class="os"><b>🤖 안드로이드 · 크롬</b><div class="flow"><span class="k2">⋮</span><span class="ar">→</span><span class="k2">홈 화면에 추가</span><span class="ar">또는</span><span class="k2">앱 설치</span></div></div>
+    <div class="os"><b>🍎 아이폰 · 꼭 Safari</b><div class="flow"><span class="k2">공유 ⬆</span><span class="ar">→</span><span class="k2">홈 화면에 추가</span><span class="ar">→</span><span class="k2">추가</span></div></div>
+    <div class="home"><img src="app-icon.png" alt=""><span>이 아이콘 <b style="color:#111827">「도급안전」</b>이 생기면 완료<br>카톡에서 열렸으면 「다른 브라우저로 열기」 먼저</span></div></div>
+  </div>
+
+  <div class="st"><h2><i>3</i>로그인 → 사업자 등록 신청</h2>
+   <div class="lg3">
+    <div class="phone">
+     <div class="lbox"><div class="lbrand"><i></i>도급 안전관리</div><h4>로그인</h4><p class="lsub">접속 구분을 고른 뒤 Google 계정으로 로그인하세요.</p>
+      <div class="lseg"><span class="on">협력업체</span><span>다이소 담당자</span></div>
+      <div class="gbtn"><svg viewBox="0 0 48 48" width="13" height="13" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.6l6.7-6.7C35.6 2.4 30.2 0 24 0 14.6 0 6.6 5.4 2.7 13.3l7.8 6C12.4 13.7 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.4c-.5 2.9-2.2 5.3-4.6 6.9l7.4 5.8c4.3-4 6.9-9.9 6.9-17.2z"/><path fill="#FBBC05" d="M10.5 28.7c-.5-1.4-.8-3-.8-4.7s.3-3.3.8-4.7l-7.8-6C1 16.6 0 20.2 0 24s1 7.4 2.7 10.7l7.8-6z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.4-5.8c-2.1 1.4-4.8 2.3-8.5 2.3-6.3 0-11.6-4.2-13.5-10l-7.8 6C6.6 42.6 14.6 48 24 48z"/></svg>Google 계정으로 로그인</div></div>
+     <span class="pin" style="left:-4.6mm;top:33.5mm">1</span><span class="pin" style="left:-4.6mm;top:45mm">2</span>
+     <div style="position:absolute;left:0;right:0;bottom:-6.4mm;text-align:center;font-size:8pt;color:var(--s)">▲ 실제 앱 첫 화면</div>
+    </div>
+    <div class="steps3">
+     <div class="s3"><b class="n">1</b><div><b>「협력업체」</b>를 누르기<small>「다이소 담당자」는 누르지 마세요</small></div></div>
+     <div class="s3"><b class="n">2</b><div><b>「Google 계정으로 로그인」</b><small>이 계정이 우리 업체 대표 계정이 됩니다 (현장대리인이 계속 쓸 계정)</small></div></div>
+     <div class="s3"><b class="n">3</b><div>첫 화면에서 <b>사업자 등록 신청</b><small>업체명 · 사업자번호 · 대표자 · 주소 · 현장대리인 · 업종 · (사업자등록증 사진)</small></div></div>
+     <div class="only">⚠ <b>Google 아이디(Gmail)로만</b> 로그인됩니다.<br>네이버 · 카카오 · 다음 계정은 안 됩니다. Gmail이 없으면 먼저 만들어 주세요. (무료)</div>
+    </div>
+   </div></div>
+
+  <div class="st hot"><h2><i>4</i>중요 · 다이소 담당자 이메일은 이렇게 적어 주세요</h2>
+   <div class="mail"><div class="ok"><div style="font-size:9.6pt;color:var(--s)">사업자 등록 신청서의 「다이소 담당자 이메일」 칸에 그대로 적어 주세요</div><div class="em fill" data-k="email">hong.gildong@daiso.co.kr</div><div style="font-size:10.5pt">담당 <span class="fill" data-k="pic">○○팀 ○○○ 대리</span></div></div></div></div>
+ </div>
+
+ <div class="ft"><span>문의 · <b class="fill" data-k="contact">아성다이소 ○○팀 ○○○ · 010-0000-0000</b></span><span>아성다이소 도급 안전관리</span></div>
+</div>
+<script>
+/* 한 장(A4)에 안 들어가면 글자를 조금씩 줄여서 맞춤 */
+function fit(){const p=document.querySelector('.page'),b=document.querySelector('.body');let z=1;b.style.zoom=1;while(p.scrollHeight>p.clientHeight+1&&z>0.78){z-=0.02;b.style.zoom=z}}
+window.addEventListener('load',fit);document.addEventListener('input',fit);
+/* 노란 칸 = 바로 고치기 (이 PC에 저장 · 다음에 열어도 그대로) */
+const K='dgFlyer';let S={};try{S=JSON.parse(localStorage.getItem(K)||'{}')}catch(e){}
+document.querySelectorAll('.fill').forEach(el=>{el.contentEditable='true';el.spellcheck=false;const k=el.dataset.k;if(S[k])el.textContent=S[k];
+ el.addEventListener('input',()=>{S[k]=el.textContent;try{localStorage.setItem(K,JSON.stringify(S))}catch(e){}});
+ el.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();el.blur()}})});
+</script>
+</body></html>
