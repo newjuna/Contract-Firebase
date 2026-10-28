@@ -166,7 +166,14 @@ function erCss(){if($('erCss'))return;const s=document.createElement('style');s.
  +'.erwhy{display:none;font-size:13px;background:var(--bg);border-radius:8px;padding:8px 10px;margin:0 0 8px;line-height:1.6}.eritw.open .erwhy{display:block}'
  +'.ertb{width:100%;border-collapse:collapse;font-size:13px}.ertb th{font-size:12px;color:var(--sub);font-weight:600;text-align:left;padding:6px 4px;border-bottom:2px solid var(--main)}.ertb td{padding:8px 4px;border-bottom:1px solid var(--line);vertical-align:top}.ertb td.r{text-align:right;white-space:nowrap;font-weight:700}.ertb tr.g td{background:var(--bg);font-weight:700;font-size:12px;padding:5px 4px}.ertb .erlv{font-weight:700;white-space:nowrap}.ertb .erlv.P{color:var(--accent)}.ertb .erlv.N{color:#b45309}.ertb .erlv.G{color:var(--ok)}.ertb tr.tot td{background:var(--main);color:#fff;font-weight:700;font-size:14px;border:0;padding:10px 8px}.ertb tr.tot td:first-child{text-align:right;border-radius:0 0 0 8px}.ertb tr.tot td.r{border-radius:0 0 8px 0}'
  +'#evcrit{position:fixed;inset:0;z-index:82;background:rgba(15,23,42,.55);display:flex;align-items:flex-end;justify-content:center}#evcrit .ercsheet{background:#fff;width:100%;max-width:560px;max-height:88vh;overflow:auto;border-radius:18px 18px 0 0;padding:18px 16px 24px}'
- +'#evcrit table{width:100%;border-collapse:collapse}#evcrit td{font-size:13px;padding:7px 4px;border-top:1px solid var(--line);vertical-align:top}#evcrit .hd td{background:var(--bg);font-weight:700}#evcrit h3{font-size:15px;margin:16px 0 6px}'
+ /* F1.9k 평가 기준 표: 첫 칸(항목)은 줄바꿈 없이 내용 길이만큼 · 글씨 조금 작게 · 둘째 칸은 단어 단위로 줄바꿈 */
+ +'#evcrit table{width:100%;border-collapse:collapse}#evcrit td{font-size:12.5px;line-height:1.5;padding:7px 5px;border-top:1px solid var(--line);vertical-align:top;word-break:keep-all;overflow-wrap:anywhere}'
+ +'#evcrit td:first-child{white-space:nowrap;width:1%;padding-right:10px;font-weight:600}#evcrit td:last-child{white-space:normal}#evcrit td:nth-child(3){white-space:nowrap;width:1%;text-align:right}#evcrit,#evcrit *{box-sizing:border-box}#evcrit table{table-layout:auto;max-width:100%}'
+ /* F1.9m 점수·등급 탭 표 */
+ +'#evcrit .ecs td:first-child{width:auto}#evcrit .ecs td.n{width:52px;text-align:center;white-space:nowrap}#evcrit .ecs .hd td.n{font-size:12px}#evcrit .ecs tr:not(.hd):not(.g):not(.tot) td.n:nth-child(2){color:var(--ok,#15803d);font-weight:700}'
+ +'#evcrit .ecs tr.g td{background:var(--bg);font-weight:700;font-size:12px;border-top:1px solid #d1d5db}#evcrit .ecs tr.g td.n{color:var(--sub)}#evcrit .ecs tr.tot td{background:var(--main);color:#fff;font-weight:700;border:0}#evcrit .ecs tr.tot td:first-child{border-radius:0 0 0 8px}#evcrit .ecs tr.tot td.n{border-radius:0 0 8px 0}'
+ +'#evcrit .egr{table-layout:fixed}#evcrit .egr td.c{width:20%;text-align:center;white-space:nowrap;font-weight:400;padding:7px 2px;border:1px solid var(--line)}#evcrit .egr .hd td.c{font-size:15px;font-weight:800;background:var(--bg)}#evcrit .egr .hd td.c:last-child{color:var(--accent,#d7262e)}#evcrit .hd td{background:var(--bg);font-weight:700;font-size:12px}'
+ +'#evcrit h3{font-size:14px;margin:14px 0 6px}#evcrit .muted{font-size:11.5px}@media(max-width:380px){#evcrit td{font-size:12px;padding:6px 4px}#evcrit .ercsheet{padding:16px 12px 22px}}'
  +'.ertabs{display:flex;gap:6px;margin:10px 0}.ertabs button{flex:1;border:1px solid var(--line);background:#fff;border-radius:9px;padding:8px 4px;font:inherit;font-size:13px;cursor:pointer}.ertabs button[aria-selected=true]{background:var(--main);color:#fff;border-color:var(--main)}';document.head.appendChild(s)}
 function renderEvalResult(){const r=evRes;if(!r)return;erCss();let el=$('evres');if(!el){el=document.createElement('div');el.id='evres';el.setAttribute('role','dialog');el.setAttribute('aria-modal','true');el.addEventListener('keydown',e=>{if(e.key==='Escape'&&!(typeof tour!=='undefined'&&tour)&&!$('evcrit'))closeEvalResult()});document.body.appendChild(el)}
  el.setAttribute('aria-label',r.title);document.body.style.overflow='hidden';
@@ -191,12 +198,19 @@ function renderEvalResult(){const r=evRes;if(!r)return;erCss();let el=$('evres')
  setTimeout(()=>$('gd_evres')?.focus({preventScroll:true}),50)}
 function erToggle(b){const w=b.parentNode;w.classList.toggle('open');b.setAttribute('aria-expanded',w.classList.contains('open'))}
 function closeEvalResult(){if(typeof tour!=='undefined'&&tour)endTour(true);$('evcrit')?.remove();$('evres')?.remove();document.body.style.overflow='';evRes=null}
+/** F1.9m 점수·등급 탭: 배점표(분야 묶음 줄 + 항목별 우수/보통/미흡 칸) · 등급표 · 등급별 조치표 */
+function erScoreTbl(){
+ const G=[['A 관리체제',20,[['1 방침',5,3],['2 목표·지표',10,5],['3 조직',5,3]]],['B 실행수준',40,[['4 위험성평가',5,3],['5 점검',10,5],['6 이행확인',10,5],['7 교육',5,3],['8 작업허가',10,5]]],
+  ['C 운영관리',20,[['9 신호·연락',5,3],['10 설비',10,5],['11 비상대책',5,3]]],['D 재해',20,[['12 산재',20,10]]]];
+ return '<table class="ecs"><tr class="hd"><td>항목</td><td class="n">우수</td><td class="n">보통</td><td class="n">미흡</td></tr>'
+  +G.map(g=>'<tr class="g"><td colspan="3">'+g[0]+'</td><td class="n">'+g[1]+'점</td></tr>'+g[2].map(r=>'<tr><td>'+r[0]+'</td><td class="n">'+r[1]+'</td><td class="n">'+r[2]+'</td><td class="n">1</td></tr>').join('')).join('')
+  +'<tr class="tot"><td colspan="3">합계 (모두 우수일 때)</td><td class="n">100점</td></tr></table>';
+}
 /** 📋 평가 기준 (그동안 정한 기준 · 탭 3개) */
-const ER_CRIT=[['점수·등급','<h3>배점 (100점) · 우수 / 보통 / 미흡</h3><table><tr class="hd"><td>분야</td><td>항목 (우수/보통/미흡 점수)</td><td>합계</td></tr>'
- +'<tr><td>A 관리체제</td><td>1 방침 5/3/1 · 2 목표·지표 10/5/1 · 3 조직 5/3/1</td><td>20</td></tr><tr><td>B 실행수준</td><td>4 위험성평가 5/3/1 · 5 점검 10/5/1 · 6 이행확인 10/5/1 · 7 교육 5/3/1 · 8 작업허가 10/5/1</td><td>40</td></tr>'
- +'<tr><td>C 운영관리</td><td>9 신호·연락 5/3/1 · 10 설비 10/5/1 · 11 비상대책 5/3/1</td><td>20</td></tr><tr><td>D 재해</td><td>12 산재 20/10/1</td><td>20</td></tr></table>'
- +'<h3>등급</h3><table><tr><td>S 90점 이상 · A 80 · B 70 · C 60 · D 60점 미만</td></tr><tr><td>A·B·C 분야 중 하나라도 배점의 <b>절반 미만</b>이면 총점과 상관없이 <b>D</b></td></tr><tr><td>미흡은 0점이 아니라 <b>1점</b></td></tr></table>'
- +'<h3>등급에 따라</h3><table><tr><td><b>70점 미만</b> → 도급인에게 경고 (서류 검토 화면 · 공사 배정 때) · 막지는 않음</td></tr><tr><td><b>D등급</b> → 업체가 계약 전 서류를 제출할 수 없음 · 부족한 항목 안내 + [바로 고치기]</td></tr><tr><td>종료 평가 C·D등급 → 다음 공사 배정 때 경고</td></tr></table>'],
+const ER_CRIT=[['점수·등급','<h3>배점 (100점)</h3>'+erScoreTbl()+'<p class="muted">미흡은 0점이 아니라 1점</p>'
+ +'<h3>등급</h3><table class="egr"><tr class="hd"><td class="c">S</td><td class="c">A</td><td class="c">B</td><td class="c">C</td><td class="c">D</td></tr><tr><td class="c">90점 이상</td><td class="c">80점 이상</td><td class="c">70점 이상</td><td class="c">60점 이상</td><td class="c">60점 미만</td></tr></table>'
+ +'<p class="muted">A·B·C 분야 중 하나라도 배점의 절반 미만이면 총점과 상관없이 <b>D</b></p>'
+ +'<h3>등급에 따라</h3><table><tr class="hd"><td>조건</td><td>조치</td></tr><tr><td>70점 미만</td><td>도급인에게 경고 (서류 검토 화면 · 공사 배정 때) · 막지는 않음</td></tr><tr><td>D등급</td><td>업체가 계약 전 서류를 제출할 수 없음 · 부족한 항목 안내 + [바로 고치기]</td></tr><tr><td>종료 평가<br>C·D등급</td><td>다음 공사 배정 때 경고</td></tr></table>'],
  ['계약 전 평가','<h3>업체가 쓴 계획서로 자동 체크 → 검토자가 확인·수정</h3><table><tr class="hd"><td>항목</td><td>우수 조건</td></tr>'
  +'<tr><td>1 방침</td><td>규정 서명 + 방침 3줄 이상</td></tr><tr><td>2 목표</td><td>목표 + 성과지표 3개 이상</td></tr><tr><td>3 조직</td><td>현장대리인 이름·연락처 (이름만 = 보통)</td></tr>'
  +'<tr><td>4 위험성평가</td><td>해당 위험요인 3개 이상 체크</td></tr><tr><td>5 · 7 · 10</td><td>법정 기본값을 앱이 미리 채움 → 우수 (영세업체 배려 · 꼭 해야 하는 법적 사항)</td></tr>'
