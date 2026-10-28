@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F1.9c';
+  const VERSION = '26.10.24 F1.9d';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   const CFG = {
     INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
@@ -1026,7 +1026,7 @@
     await db.collection('PERMITS').doc(id).set({ id, no, jobId: j.id, companyId: b.id, company: b.company, vendorUid: a.uid, date: t, data: raw, progress: '{}', status: 'ISSUED',
       issuedBy: a.email, issuedAt: now(), updatedAt: now(), approvedBy: '', approvedAt: '', approveNote: '' });
     audit(a, b.id, 'PERMIT_ISSUE', no + ' ' + j.id);
-    relay('permitMail', { permitId: id }).catch(() => {});
+    /* F1.9d 허가서 발행 메일 없음 (도급인 화면 알림 숫자) */
     return permitPack(a, b, j, jv, t);
   };
   async function myPermit(a, b, permitId) {
@@ -1261,7 +1261,7 @@
     B.set(db.collection('MEET_LINKS').doc(token), { token, meetingId: id, jobId: j.id, title: m.title, store: j.storeName, date: m.date, place: m.place, open: 'N', vendors: vs });
     await B.commit(); audit(a, '', d.key ? 'MEETING_AUTO' : 'MEETING_ADD', id + ' ' + j.id + ' ' + m.date);
     await meetNotice(m, j.storeName, false);
-    relay('meetMail', { meetingId: id }).catch(() => {});
+    /* F1.9d 미팅 안내 메일 없음 (업체 화면 📢 알림) */
     return id;
   }
   /* ---------- F1.8l 미팅 자동 생성 ----------
