@@ -57,16 +57,16 @@ function text(id,label,value='',disabled=false){return `<div class="field"><labe
 function value(id){return $('f_'+id)?.value?.trim()||''}
 function switchTab(which){tab=which;toggleMenu(false);stopScan();if($(which+'Tab'))$('pageTitle').textContent=$(which+'Tab').textContent;clearInterval(roomTimer);clearInterval(wkTimer);for(const n of ['my','admin','review','tpl','staff','jobs','notice','vendors']){$(n).classList.toggle('hidden',n!==which);$(n+'Tab').classList.toggle('active',n===which)}if(which==='admin')loadAdmin();if(which==='review')loadReview();if(which==='tpl')loadTemplates();if(which==='staff')loadStaff();if(which==='jobs')loadJobs();if(which==='notice')loadNotices();if(which==='vendors')loadVendors();}
 // ★ 화면 버전: 여기 한 줄만 고침 (GitHub만 올리면 로그인 화면·앱 화면·메뉴에 모두 반영, Code.gs 수정 불필요)
-const UI_VERSION='26.10.24 F1.8y';
+const UI_VERSION='26.10.24 F1.8z';
 /* F1.8o 전화번호 · 사업자번호: 숫자만 쳐도 '-' 자동 (서버는 원래 숫자만 골라 씀) */
 function fmtTel(v){const d=String(v||'').replace(/\D/g,'').slice(0,11);if(d.startsWith('02'))return d.length<3?d:d.length<6?d.slice(0,2)+'-'+d.slice(2):d.length<10?d.slice(0,2)+'-'+d.slice(2,5)+'-'+d.slice(5):d.slice(0,2)+'-'+d.slice(2,6)+'-'+d.slice(6,10);
  return d.length<4?d:d.length<8?d.slice(0,3)+'-'+d.slice(3):d.length<11?d.slice(0,3)+'-'+d.slice(3,6)+'-'+d.slice(6):d.slice(0,3)+'-'+d.slice(3,7)+'-'+d.slice(7)}
 function fmtBiz(v){const d=String(v||'').replace(/\D/g,'').slice(0,10);return d.length<4?d:d.length<6?d.slice(0,3)+'-'+d.slice(3):d.slice(0,3)+'-'+d.slice(3,5)+'-'+d.slice(5)}
 document.addEventListener('input',e=>{const t=e.target;if(!t||t.tagName!=='INPUT')return;const f=t.id==='f_regNo'?fmtBiz:t.type==='tel'?fmtTel:null;if(!f)return;const n=f(t.value);if(n!==t.value)t.value=n},true);
-/* F1.8y index.html 버전 표시 (휴대폰이 예전 index.html을 기억하면 메뉴가 예전 것으로 보임 → 자동 새로 고침) */
+/* F1.8z index.html 버전 표시 (휴대폰이 예전 index.html을 기억하면 메뉴가 예전 것으로 보임 → 자동 새로 고침) */
 const HTML_VER=document.documentElement.getAttribute('data-ver')||'';
 function showVer(){document.querySelectorAll('.verTxt').forEach(x=>x.textContent=UI_VERSION+(HTML_VER===UI_VERSION?'':' · 화면 파일 확인 필요 (⟳)'))}
-/** F1.8y 위쪽 ⟳ 새로고침 (협력업체·도급인 공용) · 작성 중이면 한 번 묻고 · 화면 파일도 새로 받음 */
+/** F1.8z 위쪽 ⟳ 새로고침 (협력업체·도급인 공용) · 작성 중이면 한 번 묻고 · 화면 파일도 새로 받음 */
 async function refreshNow(){const editing=dirty||(typeof ins!=='undefined'&&!!ins)||(typeof rs!=='undefined'&&!!rs)||regEdit||!!document.querySelector('#csheet[style*="block"],#psheet:not([hidden])')||Object.values(PEND).some(p=>!p.done);
  if(editing&&!await askOk('새로고침','작성 중인 내용(고른 사진 포함)이 사라질 수 있습니다.\n그래도 새로고침할까요?','새로고침'))return;
  dirty=false;try{sessionStorage.removeItem('verReload');sessionStorage.removeItem('htmlReload')}catch(e){}location.reload()}
@@ -152,17 +152,15 @@ function renderTemplates(list){templateList=list||[];const accept='.pdf,.xls,.xl
  $('tpl').innerHTML=`<div class="card"><h2>표준양식(샘플) 관리</h2><p class="desc">여기에 등록한 양식을 승인·인증을 마친 업체가 내려받습니다. 교체하면 업체에는 새 버전만 보이고, 이전 버전 파일과 기록은 그대로 보관됩니다.<br>휴대폰에서는 Google Drive 앱 → <b>도급안전관리_Firebase_비공개증빙 › 00_표준양식</b> → 문서 이름 폴더에 파일을 넣고, 아래 버튼을 누르면 됩니다(파일명은 상관없음).</p><button class="button dark" type="button" onclick="refreshTpl()">Drive 폴더에서 다시 불러오기</button><div id="tplReport" class="desc" style="white-space:pre-line;margin-top:8px"></div>${body||'<div class="note">문서유형이 없습니다. Apps Script 편집기에서 setupDocumentSystem()을 먼저 실행하세요.</div>'}</div>`}
 async function refreshTpl(){try{const r=await call('refreshTemplateFolders');renderTemplates(r.list);$('tplReport').textContent=r.report;msg('Drive 폴더 확인 완료')}catch(e){}}
 async function uploadTpl(code){const name=(templateList.find(t=>t.code===code)||{}).name||code;let f;try{f=await readFile($('tpl_'+code).files[0])}catch(e){alert(e.message);return}if(!confirm(name+' 샘플 양식을 "'+f.name+'"(으)로 등록할까요?'))return;try{renderTemplates(await call('uploadTemplate',code,f));msg('양식 등록 완료')}catch(e){}}
-/** F1.8y 사업자 등록 신청서 (처음 신청 · 승인 대기 중 고치기 공용) · P = 미리 채울 값 */
+/** F1.8z 사업자 등록 신청서 (처음 신청 · 승인 대기 중 고치기 공용) · P = 미리 채울 값 */
 let regEdit=false;
-function regFormHtml(P,edit){const T=P||(state.testSkipFiles?testSample():{});
- return '<form onsubmit="register(event)"><div class="split">'+input('company','업체명',T.company,'text',false,'예: (주)○○인테리어')+input('regNo','사업자등록번호 (10자리)',T.regNo?fmtBiz(T.regNo):'','tel',false,'숫자 10자리 (- 자동)')+input('representative','대표자 성명',T.representative,'text',false,'예: 홍길동')+input('address','사업장 주소',T.address,'text',false,'예: 서울시 ○○구 ○○로 12')+input('contact','현장대리인 성명 (업체 소장)',T.contact,'text',false,'예: 김소장 (현장을 맡는 업체 소장)')+input('phone','현장대리인 연락처',T.phone?fmtTel(T.phone):'','tel',false,'숫자만 입력 (- 자동)')+input('vendorEmail','업체 이메일 (로그인 계정 · 자동)',state.email,'email',true)+'</div>'
+function regFormHtml(P,edit){const T=P||{};  /* F1.8z 테스트용 미리 채우기 값 없앰 (직접 작성) */
+ return '<form onsubmit="register(event)"><div class="split">'+input('company','업체명',T.company,'text',false,'예: (주)○○인테리어')+input('regNo','사업자등록번호 (10자리)',T.regNo?fmtBiz(T.regNo):'','tel',false,'숫자 10자리 (- 자동)')+input('representative','대표자 성명',T.representative,'text',false,'예: 홍길동')+input('address','사업장 주소',T.address,'text',false,'예: 서울시 ○○구 ○○로 12')+input('contact','현장대리인 성명 (업체 소장)',T.contact,'text',false,'예: 김소장 (현장을 맡는 업체 소장)')+input('phone','현장대리인 연락처',T.phone?fmtTel(T.phone):'','tel',false,'숫자만 입력 (- 자동)')+'</div>'
   +input('approverEmail','본사 승인 담당자 이메일 (다이소 담당자에게 받은 주소)',T.approverEmail||'','email',false,'예: hong.gildong@daiso.co.kr')
   +'<div class="field"><label for="f_industry">도급 업종</label><select id="f_industry"><option value="">업종 선택</option>'+state.industries.map(x=>'<option '+(x===T.industry?'selected':'')+'>'+escapeText(x)+'</option>').join('')+'</select></div>'
   +'<div class="field"><label for="cert">사업자등록증 첨부 (PDF·JPG·PNG, 최대 5MB · 휴대폰 촬영 사진 가능)'+(edit?' — <span class="muted">바꿀 때만 고르세요 (안 고르면 기존 파일 그대로)</span>':state.testSkipFiles?' — <span style="color:#ce2a4b">테스트 기간에는 생략 가능</span>':'')+'</label><input type="file" id="cert" accept=".pdf,.jpg,.jpeg,.png"></div>'
-  +'<label class="desc"><input type="checkbox" id="agree" '+(state.testSkipFiles||edit?'checked':'')+'>신청·계정 승인 및 서류 검토를 위한 담당자 정보 수집·이용에 동의합니다. (운영 전 개인정보 처리방침 확정 필요)</label><div class="line"></div>'
-  +(edit?'<div class="row"><button class="button ghost" type="button" style="flex:1" onclick="regEdit=false;renderMy()">취소</button><button class="button" type="submit" style="flex:2">고쳐서 다시 보내기</button></div>':'<button class="button" type="submit">사업자 등록 신청</button>')+'</form>'}
-/** [테스트 모드 전용] 신청서 미리 채우기 값 (사업자번호는 중복 표시를 피하려고 매번 임의 생성) */
-function testSample(){const n=String(Math.floor(Math.random()*1e10)).padStart(10,'0');return {company:'테스트인테리어(주)',regNo:n.slice(0,3)+'-'+n.slice(3,5)+'-'+n.slice(5),representative:'홍길동',address:'서울특별시 강남구 테헤란로 123',contact:'김담당',phone:'010-1234-5678',industry:'인테리어(마감)'}}
+  +'<label class="desc"><input type="checkbox" id="agree" '+(edit?'checked':'')+'>신청·계정 승인 및 서류 검토를 위한 담당자 정보 수집·이용에 동의합니다. (운영 전 개인정보 처리방침 확정 필요)</label><div class="line"></div>'
+  +(edit?'<div class="row"><button class="button ghost" type="button" style="flex:1" onclick="regEdit=false;renderMy()">취소</button><button class="button" type="submit" style="flex:2">고쳐서 다시 보내기</button></div>':'<button class="button" type="submit">사업자 등록 신청</button>')+'<p class="muted" style="font-size:12px;margin:10px 0 0;text-align:center">(현재 로그인한 계정 : '+escapeText(state.email)+')</p></form>'}  /* F1.8z 업체 이메일 칸 없앰 → 맨 아래 작게 표시 (로그인 계정이 업체 계정으로 자동 등록) */
 /* ---------- v2.4 승인 후 업체 화면: 상단 사업장 정보 + 하단 도급문서 표 ---------- */
 const SUB_LABEL={DRAFT:'작성 중',CORRECTION:'보완 요청',SUBMITTED:'제출 완료 · 본사 1차 검토 중',SAFETY_REVIEW:'안전보건팀 확인 중',APPROVED:'계약 전 검토 승인'};
 function vendorHomeHtml(b){
@@ -740,7 +738,7 @@ function shrinkImage(f,o){o=o||{};const MX=o.max||2000,Q=o.q||0.82,t=String(f.ty
   let done=false;const res=x=>{if(done)return;done=true;clearTimeout(tm);res0(x)},tm=setTimeout(()=>{try{URL.revokeObjectURL(url)}catch(e){}res(f)},15000);
   img.onload=()=>{const s=Math.min(1,MX/Math.max(img.width,img.height)),cv=document.createElement('canvas');cv.width=Math.round(img.width*s);cv.height=Math.round(img.height*s);cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);URL.revokeObjectURL(url);
    const base=(String(f.name||'').replace(/\.[^.]+$/,'')||'photo_'+Date.now());
-   cv.toBlob(b=>{const out=b&&(!okType||b.size<f.size)?new File([b],base+'.jpg',{type:'image/jpeg'}):f;cv.width=0;cv.height=0;img.src='';res(out)},'image/jpeg',Q)};/* F1.8y 그림판·원본 그림 바로 비움 (오래된 휴대폰 메모리) */
+   cv.toBlob(b=>{const out=b&&(!okType||b.size<f.size)?new File([b],base+'.jpg',{type:'image/jpeg'}):f;cv.width=0;cv.height=0;img.src='';res(out)},'image/jpeg',Q)};/* F1.8z 그림판·원본 그림 바로 비움 (오래된 휴대폰 메모리) */
   img.onerror=()=>{URL.revokeObjectURL(url);res(f)};img.src=url})}
 const MAX_MB=10;
 /* F1.7 사진 용량 최소화: 사진은 크기와 상관없이 항상 줄여서 올림 (긴 변 1280px · 화질 0.55 → 보통 100~250KB)
@@ -754,7 +752,7 @@ const PEND={};let pendSeq=0;
 const isPend=id=>/^L-/.test(String(id||''));
 /** up(file) → {id} (서버 업로드 함수) */
 function pendAdd(f0,up){const id='L-'+Date.now().toString(36)+(pendSeq++);let url='';try{if(/^image\//.test(f0.type||'')||!f0.type)url=URL.createObjectURL(f0)}catch(e){}PEND[id]={f0,up,url,name:f0.name||'',done:''};return id}
-/** F1.8y 사진을 고르는 즉시 한 장씩 차례로 작게 줄여서 보관 (원본 큰 사진을 들고 있지 않음 → 메모리 부족 줄임) */
+/** F1.8z 사진을 고르는 즉시 한 장씩 차례로 작게 줄여서 보관 (원본 큰 사진을 들고 있지 않음 → 메모리 부족 줄임) */
 async function pendPhotos(files,up){const ids=[];if(files.length)barStart();try{for(const f0 of files){let f=f0;try{f=await shrinkImage(f0,PHOTO_SITE)}catch(e){}ids.push(pendAdd(f,up))}}finally{if(files.length)barEnd()}return ids}
 /** 고른 사진 빼기 → 미리보기 주소도 정리 */
 function pendDrop(id){const p=PEND[id];if(!p)return;try{if(p.url)URL.revokeObjectURL(p.url)}catch(e){}delete PEND[id]}
@@ -957,7 +955,7 @@ function initLogin(){
  if(window.FB&&FB.version&&FB.version!==UI_VERSION){$('loginVer').textContent=UI_VERSION+' / '+FB.version+' (버전이 섞여 있음)';
   let tried=false;try{tried=sessionStorage.getItem('verReload')===UI_VERSION+FB.version;sessionStorage.setItem('verReload',UI_VERSION+FB.version)}catch(e){tried=true}
   if(!tried){location.reload();return}}
- /* F1.8y 예전 index.html이 남아 있으면 (예전 메뉴·예전 버튼) 한 번 새로 받음 */
+ /* F1.8z 예전 index.html이 남아 있으면 (예전 메뉴·예전 버튼) 한 번 새로 받음 */
  if(HTML_VER!==UI_VERSION){let t2=false;try{t2=sessionStorage.getItem('htmlReload')===UI_VERSION;sessionStorage.setItem('htmlReload',UI_VERSION)}catch(e){t2=true}
   if(!t2){location.reload();return}$('loginVer').textContent=UI_VERSION+' (화면 파일이 예전 것 · 위 ⟳ 또는 브라우저 새로 고침)'}
  let note='';try{note=sessionStorage.getItem('loginNote')||'';sessionStorage.removeItem('loginNote')}catch(e){}
