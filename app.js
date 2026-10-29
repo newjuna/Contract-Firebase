@@ -61,7 +61,7 @@ function switchTab(which){tab=which;toggleMenu(false);stopScan();if($(which+'Tab
 /* F1.9t 홈 화면 앱(PWA): 서비스 워커 등록 (저장 안 함 · 홈 화면에 추가할 수 있게만) */
 if('serviceWorker' in navigator&&location.protocol==='https:')window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 // ★ 화면 버전: 여기 한 줄만 고침 (GitHub만 올리면 로그인 화면·앱 화면·메뉴에 모두 반영, Code.gs 수정 불필요)
-const UI_VERSION='26.10.24 F1.9u';
+const UI_VERSION='26.10.24 F1.9v';
 /* F1.8o 전화번호 · 사업자번호: 숫자만 쳐도 '-' 자동 (서버는 원래 숫자만 골라 씀) */
 function fmtTel(v){const d=String(v||'').replace(/\D/g,'').slice(0,11);if(d.startsWith('02'))return d.length<3?d:d.length<6?d.slice(0,2)+'-'+d.slice(2):d.length<10?d.slice(0,2)+'-'+d.slice(2,5)+'-'+d.slice(5):d.slice(0,2)+'-'+d.slice(2,6)+'-'+d.slice(6,10);
  return d.length<4?d:d.length<8?d.slice(0,3)+'-'+d.slice(3):d.length<11?d.slice(0,3)+'-'+d.slice(3,6)+'-'+d.slice(6):d.slice(0,3)+'-'+d.slice(3,7)+'-'+d.slice(7)}
@@ -570,9 +570,11 @@ function eduHtml(v){const W=v.workers.slice().sort((x,y)=>String(y.eduAt||'').lo
    :'<p class="muted" style="margin-top:10px">아직 등록한 작업자가 없습니다.</p>')+rules+'</div>'}
 const kstDay=t=>{try{return new Date(t).toLocaleDateString('sv-SE',{timeZone:'Asia/Seoul'})}catch(e){return ''}};
 /* ===== F1.9u A4 양식 공통 디자인 (빨간 띠 · 남색 제목 줄 · 연회색 칸 · 표만 사용 → 드라이브 PDF 변환에서도 같은 모양) · app.js · Relay.gs 똑같이 ===== */
-const FK=(()=>{const RED='#E60012',NAVY='#111827',LB='#F3F4F6',LR='#FDECEC',LG='#E8F5EC',LY='#FFF8DB',LO='#FFF1E0',GRN='#1B7F3B',AMB='#B45309',GRY='#6B7280',BD='1px solid #9CA3AF';
+/* F1.9v 한 장 꽉 채우기: FKs(k) = 크기 배율 k (글씨 = 1+(k-1)×0.55배 · 칸 높이·여백 = k배) · 양식마다 내용 양을 보고 k를 정함 (fitK_) */
+const FKs=(k0)=>{const k=Math.max(.75,Math.min(6,Number(k0)||1)),f=1+(Math.min(k,1.6)-1)*.55,R=n=>Math.round(n*f*10)/10,V=n=>Math.round(n*k*10)/10,W=n=>Math.round(n*Math.min(k,1.6)*10)/10;
+ const RED='#E60012',NAVY='#111827',LB='#F3F4F6',LR='#FDECEC',LG='#E8F5EC',LY='#FFF8DB',LO='#FFF1E0',GRN='#1B7F3B',AMB='#B45309',GRY='#6B7280',BD='1px solid #9CA3AF',INK='#1f3a8a';
  const T='width:100%;border-collapse:collapse',NB='font-size:1px;padding:0';
- const cs=(fs,p)=>`border:${BD};padding:${p||'4px 7px'};font-size:${fs||10.5}px;vertical-align:middle`;
+ const cs=(fs,p)=>{const q=String(p||'4px 7px').split(' ').map(parseFloat);return `border:${BD};padding:${V(q[0])}px ${R(q.length>1?q[1]:q[0])}px;font-size:${R(fs||10.5)}px;vertical-align:middle`};
  const B=cs(),H=B+`;background:${LB};font-weight:bold;text-align:center;color:${NAVY}`;
  const WD=['일','월','화','수','목','금','토'];
  /** 'YYYY-MM-DD' → '2026. 10. 19. (월)' */
@@ -580,14 +582,14 @@ const FK=(()=>{const RED='#E60012',NAVY='#111827',LB='#F3F4F6',LR='#FDECEC',LG='
  /** 머리글 (title·sub·right 는 html) */
  const head=(title,sub,right)=>{const n=String(title).replace(/<[^>]*>|\s/g,'').length,ls=n<=8?6:n<=12?3:1,fs=n<=12?21:17;
   return `<table style="${T}"><tr><td colspan="3" style="background:${RED};height:6px;${NB}">&nbsp;</td></tr>`
-  +`<tr><td style="width:24%;padding:8px 0 6px;font-size:10px;color:${RED};font-weight:bold;vertical-align:bottom">DAISO 아성다이소<div style="color:${GRY};font-weight:normal;font-size:9px">도급 안전관리</div></td>`
-  +`<td style="text-align:center;padding:8px 0 6px"><div style="font-size:${fs}px;font-weight:bold;letter-spacing:${ls}px;color:${NAVY}">${title}</div>${sub?`<div style="font-size:9.5px;color:${GRY};margin-top:2px">${sub}</div>`:''}</td>`
-  +`<td style="width:24%;text-align:right;font-size:10px;color:${NAVY};vertical-align:bottom;padding:8px 0 6px">${right||''}</td></tr>`
+  +`<tr><td style="width:24%;padding:${W(8)}px 0 ${W(6)}px;font-size:${R(10)}px;color:${RED};font-weight:bold;vertical-align:bottom">DAISO 아성다이소<div style="color:${GRY};font-weight:normal;font-size:${R(9)}px">도급 안전관리</div></td>`
+  +`<td style="text-align:center;padding:${W(8)}px 0 ${W(6)}px"><div style="font-size:${R(fs)}px;font-weight:bold;letter-spacing:${ls}px;color:${NAVY}">${title}</div>${sub?`<div style="font-size:${R(9.5)}px;color:${GRY};margin-top:2px">${sub}</div>`:''}</td>`
+  +`<td style="width:24%;text-align:right;font-size:${R(10)}px;color:${NAVY};vertical-align:bottom;padding:${W(8)}px 0 ${W(6)}px">${right||''}</td></tr>`
   +`<tr><td colspan="3" style="border-top:2px solid ${NAVY};height:2px;${NB}">&nbsp;</td></tr></table>`};
  /** 섹션 제목 줄 (sm = 촘촘하게) */
- const sec=(n,t,r,sm)=>`<table style="${T};margin-top:${sm?4:7}px"><tr><td style="width:6px;background:${RED};${NB}"></td><td style="background:${NAVY};color:#fff;font-weight:bold;font-size:${sm?10.5:11.5}px;padding:${sm?2:4}px 8px">${n!==''&&n!=null?n+'. ':''}${t}</td>${r?`<td style="background:${NAVY};color:#D1D5DB;font-size:9px;padding:${sm?2:4}px 8px;text-align:right">${r}</td>`:''}</tr></table>`;
- const big=t=>`<table style="${T};margin-top:9px"><tr><td style="background:${RED};width:6px;${NB}"></td><td style="background:${NAVY};color:#fff;font-weight:bold;font-size:13px;padding:5px 9px;letter-spacing:1px">${t}</td></tr></table>`;
- const sub=t=>`<table style="${T};margin-top:6px"><tr><td style="border-left:4px solid ${RED};padding:1px 7px;font-size:11px;font-weight:bold;color:${NAVY}">${t}</td></tr></table>`;
+ const sec=(n,t,r,sm)=>`<table style="${T};margin-top:${W(sm?4:7)}px"><tr><td style="width:6px;background:${RED};${NB}"></td><td style="background:${NAVY};color:#fff;font-weight:bold;font-size:${R(sm?10.5:11.5)}px;padding:${W(sm?2:4)}px 8px">${n!==''&&n!=null?n+'. ':''}${t}</td>${r?`<td style="background:${NAVY};color:#D1D5DB;font-size:${R(9)}px;padding:${W(sm?2:4)}px 8px;text-align:right">${r}</td>`:''}</tr></table>`;
+ const big=t=>`<table style="${T};margin-top:${W(9)}px"><tr><td style="background:${RED};width:6px;${NB}"></td><td style="background:${NAVY};color:#fff;font-weight:bold;font-size:${R(13)}px;padding:${W(5)}px 9px;letter-spacing:1px">${t}</td></tr></table>`;
+ const sub=t=>`<table style="${T};margin-top:${W(6)}px"><tr><td style="border-left:4px solid ${RED};padding:${W(1)}px 7px;font-size:${R(11)}px;font-weight:bold;color:${NAVY}">${t}</td></tr></table>`;
  /** 셀: html 또는 {h, bg, c, b, cs, rs, st, col} */
  const cell=(x,base)=>{const o=(x&&typeof x==='object')?x:{h:x};return `<td style="${base||B}${o.c?';text-align:center':''}${o.bg?';background:'+o.bg:''}${o.b?';font-weight:bold':''}${o.col?';color:'+o.col:''}${o.st?';'+o.st:''}"${o.cs?` colspan="${o.cs}"`:''}${o.rs?` rowspan="${o.rs}"`:''}>${o.h==null||o.h===''?'&nbsp;':o.h}</td>`};
  const obj=x=>(x&&typeof x==='object')?Object.assign({},x):{h:x};
@@ -597,34 +599,42 @@ const FK=(()=>{const RED='#E60012',NAVY='#111827',LB='#F3F4F6',LR='#FDECEC',LG='
  const grid=(cols,rows,fs,p)=>{const b=cs(fs,p),h=b+`;background:${LB};font-weight:bold;text-align:center;color:${NAVY}`;
   return `<table style="${T}"><tr>`+cols.map(c=>`<td style="${h}${c[1]?';width:'+c[1]:''}">${c[0]}</td>`).join('')+'</tr>'
   +rows.map(r=>'<tr>'+r.map((x,i)=>{const o=obj(x);if(cols[i]&&cols[i][2]==='c'&&o.c==null)o.c=1;return cell(o,b)}).join('')+'</tr>').join('')+'</table>'};
- const box=(h,bg,bl)=>`<table style="${T}"><tr><td style="border:${BD};${bl?'border-left:4px solid '+bl+';':''}background:${bg||'#fff'};padding:6px 9px;font-size:10.5px;line-height:1.65">${h}</td></tr></table>`;
- const statRow=items=>`<table style="${T}"><tr>`+items.map(([l,v,c,bg])=>`<td style="border:${BD};background:${bg||'#fff'};text-align:center;padding:5px 4px"><div style="font-size:9.5px;color:${GRY}">${l}</div><div style="font-size:17px;font-weight:bold;color:${c||NAVY}">${v}</div></td>`).join('')+'</tr></table>';
+ const box=(h,bg,bl)=>`<table style="${T}"><tr><td style="border:${BD};${bl?'border-left:4px solid '+bl+';':''}background:${bg||'#fff'};padding:${V(6)}px ${R(9)}px;font-size:${R(10.5)}px;line-height:1.65">${h}</td></tr></table>`;
+ const statRow=items=>`<table style="${T}"><tr>`+items.map(([l,v,c,bg])=>`<td style="border:${BD};background:${bg||'#fff'};text-align:center;padding:${V(5)}px 4px"><div style="font-size:${R(9.5)}px;color:${GRY}">${l}</div><div style="font-size:${R(17)}px;font-weight:bold;color:${c||NAVY}">${v}</div></td>`).join('')+'</tr></table>';
  const res=k=>k==='BAD'?{h:'불량',b:1,col:RED,bg:LR,c:1}:k==='OK'?{h:'양호',col:GRN,c:1}:k==='NA'?{h:'해당없음',col:GRY,c:1}:{h:'-',col:GRY,c:1};
  const lvl=k=>k==='상'?{h:'상',b:1,col:'#fff',bg:RED,c:1}:k==='중'?{h:'중',b:1,col:'#fff',bg:'#D97706',c:1}:{h:'하',b:1,col:'#fff',bg:GRN,c:1};
  const ok=t=>`<b style="color:${GRN}">✔ ${t}</b>`,no=t=>`<b style="color:${RED}">✖ ${t}</b>`;
- const sign=(n,s,fs)=>`<table style="margin:0 auto;border-collapse:collapse"><tr><td style="border:2px solid ${GRN};padding:4px 14px;font-size:${fs||17}px;font-family:serif;color:${GRN};letter-spacing:4px;text-align:center">${n}</td></tr></table>${s?`<div style="color:${GRN};font-size:9.5px;margin-top:3px">${s}</div>`:''}`;
- const stamp=t=>`<span style="border:2px solid ${RED};color:${RED};padding:1px 5px;font-size:10px;font-weight:bold">${t}</span>`;
- /** 정자 서명 (허가서 등: 발행된 서류의 이름) */
- const nm=(n,m)=>n?`<span style="font-family:serif;font-weight:bold;font-size:11px;color:#1f3a8a;letter-spacing:1px;padding:0 2px">${n}</span><span style="font-size:8px">(${m})</span>`:`(${m})`;
- const gap=h=>`<div style="height:${h}px"></div>`;
- const foot=(n,at)=>`<table style="${T};margin-top:6px"><tr><td style="font-size:8.5px;color:${GRY};padding:0">${n||''}</td><td style="font-size:8.5px;color:${RED};font-weight:bold;text-align:right;padding:0;white-space:nowrap;width:30%">DAISO 도급 안전관리${at?' · 출력 '+at:''}</td></tr></table>`;
+ const stamp=t=>`<span style="border:2px solid ${RED};color:${RED};padding:1px 5px;font-size:${R(10)}px;font-weight:bold">${t}</span>`;
+ /** F1.9v 서명: (인)·(서명) 글자 위에 손글씨(나눔손글씨 붓) 이름을 겹쳐 찍음 · n = 이름(html) · m = '인' | '서명' · fs = 서명 글씨 크기 */
+ const SIGNF="'Nanum Brush Script','나눔손글씨 붓',cursive";
+ const nm=(n,m,fs)=>{if(!n)return `(${m})`;const z=R(fs||21),mz=Math.max(R(9),Math.round(z*.42)),mw=(String(m).length+0.7)*mz,nw=String(n).replace(/<[^>]*>/g,'').replace(/&[a-z#0-9]+;/g,'x').length*z*.6;
+  return `<span style="font-size:${mz}px;color:${GRY};white-space:nowrap">(${m})</span><span style="font-family:${SIGNF};font-size:${z}px;line-height:1;color:${INK};white-space:nowrap;margin-left:-${Math.round(mw/2+nw/2)}px;position:relative;top:-${Math.round(z*.12)}px">${n}</span>`};
+ const gap=h=>`<div style="height:${V(h)}px"></div>`;
+ const foot=(n,at)=>`<table style="${T};margin-top:${W(6)}px"><tr><td style="font-size:${R(8.5)}px;color:${GRY};padding:0">${n||''}</td><td style="font-size:${R(8.5)}px;color:${RED};font-weight:bold;text-align:right;padding:0;white-space:nowrap;width:30%">DAISO 도급 안전관리${at?' · 출력 '+at:''}</td></tr></table>`;
  const BRK='<div style="page-break-after:always"></div>';
- /** 드라이브 PDF 변환·인쇄용 문서 (배경색 그대로 인쇄) */
- const doc=body=>'<html><head><meta charset="utf-8"><style>@page{size:A4;margin:11mm 12mm}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}</style></head><body style="font-family:sans-serif;color:#111827;margin:0">'+body+'</body></html>';
- return {RED,NAVY,LB,LR,LG,LY,LO,GRN,AMB,GRY,BD,T,NB,cs,B,H,day,head,sec,big,sub,cell,kv,grid,box,statRow,res,lvl,ok,no,sign,stamp,nm,gap,foot,BRK,doc};})();
+ /** 드라이브 PDF 변환·인쇄용 문서 (배경색 그대로 인쇄 · 서명 글씨체) */
+ const doc=body=>'<html><head><meta charset="utf-8"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nanum+Brush+Script&display=swap"><style>@page{size:A4;margin:11mm 12mm}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}</style></head><body style="font-family:sans-serif;color:#111827;margin:0">'+body+'</body></html>';
+ return {k,R,V,RED,NAVY,LB,LR,LG,LY,LO,GRN,AMB,GRY,BD,INK,T,NB,cs,B,H,day,head,sec,big,sub,cell,kv,grid,box,statRow,res,lvl,ok,no,stamp,nm,gap,foot,BRK,doc};};
+const FK=FKs(1);
+/** F1.9v 양식별 크기 배율 (내용이 적으면 키워서 A4 한 장을 채움) · FIT_TEST_ = 검사용 덮어쓰기 */
+/** 내용 양(예상 높이 mm) → 배율 (측정표 사이는 직선으로) */
+const kOf_=(h,t)=>{if(h<=t[0][0])return t[0][1];for(let i=1;i<t.length;i++)if(h<=t[i][0]){const [a,ka]=t[i-1],[b,kb]=t[i];return +(ka+(h-a)*(kb-ka)/(b-a)).toFixed(3)}return t[t.length-1][1]};
+const fitK_=(id,k)=>(typeof FIT_TEST_!=='undefined'&&FIT_TEST_&&FIT_TEST_[id]!=null)?FIT_TEST_[id]:k;
 
-/** F1.9u 교육일지 1명당 1장 · A4 1장 (특별교육 수에 따라 서명칸 높이 조절) · app.js · Relay.gs 같은 함수
+/** F1.9u 교육일지 1명당 1장 · A4 1장 (특별교육 수에 따라 크기 배율) · app.js · Relay.gs 같은 함수
  *  o = { esc, w, date, store, company, teacher, type, hire, etc, special, rulesN, signAt, cert(html), certAt, outAt } */
-function eduOneHtml(o){const e=o.esc,w=o.w,SPD=o.special||{},K=FK,{T,B,H,BD,RED,NAVY,LB,LR,GRN,GRY}=K;
+function eduOneHtml(o){const e=o.esc,w=o.w,SPD=o.special||{};
  const sp=(Array.isArray(w.special)?w.special:[]).map(Number).filter(k=>SPD[k]),hrs=sp.length?2:1,tm='08:00 ~ '+(hrs===2?'10:00':'09:00')+' ('+hrs+'시간)';
- const list=(l,fs)=>{let h='<table style="'+T+'">';for(let i=0;i<l.length;i+=2)h+='<tr>'+[i,i+1].map(j=>j<l.length?'<td style="border:'+BD+';padding:3px 6px;font-size:'+fs+'px;width:50%;vertical-align:top;line-height:1.35"><b style="color:'+RED+'">'+(j+1)+'.</b> '+e(l[j])+'</td>':'<td style="border:'+BD+';width:50%"></td>').join('')+'</tr>';return h+'</table>'};
+ const K=FKs(fitK_('edu'+Math.min(sp.length,2),[1.28,1.13,1.06][Math.min(sp.length,2)])),{T,B,H,BD,RED,LB,LR,GRN,GRY,R,V}=K;
+ const list=(l,fs)=>{let h='<table style="'+T+'">';for(let i=0;i<l.length;i+=2)h+='<tr>'+[i,i+1].map(j=>j<l.length?'<td style="border:'+BD+';padding:'+V(3)+'px 6px;font-size:'+R(fs)+'px;width:50%;vertical-align:top;line-height:1.35"><b style="color:'+RED+'">'+(j+1)+'.</b> '+e(l[j])+'</td>':'<td style="border:'+BD+';width:50%"></td>').join('')+'</tr>';return h+'</table>'};
  const kinds=[['신규채용 시',true],['작업내용 변경 시',false],['특별안전보건교육',sp.length>0],['일반 안전보건교육',false],['기타',false]];
  const ck=k=>k[1]?'<b style="color:'+RED+'">☑ '+k[0]+'</b>':'<span style="color:'+GRY+'">☐ '+k[0]+'</span>';
- const boxH=sp.length>1?150:sp.length?185:235;
- const sign=K.sign(e(w.name),'',22)+'<div style="color:'+GRN+';font-weight:bold;font-size:10.5px;margin-top:8px">✔ '+(w.method==='SELF'?'본인 계정으로 서명':'현장책임자 '+e(o.teacher||'')+' 확인')+'</div>'
-  +(o.signAt?'<div style="color:#374151;font-size:10px;margin-top:2px">'+e(o.signAt)+'</div>':'')+'<div style="font-size:9.5px;color:#4B5563;margin-top:10px">위 교육을 받았고 안전 수칙 준수를 서약합니다.</div>';
- const cert=o.cert?String(o.cert).replace(/max-height:\s*\d+px/g,'max-height:'+(boxH-24)+'px')+'<div style="font-size:9.5px;color:'+GRN+';font-weight:bold;margin-top:3px">✔ 제출'+(o.certAt?' · '+e(o.certAt):'')+'</div>'
-  :w.certDoc?'<div style="color:#4B5563">이수증 파일 있음 (원본 파일 참조)</div>':'<div style="color:'+RED+';font-weight:bold;font-size:13px">✖ 미제출</div>';
+ const boxH=V(sp.length>1?150:sp.length?185:235);
+ const sign='<div style="font-size:'+R(10)+'px;color:'+GRY+';margin-bottom:'+V(6)+'px">성명 <b style="color:#111827;font-size:'+R(13)+'px">'+e(w.name)+'</b></div><div style="padding:'+V(8)+'px 0">'+K.nm(e(w.name),'서명',38)+'</div>'
+  +'<div style="color:'+GRN+';font-weight:bold;font-size:'+R(10.5)+'px;margin-top:'+V(8)+'px">✔ '+(w.method==='SELF'?'본인 계정으로 서명':'현장책임자 '+e(o.teacher||'')+' 확인')+'</div>'
+  +(o.signAt?'<div style="color:#374151;font-size:'+R(10)+'px;margin-top:2px">'+e(o.signAt)+'</div>':'')+'<div style="font-size:'+R(9.5)+'px;color:#4B5563;margin-top:'+V(10)+'px">위 교육을 받았고 안전 수칙 준수를 서약합니다.</div>';
+ const cert=o.cert?String(o.cert).replace(/max-height:\s*\d+px/g,'max-height:'+Math.round(boxH-24)+'px')+'<div style="font-size:'+R(9.5)+'px;color:'+GRN+';font-weight:bold;margin-top:3px">✔ 제출'+(o.certAt?' · '+e(o.certAt):'')+'</div>'
+  :w.certDoc?'<div style="color:#4B5563">이수증 파일 있음 (원본 파일 참조)</div>':'<div style="color:'+RED+';font-weight:bold;font-size:'+R(13)+'px">✖ 미제출</div>';
  return K.head('안전보건 교육일지','','<b>'+K.day(o.date)+'</b>')
   +K.sec(1,'교육 개요')
   +'<table style="'+T+'"><tr><td style="'+H+';width:15%">교육명칭</td><td style="'+B+';width:35%"><b>'+e(o.type)+(sp.length?' + 특별교육':'')+'</b></td><td style="'+H+';width:15%">교육시간</td><td style="'+B+';background:'+LR+'"><b style="color:'+RED+'">'+tm+'</b></td></tr>'
@@ -633,12 +643,12 @@ function eduOneHtml(o){const e=o.esc,w=o.w,SPD=o.special||{},K=FK,{T,B,H,BD,RED,
   +'<tr><td style="'+H+'">교육방법</td><td style="'+B+'" colspan="3">현장 교육 후 서약 (본인 계정 QR 서명 또는 현장책임자 확인)</td></tr>'
   +'<tr><td style="'+H+'">교육과목</td><td style="'+B+'" colspan="3">산업안전보건법 시행규칙 [별표 5] 채용 시 교육'+(sp.length?' · 특별교육 '+sp.map(k=>k+'번').join('·'):'')+' · 현장 작업 안전 수칙</td></tr></table>'
   +K.sec(2,'교육대상자')
-  +K.grid([['소속','28%'],['직책','18%'],['성명','18%'],['공종','']],[[{h:e(o.company),c:1},{h:e(w.role||'-'),c:1},{h:'<b>'+e(w.name)+'</b>',c:1,st:'font-size:12px'},{h:e(w.trade||'-'),c:1}]])
+  +K.grid([['소속','28%'],['직책','18%'],['성명','18%'],['공종','']],[[{h:e(o.company),c:1},{h:e(w.role||'-'),c:1},{h:'<b>'+e(w.name)+'</b>',c:1,st:'font-size:'+R(12)+'px'},{h:e(w.trade||'-'),c:1}]])
   +K.sec(3,'교육내용 · 채용 시 교육','[별표 5] 다목 · 1시간')
   +list(o.hire.concat([o.etc]),sp.length?9.5:10)
-  +'<table style="'+T+'"><tr><td style="border:'+BD+';border-top:0;padding:3px 7px;font-size:9.5px;color:#374151;background:'+LB+'">※ 현장 작업 안전 수칙 <b style="color:'+RED+'">'+o.rulesN+'개</b> 항목 교육·서약 포함</td></tr></table>'
+  +'<table style="'+T+'"><tr><td style="border:'+BD+';border-top:0;padding:'+V(3)+'px 7px;font-size:'+R(9.5)+'px;color:#374151;background:'+LB+'">※ 현장 작업 안전 수칙 <b style="color:'+RED+'">'+o.rulesN+'개</b> 항목 교육·서약 포함</td></tr></table>'
   +(sp.length?K.sec(4,'특별교육','[별표 5] 라목 · 1시간 추가')
-   +sp.map(k=>'<table style="'+T+'"><tr><td style="border:'+BD+';border-bottom:0;background:'+LR+';padding:3px 7px;font-size:10.5px"><b style="color:'+RED+'">'+k+'. '+e(SPD[k][2]||SPD[k][0])+'</b>'+(SPD[k][2]?' <span style="font-size:9px;color:#4B5563">'+e(SPD[k][0])+'</span>':'')+'</td></tr></table>'+list(SPD[k][1].concat([o.etc]),9.5)).join(''):'')
+   +sp.map(k=>'<table style="'+T+'"><tr><td style="border:'+BD+';border-bottom:0;background:'+LR+';padding:'+V(3)+'px 7px;font-size:'+R(10.5)+'px"><b style="color:'+RED+'">'+k+'. '+e(SPD[k][2]||SPD[k][0])+'</b>'+(SPD[k][2]?' <span style="font-size:'+R(9)+'px;color:#4B5563">'+e(SPD[k][0])+'</span>':'')+'</td></tr></table>'+list(SPD[k][1].concat([o.etc]),9.5)).join(''):'')
   +K.sec(sp.length?5:4,'교육 확인')
   +'<table style="'+T+'"><tr><td style="'+H+';width:50%">① 교육 확인 서명</td><td style="'+H+'">② 건설업 기초안전보건교육 이수증</td></tr>'
   +'<tr><td style="'+B+';text-align:center;height:'+boxH+'px">'+sign+'</td><td style="'+B+';text-align:center;height:'+boxH+'px">'+cert+'</td></tr></table>'
@@ -646,11 +656,12 @@ function eduOneHtml(o){const e=o.esc,w=o.w,SPD=o.special||{},K=FK,{T,B,H,BD,RED,
 
 /** F1.9u 작업 안전 수칙 (매일 1장) · 작업자 서명 2열 (20명까지 1장) · app.js · Relay.gs 같은 함수
  *  o = { esc, date, store, title, siteManager, rules, pledge, ws:[{name,trade,sign}], savedAt, outAt } */
-function rulesOneHtml(o){const e=o.esc,K=FK,{T,B,RED,LR,GRN,GRY}=K,ws=o.ws||[];
+function rulesOneHtml(o){const e=o.esc,ws=o.ws||[];
  const slots=Math.max(20,ws.length+ws.length%2),rows=slots/2;
- const c=i=>{const w=ws[i];return [{h:i+1,c:1,col:GRY,st:'height:19px'},w?e(w.trade||''):'',w?'<b>'+e(w.name)+'</b> <span style="font-size:9.5px;color:'+GRN+'">'+(w.sign==='SELF'?'✔ 본인 계정 서명':'✔ 소장 확인')+'</span>':'']};
+ const K=FKs(fitK_('rules',rows<=10?1.12:rows<=12?1:.92)),{T,B,RED,LR,GRN,GRY,R,V}=K;
+ const c=i=>{const w=ws[i];return [{h:i+1,c:1,col:GRY,st:'height:'+V(19)+'px'},w?e(w.trade||''):'',w?'<b>'+e(w.name)+'</b> <span style="font-size:'+R(9.5)+'px;color:'+GRN+'">'+(w.sign==='SELF'?'✔ 본인 계정 서명':'✔ 소장 확인')+'</span>':'']};
  return K.head('작업 안전 수칙','매일 1회 · 작업 전 교육 · 서약','<b>'+K.day(o.date)+'</b>')
-  +K.sec(1,'현장 정보')+K.kv([['현장명','다이소 '+e(o.store)+(o.title?' <span style="font-size:9.5px;color:'+GRY+'">('+e(o.title)+')</span>':''),'작업일',K.day(o.date)],['현장책임자',e(o.siteManager||'-'),'작업자',ws.length+'명']])
+  +K.sec(1,'현장 정보')+K.kv([['현장명','다이소 '+e(o.store)+(o.title?' <span style="font-size:'+R(9.5)+'px;color:'+GRY+'">('+e(o.title)+')</span>':''),'작업일',K.day(o.date)],['현장책임자',e(o.siteManager||'-'),'작업자',ws.length+'명']])
   +K.sec(2,'작업 안전 수칙',o.rules.length+'개 항목')
   +'<table style="'+T+'">'+o.rules.map((r,i)=>'<tr><td style="'+B+';width:5%;text-align:center;font-weight:bold;color:'+RED+';background:'+LR+'">'+(i+1)+'</td><td style="'+B+';line-height:1.45">'+e(r)+'</td></tr>').join('')+'</table>'
   +K.box('<b>'+e(o.pledge)+'</b>',LR,RED)
@@ -748,8 +759,8 @@ function showRules(date){const v=vjob,h=v.history.find(x=>x.date===date)||v.toda
   +rulesOneHtml({esc:escapeText,date,store:v.job.storeName,title:v.job.title,siteManager:h.siteManager,rules:v.rules,pledge:v.pledge,ws:(h.workers||[]).map(w=>({name:w.name,trade:w.trade,sign:w.sign})),savedAt:h.savedAt?kstFull(h.savedAt):'',outAt:kstFull(new Date())})+'</div></div>';window.scrollTo(0,0)}
 /** F1.9u A4 인쇄 · PDF 저장: 화면의 양식만 새 창에 열어 인쇄 (PC: 「PDF로 저장」 · 휴대폰: 공유/인쇄 메뉴) · 배경색 그대로 */
 function printA4(id,title){const el=$(id);if(!el)return;const w=window.open('','_blank');if(!w){alert('팝업이 막혀 있습니다. 브라우저에서 팝업을 허용해 주세요.');return}
- w.document.write('<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+escapeText(title||'양식')+'</title><style>@page{size:A4;margin:11mm 12mm}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}body{margin:0;font-family:"Malgun Gothic","맑은 고딕",sans-serif;color:#111827}@media screen{body{max-width:186mm;margin:10px auto;padding:0 8px}}</style></head><body>'+el.innerHTML+'</body></html>');
- w.document.close();w.focus();setTimeout(()=>{try{w.print()}catch(e){}},400)}
+ w.document.write('<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+escapeText(title||'양식')+'</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nanum+Brush+Script&display=swap"><style>@page{size:A4;margin:11mm 12mm}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}body{margin:0;font-family:"Malgun Gothic","맑은 고딕",sans-serif;color:#111827}@media screen{body{max-width:186mm;margin:10px auto;padding:0 8px}}</style></head><body>'+el.innerHTML+'</body></html>');
+ w.document.close();w.focus();const go=()=>{try{w.print()}catch(e){}};try{w.document.fonts.ready.then(()=>setTimeout(go,300))}catch(e){setTimeout(go,800)}}
 /* ---------- v3.1 작업자 등록 QR로 들어온 계정 ---------- */
 async function wkCheckIn(info){const token=LINK_REVIEW.slice(4);try{const r=await call('workerCheckIn',token,info||null);if(r&&r.email&&state){state.email=r.email;$('identity').textContent='접속 계정: '+r.email}showWk(r)}catch(e){$('my').innerHTML='<div class="card"><h2>작업자 등록 실패</h2><p class="desc">'+escapeText(e.message||'')+'</p></div>'}$('pageTitle').textContent='작업자 등록';window.scrollTo(0,0)}
 function showWk(r){const head='<div class="card"><small class="muted">'+escapeText(r.store)+' · '+escapeText(r.company)+' ('+escapeText(r.trade)+')</small><h2>작업자 등록 · 채용 시 교육</h2>';let body='';

@@ -41,7 +41,7 @@ function si(id,val,dis,o){o=o||{};return '<input class="si'+(o.w?' w'+o.w:'')+'"
 function cb(id,on,dis,kind,label){return '<label class="pc '+(kind||'sq')+'" title="'+escapeText(label||'')+'"><input type="checkbox" id="'+id+'" '+(on?'checked':'')+' '+(dis?'disabled':'')+' aria-label="'+escapeText(label||'')+'"><i aria-hidden="true"></i></label>'}
 function nc(idN,idD,x,dis,label){x=x||{};return '<span class="nc">'+cb(idN,x.need,dis,'sq',label+' 필요')+cb(idD,x.done,dis,'ci',label+' 조치 완료')+'</span>'}
 /** F1.8p 서명 칸: 도급인에게 제출(발행)된 허가서면 업체 소장 이름을 정자로 넣음 · 아니면 '(서명)'/'(인)' 글자만 */
-function pmSign(name,mark){const P=pm&&pm.permit;return P&&P.no&&P.status!=='NEW'&&name?'<span class="sgn" title="'+escapeText(mark)+'">'+escapeText(name)+'</span><span class="sgm">('+escapeText(mark)+')</span>':'('+mark+')'}
+function pmSign(name,mark){const P=pm&&pm.permit;return P&&P.no&&P.status!=='NEW'&&name?FKs(1.15).nm(escapeText(name),mark,19):'('+mark+')'}
 function sheetHtml(){const P=pm.permit,d=P.data||{},M=pm.mode,L=!(M==='new'||M==='edit'),G=!(M==='new'||M==='edit'||M==='progress'),[y,mo,da]=String(P.date||'').split('-');
  const sup=k=>pv(d.supp,k,{}),gas=d.gas||[],cp=d.complete||{},ex=d.extend||{},sm0=pv(d.confirm,'manager')||pv(d.applicant,'name');
  const col=(a,b)=>PERMIT_SAFETY.slice(a,b).map(([k,l])=>'<tr><td class="it" id="ps_'+k+'">ㅇ '+escapeText(l)+'</td><td class="ck">'+cb('psn_'+k,pv(d.safety,k,{}).need,L,'sq',l+' 필요')+'</td><td class="ck">'+cb('psd_'+k,pv(d.safety,k,{}).done,L,'ci',l+' 조치')+'</td></tr>').join('');
