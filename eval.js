@@ -36,7 +36,7 @@ function renderEvalList(){const d=evData;jobsMode='eval';evCur=null;
   +'<p class="desc" style="margin-top:10px">업체마다 평가합니다. 수행 기록으로 자동 체크된 결과를 확인·수정하고 <b>[평가 확정]</b>을 누르면 최종입니다. 안전보건팀에는 참조 알림만 갑니다.</p></div>'
   +'<div class="card">'+(d.list.map(e=>'<button class="jobitem" type="button" onclick="openEval(\''+escapeText(e.id)+'\')"><div><b>'+escapeText(e.company)+'</b> '+(e.status==='DONE'?'<span class="pill ok">확정</span> '+e.total+'점 '+gradePill(e.grade):'<span class="pill todo">평가 전</span>')+'<div class="muted">'+(e.status==='DONE'?escapeText(e.evaluator)+' · '+escapeText(fmtTime(e.evaluatedAt)):'작업일 '+((e.auto.stats||{}).workDays||0)+'일 · 순회점검 '+((e.auto.stats||{}).inspections||0)+'회 · 지적 '+((e.auto.stats||{}).findings||0)+'건')+'</div></div><span aria-hidden="true">›</span></button>').join('')||'<p class="muted">참여 업체가 없어 평가할 대상이 없습니다.</p>')+'</div>';window.scrollTo(0,0)}
 function openEval(id){const e=evData.list.find(x=>x.id===id);if(!e)return;if(e.status==='DONE'){renderEvalDone(e);return}
- const items={};evData.evalItems.forEach(([no])=>{const s=e.items[no]||{},a=(e.auto.items||{})[no]||{};items[no]={lv:s.lv||a.lv||'',memo:s.memo||''}});evCur={id,e,items,comment:e.comment||'',drillText:undefined};renderEvalForm()}
+ const items={};evData.evalItems.forEach(([no])=>{const s=e.items[no]||{},a=(e.auto.items||{})[no]||{};items[no]={lv:s.lv||a.lv||'',memo:s.memo||''};if(String(no)==='12'){items[no].acc=s.acc||'';if(items[no].acc)items[no].lv=evAcc12(!!a.cert,items[no].acc)}});evCur={id,e,items,comment:e.comment||'',drillText:undefined};renderEvalForm()}
 /* 점수 계산 (서버 evalScore_와 같은 규칙) */
 function evScore(items){const P=evData.points;let total=0,limited=false;const sec={};
  evData.sections.forEach(([k,nos,max],i)=>{sec[k]=nos.reduce((s,n)=>{const lv=(items[String(n)]||{}).lv;return s+(lv?P[n]['GNP'.indexOf(lv)]||0:0)},0);total+=sec[k];if(i<3&&sec[k]<max/2)limited=true});
@@ -52,13 +52,13 @@ function renderEvalForm(){const d=evData,c=evCur,au=c.e.auto.items||{},st=c.e.au
    return h+'<div class="jitem" id="ev_'+no+'"><div class="jq"><b>'+no+'.</b> '+escapeText(name)+' <span class="muted">(우수 '+P[0]+' · 보통 '+P[1]+' · 미흡 '+P[2]+')</span></div>'
     +'<div class="muted" style="margin-top:4px">'+(a.auto?'<span class="pill lock">자동</span> ':'')+escapeText(a.why||'')+'</div>'
     +'<div class="jm" role="radiogroup" aria-label="'+no+'번 평가">'+['G','N','P'].map(k=>'<label class="jb '+EV_CLS[k]+'"><input type="radio" name="ev'+no+'" value="'+k+'" '+(x.lv===k?'checked':'')+' onchange="evMark(\''+no+'\',\''+k+'\')"><span>'+EV_LV[k]+'</span></label>').join('')+'</div>'
-    +'<input class="jmemo" style="width:100%;margin-top:8px;padding:9px 11px;border:1px solid var(--line);border-radius:8px;font:inherit" id="f_evm'+no+'" value="'+escapeText(x.memo)+'" oninput="evCur.items[\''+no+'\'].memo=this.value;this.classList.remove(\'miss\',\'shake\')" aria-label="'+no+'번 의견" placeholder="'+(no==='12'?'공사 중 사고 여부 (필수) 예) 무재해':'의견 (선택)')+'">'+(String(no)==='11'?evDrillBtn():'')+'</div>'}).join('')+'</div>'
+    +'<input class="jmemo" style="width:100%;margin-top:8px;padding:9px 11px;border:1px solid var(--line);border-radius:8px;font:inherit" id="f_evm'+no+'" value="'+escapeText(x.memo)+'" oninput="evCur.items[\''+no+'\'].memo=this.value;this.classList.remove(\'miss\',\'shake\')" aria-label="'+no+'번 의견" placeholder="'+(String(no)==='12'?'사고 내용 (선택) 예) 10-15 사다리 추락 1명 경상':'의견 (선택)')+'">'+(String(no)==='11'?evDrillBtn():'')+(String(no)==='12'?ev12Html(a,x):'')+'</div>'}).join('')+'</div>'
   +'<div class="card">'+text('evCmt','개선사항 (다음 계약·현장설명 때 안내)',c.comment)+'</div>'
   +'<div class="card roomfoot"><div id="evSum">'+evSumHtml()+'</div><div class="row" style="margin-top:10px"><button class="button ghost" type="button" style="flex:1" onclick="saveEval(false)">임시 저장</button><button class="button" type="button" style="flex:1" onclick="saveEval(true)">평가 확정</button></div></div>';window.scrollTo(0,0)}
 function evMark(no,k){evCur.items[no].lv=k;$('ev_'+no).classList.remove('miss','shake');$('evSum').innerHTML=evSumHtml()}
 async function saveEval(final){const c=evCur;c.comment=value('evCmt');
- if(final){const miss=evData.evalItems.filter(([no])=>!c.items[no].lv).map(([no])=>'ev_'+no);if(!String(c.items['12'].memo||'').trim())miss.push('f_evm12');
-  if(miss.length){inspFlag(miss,miss[0]==='f_evm12'?'12번에 공사 중 사고 여부를 적어 주세요 (예: 무재해)':'체크하지 않은 항목이 있습니다');return}
+ if(final){const miss=evData.evalItems.filter(([no])=>!c.items[no].lv).map(([no])=>'ev_'+no);if(!c.items['12'].acc)miss.push('f_ev12acc');
+  if(miss.length){if(miss.includes('f_ev12acc'))miss.unshift(miss.splice(miss.indexOf('f_ev12acc'),1)[0]);inspFlag(miss,miss[0]==='f_ev12acc'?'12번 재해: 공사 중 사고 여부를 골라 주세요 (없음 · 1건 · 2건 이상)':'체크하지 않은 항목이 있습니다');return}
   const s=evScore(c.items);if(!confirm(c.e.company+' 종료 평가를 확정할까요?\n\n'+s.total+'점 · '+s.grade+'등급\n\n확정하면 안전보건팀에 참조 알림이 갑니다.\n전체 활동내역 ZIP은 결과 화면에서 내려받습니다.'))return}
  try{evData=await call('saveJobEval',c.id,{items:c.items,comment:c.comment,...(c.drillText!==undefined?{drillText:c.drillText}:{})},final);c.drillText=undefined;const e=evData.list.find(x=>x.id===c.id);
   if(final){renderEvalDone(e);msg('평가를 확정했습니다.');refreshBadges()}else{c.e=e;msg('임시 저장했습니다.')}}catch(e){}}
@@ -73,6 +73,12 @@ function renderEvalDone(e){const d=evData,au=e.auto.items||{};jobsMode='eval';ev
   +'<div class="card"><button class="button ghost" type="button" style="width:100%" onclick="openDrillReport(\''+escapeText(e.id)+'\')">📄 비상훈련 결과보고서</button><button class="button ghost" type="button" style="width:100%;margin-top:8px" onclick="reopenEval(\''+escapeText(e.id)+'\')">다시 수정</button></div>';window.scrollTo(0,0)}
 /* ---------- F1.9w 비상훈련 결과보고서 (종료 평가 11번 옆) · 강평·문제점·개선사항·차기계획 = 자동 문장 (평가 확정 전까지 도급인이 고칠 수 있음)
  *  최종 PDF = 전체 활동내역 ZIP「3-7 비상대응훈련」(중계 서버가 같은 규칙으로 만듦 · 매일 저녁 미리 만들어 둠) ---------- */
+/* ---------- F1.9x 12번 재해 = 산재 확인서(자동) + 공사 중 사고(도급인이 고름) ---------- */
+const evAcc12=(cert,acc)=>acc==='2'||!cert?'P':acc==='1'?'N':'G';
+function ev12Html(a,x){const v=x.acc||'';return '<div class="field" style="margin-top:8px"><label for="f_ev12acc">공사 중 사고 <span class="req">*</span></label><select id="f_ev12acc" onchange="ev12Acc(this.value)" style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;font:inherit">'
+ +[['','고르세요'],['0','없음 (무재해)'],['1','1건'],['2','2건 이상']].map(([k,l])=>'<option value="'+k+'"'+(v===k?' selected':'')+'>'+l+'</option>').join('')+'</select>'
+ +'<p class="muted" style="margin:4px 0 0">'+(a.cert?'산재 확인서 제출 → 사고 없음 = 우수 · 1건 = 보통 · 2건 이상 = 미흡':'산재 확인서 미제출 → 미흡 (업체가 확인서를 올리면 자동으로 다시 계산)')+'</p></div>'}
+function ev12Acc(v){const c=evCur;if(!c)return;const a=(c.e.auto.items||{})['12']||{},x=c.items['12'];x.acc=v;if(v){x.lv=evAcc12(!!a.cert,v);document.querySelectorAll('input[name="ev12"]').forEach(r=>{r.checked=r.value===x.lv});$('ev_12')?.classList.remove('miss','shake');$('f_ev12acc')?.classList.remove('miss','shake')}$('evSum').innerHTML=evSumHtml()}
 function evDrillBtn(){return '<button class="button ghost" type="button" style="width:100%;margin-top:8px" onclick="openDrillReport()">📄 비상훈련 결과보고서'+(evCur&&evCur.drillText!==undefined?' (고침 · 저장 전)':'')+'</button>'}
 let drEdit=false;
 const drTextOf=(e,c)=>{const A=(e.auto&&e.auto.drill&&e.auto.drill.text)||null,M=c&&c.drillText!==undefined?c.drillText:e.drillText;return {t:M||A,edited:!!M,auto:A}};
@@ -238,11 +244,11 @@ const ER_CRIT=[['점수·등급','<h3>배점 (100점)</h3>'+erScoreTbl()+'<p cla
  +'<tr><td>1 방침</td><td>규정 서명 + 방침 3줄 이상</td></tr><tr><td>2 목표</td><td>목표 + 성과지표 3개 이상</td></tr><tr><td>3 조직</td><td>현장대리인 이름·연락처 (이름만 = 보통)</td></tr>'
  +'<tr><td>4 위험성평가</td><td>해당 위험요인 3개 이상 체크</td></tr><tr><td>5 · 7 · 10</td><td>법정 기본값을 앱이 미리 채움 → 우수 (영세업체 배려 · 꼭 해야 하는 법적 사항)</td></tr>'
  +'<tr><td>6 이행확인</td><td>이행 사례 20자 이상 + 증빙 사진 = 우수 · 글만 = 보통 · 비우면 미흡</td></tr><tr><td>8 작업허가</td><td>작업허가 대상 공종이 있음</td></tr><tr><td>9 신호·연락</td><td>현장대리인 연락처</td></tr>'
- +'<tr><td>11 비상대책</td><td>시나리오 2개 이상 + 시나리오에 필요한 훈련을 모두 체크 (공통: 대피 경로 안내·비상대피 훈련 · 화재 → 소화기 · 감전·추락·응급환자 → CPR) · 일부 빠지면 보통 · 없으면 미흡</td></tr><tr><td>12 산재</td><td>건수 기준 · 증빙 있음 + 0건 = 우수 · 2건 이하 = 보통 · <b>증빙 없으면 미제출 → 미흡</b></td></tr></table><p class="muted">평가 유효기간: 승인일부터 1년</p>'],
+ +'<tr><td>11 비상대책</td><td>시나리오 2개 이상 + 시나리오에 필요한 훈련을 모두 체크 (공통: 대피 경로 안내·비상대피 훈련 · 화재 → 소화기 · 감전·추락·응급환자 → CPR) · 일부 빠지면 보통 · 없으면 미흡</td></tr><tr><td>12 산재</td><td>건수 기준 · 증빙 있음 + 0건 = 우수 · 2건 이하 = 보통 · <b>증빙 없으면 미제출 → 미흡</b> · 계획서 낸 뒤에도 [산재 확인서 추가 제출]로 올리면 자동으로 다시 계산</td></tr></table><p class="muted">평가 유효기간: 승인일부터 1년</p>'],
  ['종료 평가','<h3>종료 평가 = 계약 전 계획을 공사 중에 지켰는가 (실행률)</h3><table><tr class="hd"><td>항목</td><td>보는 것</td></tr>'
  +'<tr><td>1 · 2 · 3 · 10</td><td>계약 전 평가 결과 그대로</td></tr><tr><td>4 위험성평가</td><td>계획서 위험요인이 순회점검에서 \'양호\'였던 비율</td></tr><tr><td>5 점검</td><td>순회점검 횟수 ÷ (작업일 ÷ 2)</td></tr>'
  +'<tr><td>6 이행확인</td><td>미조치가 있으면 미흡 · 평균 3일 안에 조치 = 우수</td></tr><tr><td>7 교육</td><td>작업자 기초안전보건교육 이수증 제출 비율</td></tr><tr><td>8 작업허가</td><td>허가서를 쓴 날 ÷ 작업일</td></tr>'
- +'<tr><td>9 신호·연락</td><td>협의체·합동점검 참석률</td></tr><tr><td>11 비상대책</td><td>비상대피·CPR·소화기 훈련 사진 1회 이상 = 우수 · 기타 교육만 = 보통</td></tr><tr><td>12 재해</td><td>공사 중 사고 여부 (담당자 입력 · 무재해 = 우수)</td></tr></table>'
+ +'<tr><td>9 신호·연락</td><td>협의체·합동점검 참석률</td></tr><tr><td>11 비상대책</td><td>비상대피·CPR·소화기 훈련 사진 1회 이상 = 우수 · 기타 교육만 = 보통</td></tr><tr><td>12 재해</td><td>산재 확인서(계획서 증빙 · 나중에 추가 제출 포함) + 공사 중 사고 (담당자가 고름) · 확인서 없음 = 미흡 · 확인서 + 사고 없음 = 우수 · 확인서 + 1건 = 보통 · 2건 이상 = 미흡</td></tr></table>'
  +'<p class="muted">비율: 90% 이상 우수 · 60% 이상 보통 · 그 아래 미흡 · 공사가 끝날 때 하는 평가 = 반기 평가</p>']];
 function evCritOpen(i){erCss();$('evcrit')?.remove();i=i==null?(evRes&&evRes.kind==='CE'?1:evRes&&evRes.kind==='JE'?2:0):i;const w=document.createElement('div');w.id='evcrit';w.setAttribute('role','dialog');w.setAttribute('aria-modal','true');w.setAttribute('aria-label','평가 기준');
  w.innerHTML='<div class="ercsheet"><div class="row" style="justify-content:space-between"><b style="font-size:17px">📋 평가 기준</b><button class="button ghost" type="button" id="evcritX" style="padding:6px 10px">✕ 닫기</button></div>'
