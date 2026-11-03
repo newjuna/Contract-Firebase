@@ -18,14 +18,49 @@ function inspCardHtml(v){const I=v.insp||{open:[],recent:[]};
   +(I.open.length?'<div class="stage">미조치 지적사항 <span class="cnt">'+I.open.length+'</span></div>'+I.open.map(f=>findRow(f,'vendor')).join(''):'')
   +(I.recent.length?'<details class="hist" style="margin-top:12px"><summary>순회점검일지 '+I.recent.length+'건</summary>'+I.recent.map(x=>'<div class="item"><div class="row" style="justify-content:space-between"><span>'+escapeText(x.date)+(x.bad?' · <b class="req">지적 '+x.bad+'</b>':' · 이상 없음')+(x.drill?' · '+escapeText(x.drill.label):'')+' '+(x.checkedAt?'<span class="pill ok">도급인 확인</span>':'<span class="pill todo">확인 대기</span>')+'</span><button class="button ghost" type="button" onclick="openInspSheet(\''+escapeText(x.id)+'\',\'vendor\')">일지 보기</button></div></div>').join('')+'</details>':'')+'</div>'}
 function findRow(f,who){return '<div class="item"><div class="row" style="justify-content:space-between"><div><b>'+f.no+'. '+escapeText(f.item)+'</b>'+(who==='staff'?' <span class="muted">'+escapeText(f.company)+'</span>':'')+'<div class="muted">지적 '+escapeText(f.foundDate)+' · '+escapeText(f.memo)+'</div></div><button class="button" type="button" onclick="openResolve(\''+escapeText(f.id)+'\',\''+who+'\')">조치 등록</button></div></div>'}
+/* ---------- F1.9w 업체 공사 화면: 비상대응훈련 현황 (계획서에서 필요한 훈련 = 했음 / 아직) · 결과보고서는 종료 평가 때 ---------- */
+function drillStatusHtml(v){const D=v.drill;if(!D||!Array.isArray(D.need))return '';const LV={G:['완료','ok'],N:['일부','todo'],P:['아직','bad']}[D.lv]||['','todo'];
+ return '<div class="card" id="drillStat"><div class="vh-top"><h2 style="margin:0;font-size:16px">비상대응훈련</h2><span class="pill '+LV[1]+'">'+LV[0]+'</span></div>'
+  +'<p class="muted" style="margin:6px 0 4px">계획서에서 정한 훈련입니다. 훈련한 날 순회점검 ②에 사진과 참석자를 올리면 여기에 표시됩니다.</p>'
+  +D.need.map(k=>{const l=(D.recs||[]).filter(r=>r.type===k),r=l[l.length-1];return '<div class="row" style="justify-content:space-between;padding:6px 0;border-top:1px solid var(--line)"><span>'+escapeText(drillLabel(k))+'</span>'
+   +(r?'<b style="color:var(--ok)">'+escapeText(String(r.date).slice(5))+(r.n!=null?' · '+r.n+(r.crew?'/'+r.crew:'')+'명':'')+(l.length>1?' 외 '+(l.length-1)+'회':'')+'</b>':'<b class="req">아직 안 함</b>')+'</div>'}).join('')+'</div>'}
 /* ---------- 업체: 점검 작성 ---------- */
-function openInspForm(){const items={};vjob.insp.items.forEach((_,i)=>items[i+1]='OK');ins={items,notes:{},tbm:[],drill:{type:'',photos:[]},name:vjob.siteManager||''};renderInspForm()}
+function openInspForm(){ins={items:{},notes:{},list:[],tbm:[],drill:{type:'',photos:[],memo:'',pick:null},name:vjob.siteManager||'',works:[],none:false};inspRemap(inspList());renderInspForm()}
+/* ---------- F1.9w 오늘 공정 → 점검표 (공통 5항목 + 고른 공종의 계획서 위험요인) · 계획서에 위험요인이 없으면 예전 항목 그대로 ---------- */
+const inspHasWorks=()=>!!(vjob&&vjob.insp&&Array.isArray(vjob.insp.works)&&vjob.insp.works.length);
+/** 지금 고른 공정의 점검표 [{t:항목, g:묶음}] · 공정을 아직 안 골랐으면 null */
+function inspList(){const I=vjob.insp;if(!inspHasWorks())return I.items.map(t=>({t,g:''}));if(!ins.works.length&&!ins.none)return null;
+ return (I.base||[]).map(t=>({t,g:'공통'})).concat(...I.works.filter(w=>ins.works.includes(w.t)).map(w=>w.qs.map(t=>({t,g:w.tl}))))}
+/** 공정을 바꾸면 항목 번호가 달라짐 → 이미 고른 결과·지적 내용은 항목 이름으로 옮김 (새 항목은 양호) */
+function inspRemap(L){const old=ins.list||[],byL={},nb={};old.forEach((x,i)=>{byL[x.t]=ins.items[i+1];if(ins.notes[i+1])nb[x.t]=ins.notes[i+1]});const items={},notes={};(L||[]).forEach((x,i)=>{items[i+1]=byL[x.t]||'OK';if(nb[x.t])notes[i+1]=nb[x.t]});ins.items=items;ins.notes=notes;ins.list=L||[]}
+function inspWork(k){ins.name=value('inName')||ins.name;if(k==='NONE'){ins.none=!ins.none;if(ins.none)ins.works=[]}else{ins.none=false;ins.works=ins.works.includes(k)?ins.works.filter(x=>x!==k):vjob.insp.works.map(w=>w.t).filter(t=>t===k||ins.works.includes(t))}
+ inspRemap(inspList());const y=window.scrollY;renderInspForm(true);window.scrollTo(0,y)}
+function worksCardHtml(){const W=vjob.insp.works;return '<div class="card" id="inWorks"><h2>③ 오늘 공정 <span class="req">*</span></h2><p class="desc">안전보건관리계획서에서 고른 공종입니다. <b>오늘 하는 공정을 모두</b> 눌러 주세요. 누른 공정의 위험요인이 점검표에 들어갑니다.</p>'
+ +'<div style="display:flex;flex-wrap:wrap;gap:8px">'+W.map(w=>{const on=ins.works.includes(w.t);return '<button type="button" class="button'+(on?'':' ghost')+'" aria-pressed="'+on+'" onclick="inspWork(\''+escapeText(w.t)+'\')">'+(on?'✔ ':'')+escapeText(w.tl)+' <span style="font-size:12px;opacity:.75">'+w.qs.length+'</span></button>'}).join('')
+ +'<button type="button" class="button'+(ins.none?'':' ghost')+'" aria-pressed="'+ins.none+'" style="border-style:dashed" onclick="inspWork(\'NONE\')">'+(ins.none?'✔ ':'')+'공통 항목만 (오늘 해당 공정 없음)</button></div></div>'}
 /* ---------- F1.8b 교육·비상대응훈련 사진 (TBM 다음 · 한 날만) ---------- */
 const DRILL_TYPES=[['EVAC','🚨 비상대피 훈련'],['CPR','❤️ 심폐소생술(CPR)'],['FIRE','🧯 소화기 사용 훈련'],['EDU','📘 기타 안전교육']];
 function drillCardHtml(){const d=ins.drill||(ins.drill={type:'',photos:[]});
  return '<div class="card" id="drillCard"><h2>② 교육 · 비상대응훈련 사진 <span class="muted" style="font-size:13px;font-weight:400">(한 날만)</span></h2><p class="desc">오늘 비상대피·CPR·소화기 훈련이나 안전교육을 했으면 종류를 고르고 사진을 올리세요. <b>안 했으면 그냥 넘어가면 됩니다.</b></p>'
   +'<div id="drTypes" style="display:flex;flex-wrap:wrap;gap:8px">'+DRILL_TYPES.map(([k,l])=>'<button type="button" class="button'+(d.type===k?'':' ghost')+'" aria-pressed="'+(d.type===k)+'" onclick="inspDrillType(\''+k+'\')">'+(d.type===k?'✔ ':'')+escapeText(l)+'</button>').join('')+'</div>'
-  +'<div class="row" id="drList" style="margin-top:10px">'+drListHtml()+'</div></div>'}
+  +'<div class="row" id="drList" style="margin-top:10px">'+drListHtml()+'</div>'+(DRILL_EMG.includes(d.type)?drillAttHtml():'')+'</div>'}
+/* ---------- F1.9w 비상훈련 참석자: 오늘 신규 등록자 = 자동 · 전에 등록한 사람 = 체크 (처음엔 최근 출근 명단이 체크된 채) ---------- */
+const DRILL_EMG=['EVAC','CPR','FIRE'];
+const isNewToday=w=>{try{return !!w.eduAt&&new Date(w.eduAt).toLocaleDateString('sv-SE',{timeZone:'Asia/Seoul'})===vjob.today}catch(e){return false}};
+function drillPeople(){const W=vjob.workers||[],nw=W.filter(isNewToday),old=W.filter(w=>!isNewToday(w));const d=ins.drill;
+ if(!Array.isArray(d.pick))d.pick=(vjob.crewDefault||[]).filter(id=>old.some(w=>w.id===id));return {nw,old,pick:d.pick}}
+function drillAttHtml(){const {nw,old,pick}=drillPeople(),d=ins.drill,n=nw.length+pick.length,dt=w=>{try{return new Date(w.eduAt).toLocaleDateString('sv-SE',{timeZone:'Asia/Seoul'}).slice(5)}catch(e){return ''}};
+ return '<div id="drAtt" style="margin-top:12px"><div class="stage" style="margin-top:0">훈련 참석자 <span class="req">*</span> <span class="cnt">'+n+'</span></div>'
+  +(nw.length?'<div class="note" style="background:var(--okbg);color:var(--ok)">오늘 신규 등록 <b>'+nw.length+'명</b>은 자동으로 들어갑니다<br>'+nw.map(w=>escapeText(w.name)).join(' · ')+'</div>':'')
+  +(old.length?'<p class="muted" style="margin:8px 0 4px">전에 등록한 사람 중 오늘 나온 사람을 체크하세요.</p>'
+   +old.map(w=>'<label class="wk"><input type="checkbox" '+(pick.includes(w.id)?'checked':'')+' onchange="drillPick(\''+escapeText(w.id)+'\',this.checked)"><span><b>'+escapeText(w.name)+'</b> <span class="muted">'+escapeText(dt(w))+' 등록 · '+escapeText(w.role||'')+'</span></span></label>').join('')
+   +'<div class="row" style="gap:6px;margin-top:6px"><button type="button" class="button ghost" style="padding:4px 8px;font-size:12px" onclick="drillPickAll(\'last\')">최근 명단 그대로</button><button type="button" class="button ghost" style="padding:4px 8px;font-size:12px" onclick="drillPickAll(\'all\')">전체 선택</button><button type="button" class="button ghost" style="padding:4px 8px;font-size:12px" onclick="drillPickAll(\'none\')">모두 해제</button></div>'
+   :(nw.length?'':'<div class="note">등록된 작업자가 없습니다. ① 신규자 등록을 먼저 해 주세요.</div>'))
+  +'<div class="field"><label for="f_drMemo">훈련 내용 한 줄 (선택)</label><input id="f_drMemo" maxlength="120" value="'+escapeText(d.memo||'')+'" oninput="ins.drill.memo=this.value" placeholder="예) 화재 상황 가정 · 비상구로 대피 · 인원 확인"></div></div>'}
+function drillPick(id,on){const d=ins.drill;d.pick=on?[...new Set(d.pick.concat(id))]:d.pick.filter(x=>x!==id);drillAttRefresh()}
+function drillPickAll(k){const {old}=drillPeople(),d=ins.drill;d.pick=k==='all'?old.map(w=>w.id):k==='none'?[]:(vjob.crewDefault||[]).filter(id=>old.some(w=>w.id===id));drillAttRefresh()}
+function drillAttRefresh(){const el=$('drAtt');if(el)el.outerHTML=drillAttHtml();$('drillCard')?.classList.remove('miss','shake')}
+function drillAttIds(){const {nw,pick}=drillPeople();return [...new Set(nw.map(w=>w.id).concat(pick))]}
 /* F1.8y 사진 버튼 2개: 📷 촬영 · 🖼 앨범 (여러 장 한 번에) — 예전 자동 앨범 버튼이 안 되던 휴대폰도 됨 · call = 'addTbm(' 처럼 */
 function phBtns(id,call,label){return '<label class="button ghost" for="'+id+'">📷 촬영</label><input class="hidefile" type="file" id="'+id+'" data-gal="1" accept="image/*" capture="environment" onchange="'+call+'this.id)" aria-label="'+escapeText(label)+' 촬영"><label class="button ghost" for="'+id+'_m">🖼 앨범 (여러 장)</label><input class="hidefile" type="file" id="'+id+'_m" accept="image/*" multiple onchange="'+call+'this.id)" aria-label="'+escapeText(label)+' 앨범에서 여러 장 고르기">'}
 function drListHtml(){return thumbs(ins.drill.photos,'dropDrill')+phBtns('drFile','addDrill(','교육·훈련 사진')}
@@ -34,16 +69,16 @@ async function addDrill(src){const ids=await upInsp(src||'drFile',null,5-ins.dri
 function dropDrill(id){ins.drill.photos=ins.drill.photos.filter(x=>x!==id);if(isPend(id)){pendDrop(id);delete inspPhoto[id]}$('drList').innerHTML=drListHtml()}
 const drillLabel=t=>((DRILL_TYPES.find(x=>x[0]===t)||[])[1]||'').replace(/^\S+ /,'');
 function thumbs(ids,del){return ids.map(id=>'<span class="thumb"><img data-doc="'+escapeText(id)+'" alt="사진" '+(inspPhoto[id]?'src="'+inspPhoto[id]+'"':'')+' onclick="viewInspPhoto(\''+escapeText(id)+'\')">'+(del?'<button type="button" class="tx" aria-label="사진 빼기" onclick="'+del+'(\''+escapeText(id)+'\')">✕</button>':'')+'</span>').join('')}
-function renderInspForm(){const v=vjob,I=v.insp;clearInterval(wkTimer);
- const bad=Object.values(ins.items).filter(x=>x==='BAD').length;
+function renderInspForm(keep){const v=vjob,I=v.insp;clearInterval(wkTimer);
+ const bad=Object.values(ins.items).filter(x=>x==='BAD').length,hw=inspHasWorks(),L=ins.list,ready=!hw||ins.works.length||ins.none,no=hw?'④':'③';let lastG='';
  $('execArea').innerHTML='<div class="card"><button class="button ghost" type="button" onclick="renderVJob()">← 오늘 할 일</button><h2 style="margin-top:12px">순회점검 작성 · '+escapeText(v.today)+'</h2><div class="muted">'+escapeText(v.job.storeName)+' · '+escapeText(v.company.company)+'</div></div>'
   +'<div class="card" id="tbmCard"><h2>① TBM 실시 사진 <span class="req">*</span></h2><p class="desc">작업 전 TBM(안전 미팅) 사진을 1장 이상 올려 주세요.</p><div class="row" id="tbmList">'+thumbs(ins.tbm,'dropTbm')+phBtns('tbmFile','addTbm(','TBM 사진')+'</div></div>'
   /* F1.8a TBM 사진을 올려야 점검표가 열림 · 점검표 = 공통 항목 + 계획서 위험성평가에서 고른 위험작업 */
   +(!ins.tbm.length?'<div class="card"><h2>② 점검 항목</h2><div class="note">위에서 TBM 사진을 올리면 점검표가 열립니다.</div></div>'
-  :drillCardHtml()+'<div class="card" id="inItems"><h2>③ 점검 항목</h2><p class="desc">공통 항목과 <b>안전보건관리계획서 위험성평가</b>에서 고른 위험요인의 감소대책 이행 여부를 확인하는 점검표입니다. 전 항목이 <b>양호</b>로 미리 체크되어 있으니, 지적사항만 <b>불량</b>(또는 해당없음)으로 바꾸고 사진과 지적 내용을 남겨 주세요. <span id="inSum">'+(bad?'· 불량 <b class="req">'+bad+'</b>건':'')+'</span></p>'
-  +I.items.map((t,i)=>{const n=i+1,x=ins.items[n];return '<div class="jitem'+(x==='BAD'?' bad':'')+'" id="ii_'+n+'"><div class="jq"><b>'+n+'.</b> '+escapeText(t)+'</div><div class="jm" role="radiogroup" aria-label="'+n+'번 결과">'+Object.entries(INSP_MARK).map(([k,l])=>'<label class="jb '+k.toLowerCase()+'"><input type="radio" name="in'+n+'" value="'+k+'" '+(x===k?'checked':'')+' onchange="inspMark('+n+',\''+k+'\')"><span>'+l+'</span></label>').join('')+'</div><div id="ibx_'+n+'">'+(x==='BAD'?inspBadBox(n):'')+'</div></div>'}).join('')+'</div>'
+  :drillCardHtml()+(hw?worksCardHtml():'')+(!ready?'<div class="card" id="inItems"><h2>④ 점검 항목</h2><div class="note">위에서 오늘 공정을 고르면 점검표가 나옵니다.</div></div>':'<div class="card" id="inItems"><h2>'+no+' 점검 항목 <span class="muted" style="font-size:13px;font-weight:400">· '+L.length+'개</span></h2><p class="desc">공통 항목과 <b>안전보건관리계획서 위험성평가</b>에서 고른 위험요인의 감소대책 이행 여부를 확인하는 점검표입니다. 전 항목이 <b>양호</b>로 미리 체크되어 있으니, 지적사항만 <b>불량</b>(또는 해당없음)으로 바꾸고 사진과 지적 내용을 남겨 주세요. <span id="inSum">'+(bad?'· 불량 <b class="req">'+bad+'</b>건':'')+'</span></p>'
+  +L.map(({t,g},i)=>{const n=i+1,x=ins.items[n],gh=hw&&g!==lastG?'<div class="stage">'+escapeText(g==='공통'?'공통 (늘 들어감)':g+' · 계획서 위험요인')+'</div>':'';lastG=g;return gh+'<div class="jitem'+(x==='BAD'?' bad':'')+'" id="ii_'+n+'"><div class="jq"><b>'+n+'.</b> '+escapeText(t)+'</div><div class="jm" role="radiogroup" aria-label="'+n+'번 결과">'+Object.entries(INSP_MARK).map(([k,l])=>'<label class="jb '+k.toLowerCase()+'"><input type="radio" name="in'+n+'" value="'+k+'" '+(x===k?'checked':'')+' onchange="inspMark('+n+',\''+k+'\')"><span>'+l+'</span></label>').join('')+'</div><div id="ibx_'+n+'">'+(x==='BAD'?inspBadBox(n):'')+'</div></div>'}).join('')+'</div>')
   +'<div class="card"><div class="field" style="margin-top:0"><label for="f_inName">점검자 (작성자) <span class="req">*</span></label><input id="f_inName" value="'+escapeText(ins.name)+'" placeholder="예: 김소장"></div><p class="muted">일지에는 "점검 실시: '+escapeText(v.company.company)+' · 작성자"로 남고, 도급인 담당자가 확인하면 "도급인 확인"이 추가됩니다.</p></div>'
-  +'<div class="card roomfoot"><button class="button" type="button" id="inSubmit" style="width:100%" onclick="submitInspNow()">순회점검 제출</button></div>');window.scrollTo(0,0)}
+  +'<div class="card roomfoot"><button class="button" type="button" id="inSubmit" style="width:100%" onclick="submitInspNow()">순회점검 제출</button></div>');if(!keep)window.scrollTo(0,0)}
 function inspBadBox(n){const nt=ins.notes[n]||(ins.notes[n]={memo:'',photos:[]});return '<div class="jbad"><label for="f_im'+n+'">지적 내용 <span class="req">*</span></label><input id="f_im'+n+'" class="jmemo" value="'+escapeText(nt.memo)+'" oninput="ins.notes['+n+'].memo=this.value" placeholder="예) 통로에 자재 적치 → 즉시 정리"><div class="row" style="margin-top:8px">'+thumbs(nt.photos,'')+phBtns('if_'+n,'addInspBad('+n+',',n+'번 불량 사진')+'</div></div>'}
 function inspMark(n,k){ins.items[n]=k;const el=$('ii_'+n);el.classList.toggle('bad',k==='BAD');el.classList.remove('miss','shake');$('ibx_'+n).innerHTML=k==='BAD'?inspBadBox(n):'';if(k==='BAD')setTimeout(()=>$('f_im'+n)?.focus(),50);
  const bad=Object.values(ins.items).filter(x=>x==='BAD').length;$('inSum').innerHTML=bad?'· 불량 <b class="req">'+bad+'</b>건':''}
@@ -63,14 +98,16 @@ function inspFlag(ids,text){document.querySelectorAll('.miss').forEach(x=>x.clas
 async function submitInspNow(){ins.name=value('inName');const miss=[];if(!ins.tbm.length)miss.push('tbmCard');
  Object.entries(ins.items).forEach(([n,x])=>{if(x==='BAD'&&!String(ins.notes[n]?.memo||'').trim())miss.push('f_im'+n)});if(!ins.name)miss.push('f_inName');
  const dr=ins.drill||{type:'',photos:[]};if(dr.photos.length&&!dr.type||dr.type&&!dr.photos.length)miss.unshift('drillCard');  // F1.8b 종류만·사진만이면 확인
- if(miss.length){inspFlag(miss,miss[0]==='tbmCard'?'TBM 사진을 먼저 올려 주세요':miss[0]==='drillCard'?(dr.type?'교육·훈련 사진을 올려 주세요 (안 했으면 종류 선택을 다시 눌러 끄세요)':'교육·훈련 종류를 골라 주세요'):miss[0]==='f_inName'?'점검자 이름을 적어 주세요':'불량 항목의 지적 내용을 적어 주세요');return}
+ const emg=DRILL_EMG.includes(dr.type)&&dr.photos.length,att=emg?drillAttIds():[],noAtt=emg&&!att.length,noWork=inspHasWorks()&&!ins.works.length&&!ins.none;  // F1.9w 참석자 · 오늘 공정
+ if(noWork)miss.unshift('inWorks');if(noAtt&&!miss.includes('drillCard'))miss.unshift('drillCard');
+ if(miss.length){inspFlag(miss,miss[0]==='tbmCard'?'TBM 사진을 먼저 올려 주세요':miss[0]==='inWorks'?'오늘 공정을 골라 주세요 (해당 공정이 없으면 [공통 항목만])':miss[0]==='drillCard'?(noAtt&&dr.type&&dr.photos.length?'훈련 참석자를 체크해 주세요':dr.type?'교육·훈련 사진을 올려 주세요 (안 했으면 종류 선택을 다시 눌러 끄세요)':'교육·훈련 종류를 골라 주세요'):miss[0]==='f_inName'?'점검자 이름을 적어 주세요':'불량 항목의 지적 내용을 적어 주세요');return}
  const bad=Object.values(ins.items).filter(x=>x==='BAD').length;
  /* F1.7f 확인·결과를 화면 안 창으로 (일부 휴대폰은 confirm/alert를 말없이 막아 "눌러도 반응 없음"이 됨) */
  if(!await askOk('순회점검 제출',bad?'지적사항 '+bad+'건은 조치될 때까지 미조치로 남습니다.':'전 항목 이상 없음으로 제출합니다.','제출'))return;
  /* F1.8p 불량이 아닌 항목에 남은 사진은 버림 → 사진 올리기 → 일지 저장 (체크리스트 한 번) */
  Object.keys(ins.notes).forEach(n=>{if(ins.items[n]!=='BAD')ins.notes[n].photos=[]});
  const lists=[ins.tbm,dr.photos].concat(Object.values(ins.notes).map(x=>x.photos)),np=pendCount(lists);
- try{await subRun('순회점검 제출',[np&&['사진 '+np+'장 올리기',set=>pendUpload(lists,set,inspPhoto)],['순회점검일지 저장',async()=>{vjob=await api('submitInspection',[vjob.job.id,{tbm:ins.tbm,items:ins.items,notes:ins.notes,name:ins.name,drill:dr.photos.length?{type:dr.type,photos:dr.photos}:null}])}]]);ins=null;renderVJob();$('inspCard')?.scrollIntoView({block:'start'});popup('순회점검 제출 완료','오늘 순회점검일지를 제출했습니다.'+(bad?'\n지적사항 '+bad+'건은 조치 후 [조치 등록]을 해 주세요.':''),'확인')}
+ try{await subRun('순회점검 제출',[np&&['사진 '+np+'장 올리기',set=>pendUpload(lists,set,inspPhoto)],['순회점검일지 저장',async()=>{vjob=await api('submitInspection',[vjob.job.id,{tbm:ins.tbm,items:ins.items,notes:ins.notes,name:ins.name,works:ins.works,none:ins.none,drill:dr.photos.length?{type:dr.type,photos:dr.photos,...(emg?{attendees:att,memo:dr.memo||''}:{})}:null}])}]]);ins=null;renderVJob();$('inspCard')?.scrollIntoView({block:'start'});popup('순회점검 제출 완료','오늘 순회점검일지를 제출했습니다.'+(bad?'\n지적사항 '+bad+'건은 조치 후 [조치 등록]을 해 주세요.':''),'확인')}
  catch(e){showErr('순회점검을 제출하지 못했습니다',e)}}
 /* ---------- 지적사항 조치 등록 (업체·도급인 공용) ---------- */
 /** F1.8k 도급인 책임자 이름 (서버가 공사 화면과 함께 보내 줌 · 없으면 기본값) */
@@ -114,7 +151,9 @@ async function openInspSheet(id,who){let x,fs,items,job,area;
   +'<tr><th>검토 (도급인 담당)</th><td colspan="3">'+(x.checkedAt?'<b>'+escapeText(x.checkedBy)+'</b> <span class="muted">'+escapeText(fmtTime(x.checkedAt))+'</span>':'<span class="req">확인 대기</span>')+'</td></tr>'
   +'<tr><th>승인 (도급인 책임자)</th><td colspan="3">'+(x.checkedAt?'<b>'+escapeText(principalName('delegate'))+'</b> <span class="stamp">승인</span> <span class="muted">('+escapeText(principalName('ceo',1))+' 위임)</span>':'<span class="muted">검토 후 자동</span>')+'</td></tr></table>'
   +'<div class="stage">TBM 실시 사진</div><div class="row">'+thumbs(x.tbm,'')+'</div>'
-  +(x.drill?'<div class="stage">교육 · 비상대응훈련 · '+escapeText(x.drill.label||drillLabel(x.drill.type))+'</div><div class="row">'+thumbs(x.drill.photos,'')+'</div>':'')
+  +(x.drill?'<div class="stage">교육 · 비상대응훈련 · '+escapeText(x.drill.label||drillLabel(x.drill.type))+'</div><div class="row">'+thumbs(x.drill.photos,'')+'</div>'
+   /* F1.9w 참석자 · 훈련 내용 */+(Array.isArray(x.drill.attendees)?'<p class="desc" style="margin-top:6px">참석 <b>'+x.drill.attendees.length+'명</b>'+(x.drill.crew?' (출근 '+x.drill.crew+'명)':'')+' · '+x.drill.attendees.map(w=>escapeText(w.name)+(w.isNew?' <span class="muted">(신규)</span>':'')).join(' · ')+(x.drill.memo?'<br>'+escapeText(x.drill.memo):'')+'</p>':''):'')
+  /* F1.9w 오늘 공정 */+(Array.isArray(x.works)?'<div class="note" style="margin-top:10px"><b>오늘 공정</b> '+(x.works.length?x.works.map(escapeText).join(' · '):'공통 항목만')+'</div>':'')
   +'<table class="rtable" style="margin-top:12px"><tr><th style="width:44px">No</th><th>점검 항목</th><th style="width:90px">결과</th></tr>'+items.map((t,i)=>{const r=x.items[i+1];return '<tr><td style="text-align:center">'+(i+1)+'</td><td>'+escapeText(t)+'</td><td style="text-align:center"'+(r==='BAD'?' class="req"':'')+'>'+escapeText(INSP_MARK[r]||'-')+'</td></tr>'}).join('')+'</table>'
   +'<div class="stage">지적사항 · 조치 결과</div>'+(fs.length?fs.map(f=>'<table class="rtable" style="margin-top:8px"><tr><th style="width:90px">항목</th><td colspan="3"><b>'+f.no+'. '+escapeText(f.item)+'</b></td></tr><tr><th>지적</th><td>'+escapeText(f.foundDate)+' · '+escapeText(f.memo)+'</td><th style="width:70px">상태</th><td style="width:90px">'+(f.status==='DONE'?'<b style="color:var(--ok)">조치 완료</b>':'<b class="req">미조치</b>')+'</td></tr>'
    +'<tr><th>조치 전</th><td colspan="3"><div class="row">'+(thumbs(f.before,'')||'<span class="muted">사진 없음</span>')+'</div></td></tr>'

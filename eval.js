@@ -36,7 +36,7 @@ function renderEvalList(){const d=evData;jobsMode='eval';evCur=null;
   +'<p class="desc" style="margin-top:10px">업체마다 평가합니다. 수행 기록으로 자동 체크된 결과를 확인·수정하고 <b>[평가 확정]</b>을 누르면 최종입니다. 안전보건팀에는 참조 알림만 갑니다.</p></div>'
   +'<div class="card">'+(d.list.map(e=>'<button class="jobitem" type="button" onclick="openEval(\''+escapeText(e.id)+'\')"><div><b>'+escapeText(e.company)+'</b> '+(e.status==='DONE'?'<span class="pill ok">확정</span> '+e.total+'점 '+gradePill(e.grade):'<span class="pill todo">평가 전</span>')+'<div class="muted">'+(e.status==='DONE'?escapeText(e.evaluator)+' · '+escapeText(fmtTime(e.evaluatedAt)):'작업일 '+((e.auto.stats||{}).workDays||0)+'일 · 순회점검 '+((e.auto.stats||{}).inspections||0)+'회 · 지적 '+((e.auto.stats||{}).findings||0)+'건')+'</div></div><span aria-hidden="true">›</span></button>').join('')||'<p class="muted">참여 업체가 없어 평가할 대상이 없습니다.</p>')+'</div>';window.scrollTo(0,0)}
 function openEval(id){const e=evData.list.find(x=>x.id===id);if(!e)return;if(e.status==='DONE'){renderEvalDone(e);return}
- const items={};evData.evalItems.forEach(([no])=>{const s=e.items[no]||{},a=(e.auto.items||{})[no]||{};items[no]={lv:s.lv||a.lv||'',memo:s.memo||''}});evCur={id,e,items,comment:e.comment||''};renderEvalForm()}
+ const items={};evData.evalItems.forEach(([no])=>{const s=e.items[no]||{},a=(e.auto.items||{})[no]||{};items[no]={lv:s.lv||a.lv||'',memo:s.memo||''}});evCur={id,e,items,comment:e.comment||'',drillText:undefined};renderEvalForm()}
 /* 점수 계산 (서버 evalScore_와 같은 규칙) */
 function evScore(items){const P=evData.points;let total=0,limited=false;const sec={};
  evData.sections.forEach(([k,nos,max],i)=>{sec[k]=nos.reduce((s,n)=>{const lv=(items[String(n)]||{}).lv;return s+(lv?P[n]['GNP'.indexOf(lv)]||0:0)},0);total+=sec[k];if(i<3&&sec[k]<max/2)limited=true});
@@ -52,7 +52,7 @@ function renderEvalForm(){const d=evData,c=evCur,au=c.e.auto.items||{},st=c.e.au
    return h+'<div class="jitem" id="ev_'+no+'"><div class="jq"><b>'+no+'.</b> '+escapeText(name)+' <span class="muted">(우수 '+P[0]+' · 보통 '+P[1]+' · 미흡 '+P[2]+')</span></div>'
     +'<div class="muted" style="margin-top:4px">'+(a.auto?'<span class="pill lock">자동</span> ':'')+escapeText(a.why||'')+'</div>'
     +'<div class="jm" role="radiogroup" aria-label="'+no+'번 평가">'+['G','N','P'].map(k=>'<label class="jb '+EV_CLS[k]+'"><input type="radio" name="ev'+no+'" value="'+k+'" '+(x.lv===k?'checked':'')+' onchange="evMark(\''+no+'\',\''+k+'\')"><span>'+EV_LV[k]+'</span></label>').join('')+'</div>'
-    +'<input class="jmemo" style="width:100%;margin-top:8px;padding:9px 11px;border:1px solid var(--line);border-radius:8px;font:inherit" id="f_evm'+no+'" value="'+escapeText(x.memo)+'" oninput="evCur.items[\''+no+'\'].memo=this.value;this.classList.remove(\'miss\',\'shake\')" aria-label="'+no+'번 의견" placeholder="'+(no==='12'?'공사 중 사고 여부 (필수) 예) 무재해':'의견 (선택)')+'"></div>'}).join('')+'</div>'
+    +'<input class="jmemo" style="width:100%;margin-top:8px;padding:9px 11px;border:1px solid var(--line);border-radius:8px;font:inherit" id="f_evm'+no+'" value="'+escapeText(x.memo)+'" oninput="evCur.items[\''+no+'\'].memo=this.value;this.classList.remove(\'miss\',\'shake\')" aria-label="'+no+'번 의견" placeholder="'+(no==='12'?'공사 중 사고 여부 (필수) 예) 무재해':'의견 (선택)')+'">'+(String(no)==='11'?evDrillBtn():'')+'</div>'}).join('')+'</div>'
   +'<div class="card">'+text('evCmt','개선사항 (다음 계약·현장설명 때 안내)',c.comment)+'</div>'
   +'<div class="card roomfoot"><div id="evSum">'+evSumHtml()+'</div><div class="row" style="margin-top:10px"><button class="button ghost" type="button" style="flex:1" onclick="saveEval(false)">임시 저장</button><button class="button" type="button" style="flex:1" onclick="saveEval(true)">평가 확정</button></div></div>';window.scrollTo(0,0)}
 function evMark(no,k){evCur.items[no].lv=k;$('ev_'+no).classList.remove('miss','shake');$('evSum').innerHTML=evSumHtml()}
@@ -60,7 +60,7 @@ async function saveEval(final){const c=evCur;c.comment=value('evCmt');
  if(final){const miss=evData.evalItems.filter(([no])=>!c.items[no].lv).map(([no])=>'ev_'+no);if(!String(c.items['12'].memo||'').trim())miss.push('f_evm12');
   if(miss.length){inspFlag(miss,miss[0]==='f_evm12'?'12번에 공사 중 사고 여부를 적어 주세요 (예: 무재해)':'체크하지 않은 항목이 있습니다');return}
   const s=evScore(c.items);if(!confirm(c.e.company+' 종료 평가를 확정할까요?\n\n'+s.total+'점 · '+s.grade+'등급\n\n확정하면 안전보건팀에 참조 알림이 갑니다.\n전체 활동내역 ZIP은 결과 화면에서 내려받습니다.'))return}
- try{evData=await call('saveJobEval',c.id,{items:c.items,comment:c.comment},final);const e=evData.list.find(x=>x.id===c.id);
+ try{evData=await call('saveJobEval',c.id,{items:c.items,comment:c.comment,...(c.drillText!==undefined?{drillText:c.drillText}:{})},final);c.drillText=undefined;const e=evData.list.find(x=>x.id===c.id);
   if(final){renderEvalDone(e);msg('평가를 확정했습니다.');refreshBadges()}else{c.e=e;msg('임시 저장했습니다.')}}catch(e){}}
 /* ---------- 확정된 평가 보기 + 내려받기 ---------- */
 function renderEvalDone(e){const d=evData,au=e.auto.items||{};jobsMode='eval';evCur=null;
@@ -70,7 +70,30 @@ function renderEvalDone(e){const d=evData,au=e.auto.items||{};jobsMode='eval';ev
   +'<button class="button" type="button" style="width:100%;margin-top:12px" onclick="evFile(\''+escapeText(e.id)+'\')">📦 전체 활동내역 ZIP 내려받기</button><p class="muted" style="margin-top:6px">1.계약 전 서류 · 2.계약 전 평가 · 3.수행 기록 · 4.작업 종료 폴더로 나뉜 PDF 묶음 + 원본파일 ZIP(사진·서류, 35MB씩 나눔) · 같은 파일이 Drive에도 보관</p></div>'
   +'<div class="card">'+(erCss(),'')+erTable(d.evalItems.map(([no,sec,name])=>{const x=e.items[no]||{},P=d.points[no];return {no,sec:String(sec).charAt(0),name,lv:x.lv||'',pts:x.lv?P['GNP'.indexOf(x.lv)]:0,max:P[0],why:(au[no]||{}).why||'',memo:x.memo?'의견: '+x.memo:''}}),e.total,e.grade)
   +'<div class="stage">개선사항</div><p class="desc" style="white-space:pre-line">'+escapeText(e.comment||'없음')+'</p></div>'
-  +'<div class="card"><button class="button ghost" type="button" style="width:100%" onclick="reopenEval(\''+escapeText(e.id)+'\')">다시 수정</button></div>';window.scrollTo(0,0)}
+  +'<div class="card"><button class="button ghost" type="button" style="width:100%" onclick="openDrillReport(\''+escapeText(e.id)+'\')">📄 비상훈련 결과보고서</button><button class="button ghost" type="button" style="width:100%;margin-top:8px" onclick="reopenEval(\''+escapeText(e.id)+'\')">다시 수정</button></div>';window.scrollTo(0,0)}
+/* ---------- F1.9w 비상훈련 결과보고서 (종료 평가 11번 옆) · 강평·문제점·개선사항·차기계획 = 자동 문장 (평가 확정 전까지 도급인이 고칠 수 있음)
+ *  최종 PDF = 전체 활동내역 ZIP「3-7 비상대응훈련」(중계 서버가 같은 규칙으로 만듦 · 매일 저녁 미리 만들어 둠) ---------- */
+function evDrillBtn(){return '<button class="button ghost" type="button" style="width:100%;margin-top:8px" onclick="openDrillReport()">📄 비상훈련 결과보고서'+(evCur&&evCur.drillText!==undefined?' (고침 · 저장 전)':'')+'</button>'}
+let drEdit=false;
+const drTextOf=(e,c)=>{const A=(e.auto&&e.auto.drill&&e.auto.drill.text)||null,M=c&&c.drillText!==undefined?c.drillText:e.drillText;return {t:M||A,edited:!!M,auto:A}};
+function openDrillReport(id){drEdit=false;if(!id&&evCur&&$('f_evCmt'))evCur.comment=value('evCmt');renderDrillReport(id)}
+function renderDrillReport(id){const c=id?null:evCur,e=c?c.e:evData.list.find(x=>x.id===id);if(!e)return;const D=e.auto&&e.auto.drill,LVN={G:'우수',N:'보통',P:'미흡'},back=c?'renderEvalForm()':'renderEvalDone(evData.list.find(x=>x.id===\''+escapeText(e.id)+'\'))';
+ if(!D){$('jobs').innerHTML='<div class="card"><button class="button ghost" type="button" onclick="'+back+'">← 종료 평가</button><h2 style="margin-top:12px">비상훈련 결과보고서</h2><div class="note">이 평가는 예전 방식으로 계산되어 보고서 자료가 없습니다. [다시 수정] 후 저장하면 새 방식으로 다시 계산됩니다.</div></div>';window.scrollTo(0,0);return}
+ const {t:T,edited}=drTextOf(e,c),can=!!c,P=D.plan||{},li=a=>(a||[]).map(x=>'· '+escapeText(x)).join('<br>'),md=d=>escapeText(String(d).slice(5)),lvC={G:'ok',N:'todo',P:'bad'}[D.lv]||'todo';
+ const box=(k,label,val,multi)=>'<div class="stage">'+label+' <span class="pill '+(edited?'todo':'lock')+'">'+(edited?'수정':'자동')+'</span></div>'+(drEdit?'<textarea id="f_dr_'+k+'" rows="'+(multi?3:2)+'" style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;font:inherit">'+escapeText(multi?(val||[]).join('\n'):val||'')+'</textarea>'+(multi?'<p class="muted" style="margin:2px 0 0">한 줄에 하나씩</p>':''):'<p class="desc" style="margin:4px 0 0">'+(multi?li(val):escapeText(val||''))+'</p>');
+ $('jobs').innerHTML='<div class="card"><button class="button ghost" type="button" onclick="'+back+'">← 종료 평가</button><h2 style="margin-top:12px">비상훈련 결과보고서 · '+escapeText(e.company)+'</h2><div class="muted">'+escapeText(evData.job.title)+' · 계획: 대피 경로 '+escapeText(P.route||'-')+' · 집결 '+escapeText(P.assembly||'-')+'</div>'
+  +'<div class="row" style="justify-content:space-between;margin-top:12px"><b>판정</b><span class="pill '+lvC+'">'+(LVN[D.lv]||'-')+'</span></div>'
+  +D.need.map(k=>{const l=D.recs.filter(r=>r.type===k);return '<div class="row" style="justify-content:space-between;padding:6px 0;border-top:1px solid var(--line)"><span>'+escapeText(drillLabel(k))+'</span>'+(l.length?'<b style="color:var(--ok)">'+l.map(r=>md(r.date)+(r.n!=null?' · '+r.n+(r.crew?'/'+r.crew:'')+'명':'')).join(', ')+'</b>':'<b class="req">미실시</b>')+'</div>'}).join('')+'</div>'
+  +'<div class="card"><h2>자동 작성 문장</h2>'+box('review','훈련결과 및 성과 강평',T.review)+box('problems','문제점',T.problems,1)+box('improve','개선사항',T.improve,1)+box('next','차기계획',T.next,1)
+  +(can?(drEdit?'<div class="row" style="margin-top:12px;gap:8px"><button class="button" type="button" style="flex:1" onclick="drSave()">고친 문장 쓰기</button><button class="button ghost" type="button" style="flex:1" onclick="drEdit=false;renderDrillReport()">취소</button></div><button class="button ghost" type="button" style="width:100%;margin-top:8px" onclick="drReset()">자동 문장으로 되돌리기</button>'
+   :'<button class="button ghost" type="button" style="width:100%;margin-top:12px" onclick="drEdit=true;renderDrillReport()">✏ 문장 고치기 (선택)</button><p class="muted" style="margin-top:6px">고친 문장은 종료 평가 [임시 저장] · [평가 확정] 때 같이 저장됩니다.</p>')
+   :'<p class="muted" style="margin-top:10px">고치려면 평가를 [다시 수정]해 주세요.</p>')+'</div>'
+  +(D.recs.length?'<div class="card"><h2>훈련 기록</h2>'+D.recs.map(r=>'<div class="stage">'+escapeText(r.date)+' · '+escapeText(r.label)+'</div><div class="row">'+thumbs(r.photos||[],'')+'</div>'
+   +'<p class="desc" style="margin-top:6px">'+(r.n!=null?'참석 <b>'+r.n+'명</b>'+(r.crew?' (출근 '+r.crew+'명)':'')+' · '+(r.attendees||[]).map(w=>escapeText(w.name)).join(' · '):'참석자 기록 없음 (예전 기록)')+(r.memo?'<br>'+escapeText(r.memo):'')+'</p>').join('')+'</div>':'')
+  +'<div class="card"><p class="muted" style="margin:0">최종 PDF는 [📦 전체 활동내역 ZIP]의 「3. 수행 기록 / 3-7 비상대응훈련」에 들어갑니다. (원본 「비상훈련 실시 보고서」 서식)</p></div>';
+ window.scrollTo(0,0);if(D.recs.length&&typeof loadInspPhotos==='function')loadInspPhotos(evData.job.id)}
+function drSave(){const c=evCur;if(!c)return;const v=k=>($('f_dr_'+k)?.value||'').trim(),L=k=>v(k).split('\n').map(x=>x.trim()).filter(Boolean);c.drillText={review:v('review'),problems:L('problems'),improve:L('improve'),next:L('next')};drEdit=false;renderDrillReport();msg('고친 문장은 [임시 저장] 또는 [평가 확정]을 눌러야 저장됩니다.')}
+function drReset(){const c=evCur;if(!c)return;c.drillText=null;drEdit=false;renderDrillReport();msg('자동 문장으로 되돌렸습니다. [임시 저장]을 눌러 주세요.')}
 /* F1.7b ZIP 바로 내려받기: [내려받기]를 누르면 드라이브 화면을 거치지 않고 다운로드 폴더로 받음 (본인 계정에만 보기 권한)
  *  안 받아지면(브라우저에 다른 구글 계정이 로그인된 경우 등) 드라이브 화면에서 ⬇ */
 let evDl=null;
