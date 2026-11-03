@@ -61,7 +61,7 @@ function switchTab(which){tab=which;toggleMenu(false);stopScan();if($(which+'Tab
 /* F1.9t 홈 화면 앱(PWA): 서비스 워커 등록 (저장 안 함 · 홈 화면에 추가할 수 있게만) */
 if('serviceWorker' in navigator&&location.protocol==='https:')window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 // ★ 화면 버전: 여기 한 줄만 고침 (GitHub만 올리면 로그인 화면·앱 화면·메뉴에 모두 반영, Code.gs 수정 불필요)
-const UI_VERSION='26.10.24 F1.9v';
+const UI_VERSION='26.10.24 F1.9w';
 /* F1.8o 전화번호 · 사업자번호: 숫자만 쳐도 '-' 자동 (서버는 원래 숫자만 골라 씀) */
 function fmtTel(v){const d=String(v||'').replace(/\D/g,'').slice(0,11);if(d.startsWith('02'))return d.length<3?d:d.length<6?d.slice(0,2)+'-'+d.slice(2):d.length<10?d.slice(0,2)+'-'+d.slice(2,5)+'-'+d.slice(5):d.slice(0,2)+'-'+d.slice(2,6)+'-'+d.slice(6,10);
  return d.length<4?d:d.length<8?d.slice(0,3)+'-'+d.slice(3):d.length<11?d.slice(0,3)+'-'+d.slice(3,6)+'-'+d.slice(6):d.slice(0,3)+'-'+d.slice(3,7)+'-'+d.slice(7)}
@@ -544,7 +544,7 @@ function todayHtml(v){
   /* 오늘 등록한 사람만 표로 (전체 명단·지난 사람 이수증은 ☰ 신규교육 현황) */
   +'<div id="regToday" style="margin-top:10px">'+(todayW.length?'<table class="rtable"><tr><th>이름</th><th>구분·공정</th><th style="width:72px">이수증</th><th style="width:44px"></th></tr>'+todayW.map(w=>'<tr><td><b>'+escapeText(w.name)+'</b></td><td>'+escapeText(w.role)+(w.trade?' · '+escapeText(w.trade):'')+eduH(w)+'</td><td>'+certCell(w)+'</td><td><button class="linkbtn" type="button" style="font-size:12px" onclick="undoWorker(\''+escapeText(w.id)+'\')" aria-label="'+escapeText(w.name)+' 등록 취소">취소</button></td></tr>').join('')+'</table>'
    :'<div class="row" style="justify-content:space-between"><span class="muted">오늘 등록한 사람 없음'+(noNew?' · [오늘 신규자 없음] 표시함':'')+'</span>'+(noNew?'<button class="button ghost" type="button" style="padding:4px 8px;font-size:12px" onclick="clearNoNew()">취소</button>':'')+(v.jobStatus!=='ENDED'&&!noNew?'<button class="button ghost" type="button" id="btnNoNew" style="padding:4px 8px;font-size:12px" onclick="setNoNew()">오늘 신규자 없음</button>':'')+'</div>')+'</div></div>';
- return reg+permitCardHtml(v)+inspCardHtml(v);
+ return reg+permitCardHtml(v)+inspCardHtml(v)+(typeof drillStatusHtml==='function'?drillStatusHtml(v):'');
 }
 /** F1.8s 공종 고르기 (계획서에서 고른 공종) · 특별교육 대상 공종이면 교육 2H · 안 고르면 채용 시 교육 1H */
 function tradeSel(id,T){return '<div class="field"><label for="'+id+'">특별교육 공종 (해당 시)</label><select id="'+id+'" onchange="tradeHint(this)"><option value="">해당 없음 (채용 시 교육만)</option>'+(T||[]).map(t=>'<option value="'+escapeText(t.key)+'" data-sp="'+escapeText((t.special||[]).join(' / '))+'">'+escapeText(t.name)+'</option>').join('')+'</select><div class="muted" id="'+id+'_h" style="font-size:12px;margin-top:2px">채용 시 교육 1H</div></div>'}
