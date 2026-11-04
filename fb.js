@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F1.9y';
+  const VERSION = '26.10.24 F1.9z';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   const CFG = {
     INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
@@ -1262,7 +1262,7 @@
     const ps = docs(await db.collection('PERMITS').where('jobId', '==', j.id).get()).filter((p) => p.status === 'ISSUED' && (!pick || pick.has(p.id)));
     for (let i = 0; i < ps.length; i += 400) {
       const b = db.batch();
-      ps.slice(i, i + 400).forEach((p) => b.update(db.collection('PERMITS').doc(p.id), { status: 'APPROVED', approvedBy: ap.dept + ' / ' + ap.title + ' / ' + ap.name, approvedAt: now(), approveNote: tidy(note, 300) || '일괄 승인' }));
+      ps.slice(i, i + 400).forEach((p) => b.update(db.collection('PERMITS').doc(p.id), { status: 'APPROVED', approvedBy: ap.dept + ' / ' + ap.title + ' / ' + ap.name, approvedAt: now(), approveNote: tidy(note, 300) }));  // F1.9z 「일괄 승인」 자동 문구 안 넣음 (서류에 승인 여부만)
       await b.commit();
     }
     audit(a, '', 'PERMIT_APPROVE_BULK', j.id + ' ' + ps.length + '건');
