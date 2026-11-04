@@ -61,7 +61,7 @@ function switchTab(which){tab=which;toggleMenu(false);stopScan();if($(which+'Tab
 /* F1.9t 홈 화면 앱(PWA): 서비스 워커 등록 (저장 안 함 · 홈 화면에 추가할 수 있게만) */
 if('serviceWorker' in navigator&&location.protocol==='https:')window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 // ★ 화면 버전: 여기 한 줄만 고침 (GitHub만 올리면 로그인 화면·앱 화면·메뉴에 모두 반영, Code.gs 수정 불필요)
-const UI_VERSION='26.10.24 F1.9y';
+const UI_VERSION='26.10.24 F1.9z';
 /* F1.8o 전화번호 · 사업자번호: 숫자만 쳐도 '-' 자동 (서버는 원래 숫자만 골라 씀) */
 function fmtTel(v){const d=String(v||'').replace(/\D/g,'').slice(0,11);if(d.startsWith('02'))return d.length<3?d:d.length<6?d.slice(0,2)+'-'+d.slice(2):d.length<10?d.slice(0,2)+'-'+d.slice(2,5)+'-'+d.slice(5):d.slice(0,2)+'-'+d.slice(2,6)+'-'+d.slice(6,10);
  return d.length<4?d:d.length<8?d.slice(0,3)+'-'+d.slice(3):d.length<11?d.slice(0,3)+'-'+d.slice(3,6)+'-'+d.slice(6):d.slice(0,3)+'-'+d.slice(3,7)+'-'+d.slice(7)}
@@ -420,7 +420,7 @@ function showRoom(r){
  if(!tabs.some(t=>t[0]===roomTab))roomTab='att';
  /* F1.8j 미팅 방에서 바로: ← 협의체·합동점검 목록 · + 같은 공사에 미팅 방 하나 더 */
  $('jobs').innerHTML='<div class="card"><div class="row" style="justify-content:space-between"><button class="button ghost" type="button" onclick="clearInterval(roomTimer);sgo(\'meet\')">‹ 협의체·합동점검</button>'+gdBtn('room')+'</div><h2 style="margin-top:12px">'+escapeText(r.title)+' · '+escapeText(r.job.storeName)+'</h2><div class="muted">'+escapeText(r.date)+' '+escapeText(r.time||'')+' · '+escapeText(r.place)+' · '+escapeText(r.kinds.join(', '))+'</div>'
-  +'<div class="muted">도급인 책임자: '+escapeText(principalName('ceo',1))+' → 위임 <b>'+escapeText(principalName('delegate'))+'</b>'+(principalName('manager')?' · 담당 '+escapeText(principalName('manager')):'')+'</div>'  /* F1.8k 회의록·점검표에도 같은 줄 */
+  +'<div class="muted">도급인 책임자: '+escapeText(principalName('ceo',1))+' → 위임 <b>'+escapeText(principalName('delegate'))+'</b></div>'  /* F1.8k 회의록·점검표에도 같은 줄 · F1.9z 「· 담당」 뺌 */
   +(r.done?'<div class="note" style="margin-top:12px"><b style="color:var(--ok)">✔ 미팅 실시 완료</b> · '+escapeText(fmtTime(r.doneAt))+' · '+escapeText(r.doneBy||'')+'</div>':'')
   /* F1.8l 탭 없이 한 화면에서 ①참석 → ②합동점검 → ③회의록 순서대로 (위 칩을 누르면 그 단계로 이동) */
   +'<div class="row" style="flex-wrap:wrap;gap:6px;margin-top:10px">'+tabs.map(([k,l],i)=>'<button type="button" class="fxchip" id="rt_'+k+'" onclick="setRoomTab(\''+k+'\')">'+'①②③'[i]+' '+escapeText(l)+'</button>').join('')+'</div></div>'
@@ -522,7 +522,7 @@ function showCheckIn(r){const head='<div class="card"><small class="muted">'+esc
  else if(r.state==='NO_COMPANY')body=r.pending?'<div class="note"><b>사업자 등록 승인 대기 중입니다</b> ('+escapeText(r.pending)+')<br>본사 승인이 끝난 뒤 다시 QR을 찍어 주세요.</div><button class="button ghost" type="button" style="width:100%" onclick="meetToReg()">신청 현황 보기</button>'
   :'<div class="note"><b>등록되지 않은 계정입니다</b><br>사업자 등록을 신청하고 승인받은 뒤 접속해 주세요.<br><span class="muted">계정 '+escapeText(state.email)+'</span></div><button class="button" type="button" style="width:100%" onclick="meetToReg()">사업자 등록 신청하기</button><button class="linkbtn" type="button" style="margin-top:8px" onclick="relogin()">다른 계정으로 로그인</button>';
  else if(r.state==='CLOSED')body='<div class="note">아직 방이 열리지 않았거나 이미 닫혔습니다. 도급인 담당자가 [방 열기]를 누른 뒤 다시 QR을 찍어 주세요.</div><button class="button ghost" type="button" onclick="meetCheckIn()">다시 확인</button>';
- else{const k=r.known;body='<p class="desc">로그인 계정 <b>'+escapeText(state.email)+'</b> 으로 참석을 기록합니다. 본인 계정이 맞는지 확인해 주세요. <button class="linkbtn" type="button" onclick="relogin()">다른 계정으로 로그인</button></p><form onsubmit="sendCheckIn(event)">'+input('cName','이름',k?k.name:'','text',false,'예: 홍길동')+(k?'<div class="field"><label>소속 업체</label><div><b>'+escapeText(k.company)+'</b> <span class="muted">(업체 가입 정보로 자동 확인)</span></div></div>':'<div class="field"><label for="f_cCompany">소속 업체</label><select id="f_cCompany"><option value="">업체 선택</option>'+r.vendors.map(v=>'<option value="'+escapeText(v.companyId)+'" '+(r.vendors.length===1?'selected':'')+'>'+escapeText(v.company)+'</option>').join('')+'</select><div class="muted">'+(r.myCompany?'<b class="req">이 계정의 업체('+escapeText(r.myCompany)+')는 이 공사에 배정되어 있지 않습니다.</b> 도급인에게 배정을 요청하거나, 실제 소속 업체를 고르세요.<br>':'이 계정은 업체 대표 계정으로 등록되어 있지 않습니다. ')+'소속 업체를 고르면 도급인 확인 후 참석 처리됩니다.</div></div>')+'<div class="field"><label for="f_cRole">역할</label><select id="f_cRole">'+r.roles.map(x=>'<option>'+escapeText(x)+'</option>').join('')+'</select></div><button class="button" style="width:100%" type="submit">참석 체크</button></form>'}
+ else{const k=r.known;body='<p class="desc">로그인 계정 <b>'+escapeText(state.email)+'</b> 으로 참석을 기록합니다. 이 계정은 점검표 · 회의록 서명란에 그대로 남으니 본인 계정이 맞는지 확인해 주세요. <button class="linkbtn" type="button" onclick="relogin()">다른 계정으로 로그인</button></p><form onsubmit="sendCheckIn(event)">'+input('cName','이름',k?k.name:'','text',false,'예: 홍길동')+(k?'<div class="field"><label>소속 업체</label><div><b>'+escapeText(k.company)+'</b> <span class="muted">(업체 가입 정보로 자동 확인)</span></div></div>':'<div class="field"><label for="f_cCompany">소속 업체</label><select id="f_cCompany"><option value="">업체 선택</option>'+r.vendors.map(v=>'<option value="'+escapeText(v.companyId)+'" '+(r.vendors.length===1?'selected':'')+'>'+escapeText(v.company)+'</option>').join('')+'</select><div class="muted">'+(r.myCompany?'<b class="req">이 계정의 업체('+escapeText(r.myCompany)+')는 이 공사에 배정되어 있지 않습니다.</b> 도급인에게 배정을 요청하거나, 실제 소속 업체를 고르세요.<br>':'이 계정은 업체 대표 계정으로 등록되어 있지 않습니다. ')+'소속 업체를 고르면 도급인 확인 후 참석 처리됩니다.</div></div>')+'<div class="field"><label for="f_cRole">역할</label><select id="f_cRole">'+r.roles.map(x=>'<option>'+escapeText(x)+'</option>').join('')+'</select></div><button class="button" style="width:100%" type="submit">참석 체크</button></form>'}
  $('my').innerHTML=head+body+'</div>'}
 async function sendCheckIn(e){e.preventDefault();const info={name:value('cName'),role:$('f_cRole').value,companyId:$('f_cCompany')?$('f_cCompany').value:''};if(!info.name){alert('이름을 입력해 주세요.');return}if($('f_cCompany')&&!info.companyId){alert('소속 업체를 목록에서 골라 주세요.');$('f_cCompany').focus();return}await meetCheckIn(info)}
 /* ---------- v3.1 수행단계 (업체): 내 공사 → [오늘 할 일] / [비상대응훈련] ---------- */
@@ -647,7 +647,7 @@ function eduOneHtml(o){const e=o.esc,w=o.w,SPD=o.special||{};
  const boxH=V(sp.length>1?150:sp.length?185:235);
  const sign='<div style="font-size:'+R(10)+'px;color:'+GRY+';margin-bottom:'+V(6)+'px">성명 <b style="color:#111827;font-size:'+R(13)+'px">'+e(w.name)+'</b></div><div style="padding:'+V(8)+'px 0">'+K.nm(e(w.name),'서명',38)+'</div>'
   +'<div style="color:'+GRN+';font-weight:bold;font-size:'+R(10.5)+'px;margin-top:'+V(8)+'px">✔ '+(w.method==='SELF'?'본인 계정으로 서명':'현장책임자 '+e(o.teacher||'')+' 확인')+'</div>'
-  +(o.signAt?'<div style="color:#374151;font-size:'+R(10)+'px;margin-top:2px">'+e(o.signAt)+'</div>':'')+'<div style="font-size:'+R(9.5)+'px;color:#4B5563;margin-top:'+V(10)+'px">위 교육을 받았고 안전 수칙 준수를 서약합니다.</div>';
+  +(o.signAt?'<div style="color:#374151;font-size:'+R(10)+'px;margin-top:2px">'+e(o.signAt)+'</div>':'')+(w.method==='SELF'&&w.email?'<div style="color:#374151;font-size:'+R(9.5)+'px;margin-top:2px;word-break:break-all">'+e(w.email)+'</div>':'')/* F1.9z 본인 계정 = Google 계정 */+'<div style="font-size:'+R(9.5)+'px;color:#4B5563;margin-top:'+V(10)+'px">위 교육을 받았고 안전 수칙 준수를 서약합니다.</div>';
  const cert=o.cert?String(o.cert).replace(/max-height:\s*\d+px/g,'max-height:'+Math.round(boxH-24)+'px')+'<div style="font-size:'+R(9.5)+'px;color:'+GRN+';font-weight:bold;margin-top:3px">✔ 제출'+(o.certAt?' · '+e(o.certAt):'')+'</div>'
   :w.certDoc?'<div style="color:#4B5563">이수증 파일 있음 (원본 파일 참조)</div>':'<div style="color:'+RED+';font-weight:bold;font-size:'+R(13)+'px">✖ 미제출</div>';
  return K.head('안전보건 교육일지','','<b>'+K.day(o.date)+'</b>')
@@ -667,14 +667,14 @@ function eduOneHtml(o){const e=o.esc,w=o.w,SPD=o.special||{};
   +K.sec(sp.length?5:4,'교육 확인')
   +'<table style="'+T+'"><tr><td style="'+H+';width:50%">① 교육 확인 서명</td><td style="'+H+'">② 건설업 기초안전보건교육 이수증</td></tr>'
   +'<tr><td style="'+B+';text-align:center;height:'+boxH+'px">'+sign+'</td><td style="'+B+';text-align:center;height:'+boxH+'px">'+cert+'</td></tr></table>'
-  +K.foot('※ 서명 = 본인 Google 계정으로 교육 확인·서약한 시각, 또는 현장책임자가 교육 후 확인한 시각 (시스템 기록) · 1명당 1장',o.outAt?e(o.outAt):'');}
+  +K.foot('',o.outAt?e(o.outAt):'');}  /* F1.9z 하단 안내 문구 뺌 */
 
 /** F1.9u 작업 안전 수칙 (매일 1장) · 작업자 서명 2열 (20명까지 1장) · app.js · Relay.gs 같은 함수
  *  o = { esc, date, store, title, siteManager, rules, pledge, ws:[{name,trade,sign}], savedAt, outAt } */
 function rulesOneHtml(o){const e=o.esc,ws=o.ws||[];
  const slots=Math.max(20,ws.length+ws.length%2),rows=slots/2;
  const K=FKs(fitK_('rules',rows<=10?1.12:rows<=12?1:.92)),{T,B,RED,LR,GRN,GRY,R,V}=K;
- const c=i=>{const w=ws[i];return [{h:i+1,c:1,col:GRY,st:'height:'+V(19)+'px'},w?e(w.trade||''):'',w?'<b>'+e(w.name)+'</b> <span style="font-size:'+R(9.5)+'px;color:'+GRN+'">'+(w.sign==='SELF'?'✔ 본인 계정 서명':'✔ 소장 확인')+'</span>':'']};
+ const c=i=>{const w=ws[i];return [{h:i+1,c:1,col:GRY,st:'height:'+V(19)+'px'},w?e(w.trade||''):'',w?'<b>'+e(w.name)+'</b> <span style="font-size:'+R(9.5)+'px;color:'+GRN+'">'+(w.sign==='SELF'?'✔ 본인 계정 서명':'✔ 소장 확인')+'</span>'+(w.sign==='SELF'&&w.email?'<div style="font-size:'+R(8.5)+'px;color:'+GRY+';word-break:break-all;line-height:1.2">'+e(w.email)+'</div>':''):'']};  /* F1.9z 본인 계정 서명 = Google 계정 */
  return K.head('작업 안전 수칙','매일 1회 · 작업 전 교육 · 서약','<b>'+K.day(o.date)+'</b>')
   +K.sec(1,'현장 정보')+K.kv([['현장명','다이소 '+e(o.store)+(o.title?' <span style="font-size:'+R(9.5)+'px;color:'+GRY+'">('+e(o.title)+')</span>':''),'작업일',K.day(o.date)],['현장책임자',e(o.siteManager||'-'),'작업자',ws.length+'명']])
   +K.sec(2,'작업 안전 수칙',o.rules.length+'개 항목')
@@ -682,7 +682,7 @@ function rulesOneHtml(o){const e=o.esc,ws=o.ws||[];
   +K.box('<b>'+e(o.pledge)+'</b>',LR,RED)
   +K.sec(3,'작업자 확인 서명','작업자 '+ws.length+'명')
   +K.grid([['No','5%','c'],['공정명','13%'],['이름 · 서명','32%'],['No','5%','c'],['공정명','13%'],['이름 · 서명','32%']],Array.from({length:rows},(_,r)=>c(r).concat(c(r+rows))))
-  +K.foot('※ 본인 계정 서명 = 처음 등록한 날 본인 Google 계정으로 서약 · 소장 확인 = 업체 대표 계정으로 그날 출근 확인'+(o.savedAt?' · 저장 '+e(o.savedAt):''),o.outAt?e(o.outAt):'');}
+  +K.foot('',o.outAt?e(o.outAt):'');}  /* F1.9z 하단 안내 문구 · 저장 시각 뺌 */
 /* ===== F1.9u 공통 디자인 끝 ===== */
 
 const kstFull=t=>{try{return new Date(t).toLocaleString('sv-SE',{timeZone:'Asia/Seoul'}).slice(0,16)}catch(e){return ''}};
@@ -771,7 +771,7 @@ async function saveCrewForm(e){e.preventDefault();const ids=[...document.querySe
 /** F1.9u 작업 안전 수칙 (날짜별 A4 1장 · 최종 ZIP의 PDF와 같은 모양) */
 function showRules(date){const v=vjob,h=v.history.find(x=>x.date===date)||v.todayCrew;if(!h)return;clearInterval(wkTimer);
  $('execArea').innerHTML='<div class="card row" style="justify-content:space-between"><button class="button ghost" type="button" onclick="renderVJob()">‹ 이전으로</button><button class="button" type="button" onclick="printA4(\'a4Sheet\',\'작업 안전 수칙 '+escapeText(date)+'\')">🖨 인쇄 · PDF</button></div><div class="card sheet" style="overflow-x:auto"><div id="a4Sheet">'
-  +rulesOneHtml({esc:escapeText,date,store:v.job.storeName,title:v.job.title,siteManager:h.siteManager,rules:v.rules,pledge:v.pledge,ws:(h.workers||[]).map(w=>({name:w.name,trade:w.trade,sign:w.sign})),savedAt:h.savedAt?kstFull(h.savedAt):'',outAt:kstFull(new Date())})+'</div></div>';window.scrollTo(0,0)}
+  +rulesOneHtml({esc:escapeText,date,store:v.job.storeName,title:v.job.title,siteManager:h.siteManager,rules:v.rules,pledge:v.pledge,ws:(h.workers||[]).map(w=>{const x=(v.workers||[]).find(y=>y.id===w.id);return {name:w.name,trade:w.trade,sign:w.sign,email:w.sign==='SELF'&&x&&x.method==='SELF'?x.email||'':''}}),savedAt:h.savedAt?kstFull(h.savedAt):'',outAt:kstFull(new Date())})+'</div></div>';window.scrollTo(0,0)}
 /** F1.9u A4 인쇄 · PDF 저장: 화면의 양식만 새 창에 열어 인쇄 (PC: 「PDF로 저장」 · 휴대폰: 공유/인쇄 메뉴) · 배경색 그대로 */
 function printA4(id,title){const el=$(id);if(!el)return;const w=window.open('','_blank');if(!w){alert('팝업이 막혀 있습니다. 브라우저에서 팝업을 허용해 주세요.');return}
  w.document.write('<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+escapeText(title||'양식')+'</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nanum+Brush+Script&display=swap"><style>@page{size:A4;margin:11mm 12mm}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}body{margin:0;font-family:"Malgun Gothic","맑은 고딕",sans-serif;color:#111827}@media screen{body{max-width:186mm;margin:10px auto;padding:0 8px}}</style></head><body>'+el.innerHTML+'</body></html>');
@@ -782,7 +782,7 @@ function showWk(r){window.__wkCo=String((r&&r.company)||'');/* F1.9y 이수증 �
  if(r.state==='DONE')body='<div style="text-align:center;padding:10px 0"><div style="font-size:44px;color:var(--ok)">✔</div><h2 style="color:var(--ok)">'+(r.again?'이미 등록되어 있습니다':'등록 완료')+'</h2><p class="desc"><b>'+escapeText(r.name)+'</b> · '+escapeText(r.role)+' · '+escapeText(r.company)+'<br>교육 확인 '+escapeText(fmtTime(r.eduAt))+' · 계정 '+escapeText(state.email)+(r.again?'':'<br>기초안전보건교육 이수증: '+(r.cert?'<b style="color:var(--ok)">✔ 제출</b>':'<b class="req">미제출</b> (소장님께 이수증을 보여 주세요)'))+'</p><div class="note" style="text-align:left">이 공사에서는 다시 QR을 찍지 않아도 됩니다.<br>내일부터는 소장님이 출근 인원을 체크합니다.</div></div>';
  else body='<p class="desc">로그인 계정 <b>'+escapeText(state.email)+'</b> 으로 등록합니다. <b>본인 계정</b>인지 확인해 주세요. 이 공사에서 처음 한 번만 하면 됩니다. <button class="linkbtn" type="button" onclick="relogin()">다른 계정으로 로그인</button></p><form onsubmit="sendWk(event)">'+input('kName','이름','','text',false,'예: 홍길동')+'<div class="field"><label for="f_kRole">구분</label><select id="f_kRole">'+r.roles.map(x=>'<option '+(x==='근로자'?'selected':'')+'>'+escapeText(x)+'</option>').join('')+'</select></div>'+tradeSel('f_kTrade',r.trades)
   +certFieldHtml('kCert')
-  +'<div class="stage">작업 안전 수칙 (끝까지 읽어 주세요)</div><ol class="rules boxed">'+r.rules.map(x=>'<li>'+escapeText(x)+'</li>').join('')+'</ol><p class="pledge">'+escapeText(r.pledge)+'</p><label class="wk"><input type="checkbox" id="kAgree"><span>위 작업 안전 수칙을 교육받았고, 준수할 것을 서약합니다.</span></label><button class="button" style="width:100%;margin-top:10px" type="submit">교육 확인 및 서명</button></form>';
+  +'<div class="stage">작업 안전 수칙 (끝까지 읽어 주세요)</div><ol class="rules boxed">'+r.rules.map(x=>'<li>'+escapeText(x)+'</li>').join('')+'</ol><p class="pledge">'+escapeText(r.pledge)+'</p><label class="wk"><input type="checkbox" id="kAgree"><span>위 작업 안전 수칙을 교육받았고, 준수할 것을 서약합니다.</span></label><p class="muted" style="margin:8px 0 0">서명하면 이 Google 계정(<b>'+escapeText((state&&state.email)||'')+'</b>)이 교육일지 · 작업 안전 수칙 서명 기록으로 서류에 남습니다.</p><button class="button" style="width:100%;margin-top:10px" type="submit">교육 확인 및 서명</button></form>';
  $('my').innerHTML=head+body+'</div>'}
 async function sendWk(e){e.preventDefault();const info={name:value('kName'),role:$('f_kRole').value,tradeKey:$('f_kTrade')?$('f_kTrade').value:'',agree:$('kAgree').checked};if(!info.name){markMissing([{key:'kName'}]);return}if(!info.agree){popup('확인해 주세요','작업 안전 수칙 교육 확인·서약에 체크해 주세요.','확인');return}
  // F1.8b 기초안전보건교육 이수증 (없으면 '미제출'로 등록 · 소장님이 나중에 올릴 수 있음)
