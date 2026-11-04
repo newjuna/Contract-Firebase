@@ -112,7 +112,7 @@ function renderPermitList(){const d=permitJob,t=kstToday(),L=d.list;jobsMode='pe
   +(rows||'<p class="muted" style="margin-top:10px">'+(pmFilter==='wait'?'승인 대기 허가서가 없습니다.':pmFilter==='spec'?'특이사항이 있는 허가서가 없습니다.':'허가서가 없습니다.')+'</p>')+'</div>'
   +(wait.length?'<div class="card roomfoot"><div class="row"><button class="button ghost" type="button" style="flex:1" onclick="pmApprove(false)">선택 승인</button><button class="button" type="button" style="flex:1" onclick="pmApprove(true)">대기 전체 승인 '+wait.length+'건</button></div></div>':'');window.scrollTo(0,0)}
 async function pmApprove(all){const ids=all?[]:[...document.querySelectorAll('.pmck:checked')].map(x=>x.value),n=all?permitJob.list.filter(p=>p.status==='ISSUED').length:ids.length;if(!n){msg('승인할 허가서를 체크해 주세요.');return}
- if(!confirm('작업허가서 '+n+'건을 승인할까요?\n승인자: '+(state.staff?state.staff.name:'')+' (일괄 승인으로 기록)'))return;
+ if(!confirm('작업허가서 '+n+'건을 승인할까요?\n승인자: '+(state.staff?state.staff.name:'')))return;
  try{permitJob=await call('approvePermits',permitJob.job.id,ids,'');renderPermitList();msg(n+'건 승인했습니다.');refreshBadges();const j=jobData&&jobData.jobs.find(x=>x.id===permitJob.job.id);if(j)j.permitWaiting=permitJob.list.filter(p=>p.status==='ISSUED').length}catch(e){}}
 /* ---------- 순회점검: 업체별 요약 + 거르기 + 일괄 확인 ---------- */
 function renderInspList(){const d=inspJob,t=kstToday(),L=d.list,open=d.findings.filter(f=>f.status!=='DONE');jobsMode='insp';
