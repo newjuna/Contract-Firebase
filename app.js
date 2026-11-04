@@ -61,7 +61,7 @@ function switchTab(which){tab=which;toggleMenu(false);stopScan();if($(which+'Tab
 /* F1.9t 홈 화면 앱(PWA): 서비스 워커 등록 (저장 안 함 · 홈 화면에 추가할 수 있게만) */
 if('serviceWorker' in navigator&&location.protocol==='https:')window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 // ★ 화면 버전: 여기 한 줄만 고침 (GitHub만 올리면 로그인 화면·앱 화면·메뉴에 모두 반영, Code.gs 수정 불필요)
-const UI_VERSION='26.10.24 F1.9x';
+const UI_VERSION='26.10.24 F1.9y';
 /* F1.8o 전화번호 · 사업자번호: 숫자만 쳐도 '-' 자동 (서버는 원래 숫자만 골라 씀) */
 function fmtTel(v){const d=String(v||'').replace(/\D/g,'').slice(0,11);if(d.startsWith('02'))return d.length<3?d:d.length<6?d.slice(0,2)+'-'+d.slice(2):d.length<10?d.slice(0,2)+'-'+d.slice(2,5)+'-'+d.slice(5):d.slice(0,2)+'-'+d.slice(2,6)+'-'+d.slice(6,10);
  return d.length<4?d:d.length<8?d.slice(0,3)+'-'+d.slice(3):d.length<11?d.slice(0,3)+'-'+d.slice(3,6)+'-'+d.slice(6):d.slice(0,3)+'-'+d.slice(3,7)+'-'+d.slice(7)}
@@ -729,7 +729,7 @@ async function addWorkerForm(e){
  if(!d.agree){msg('교육 실시·서약 확인에 체크해 주세요.');return}
  /* F1.8b 이수증: 있으면 등록 직후 올림 · 없으면 확인 후 '미제출'로 등록 */
  const cf=certPick.wCert;let cert=null;
- if(cf){try{cert=await readFile(cf,PHOTO_DEFAULT)}catch(x){showErr('이수증 사진을 읽지 못했습니다',x);return}}
+ if(cf){try{cert=await readFile(cf,PHOTO_CERT)}catch(x){showErr('이수증 사진을 읽지 못했습니다',x);return}}
  else if(!await askOk('이수증 없이 등록할까요?',d.name+' 님의 건설업 기초안전보건교육 이수증이 없으면 "미제출"로 등록됩니다.\n교육 없이 투입된 것으로 보고 업체 평가에 반영됩니다. (나중에 작업자 카드에서 올릴 수 있습니다)','이수증 없이 등록'))return;
  const jobId=vjob.job.id,mark=[jobId,d.name,d.role,d.tradeKey].join('|');
  if(!workerPending||workerPending.mark!==mark){
@@ -778,7 +778,7 @@ function printA4(id,title){const el=$(id);if(!el)return;const w=window.open('','
  w.document.close();w.focus();const go=()=>{try{w.print()}catch(e){}};try{w.document.fonts.ready.then(()=>setTimeout(go,300))}catch(e){setTimeout(go,800)}}
 /* ---------- v3.1 작업자 등록 QR로 들어온 계정 ---------- */
 async function wkCheckIn(info){const token=LINK_REVIEW.slice(4);try{const r=await call('workerCheckIn',token,info||null);if(r&&r.email&&state){state.email=r.email;$('identity').textContent='접속 계정: '+r.email}showWk(r)}catch(e){$('my').innerHTML='<div class="card"><h2>작업자 등록 실패</h2><p class="desc">'+escapeText(e.message||'')+'</p></div>'}$('pageTitle').textContent='작업자 등록';window.scrollTo(0,0)}
-function showWk(r){const head='<div class="card"><small class="muted">'+escapeText(r.store)+' · '+escapeText(r.company)+' ('+escapeText(r.trade)+')</small><h2>작업자 등록 · 채용 시 교육</h2>';let body='';
+function showWk(r){window.__wkCo=String((r&&r.company)||'');/* F1.9y 이수증 스탬프 업체명 (작업자 본인 휴대폰) */const head='<div class="card"><small class="muted">'+escapeText(r.store)+' · '+escapeText(r.company)+' ('+escapeText(r.trade)+')</small><h2>작업자 등록 · 채용 시 교육</h2>';let body='';
  if(r.state==='DONE')body='<div style="text-align:center;padding:10px 0"><div style="font-size:44px;color:var(--ok)">✔</div><h2 style="color:var(--ok)">'+(r.again?'이미 등록되어 있습니다':'등록 완료')+'</h2><p class="desc"><b>'+escapeText(r.name)+'</b> · '+escapeText(r.role)+' · '+escapeText(r.company)+'<br>교육 확인 '+escapeText(fmtTime(r.eduAt))+' · 계정 '+escapeText(state.email)+(r.again?'':'<br>기초안전보건교육 이수증: '+(r.cert?'<b style="color:var(--ok)">✔ 제출</b>':'<b class="req">미제출</b> (소장님께 이수증을 보여 주세요)'))+'</p><div class="note" style="text-align:left">이 공사에서는 다시 QR을 찍지 않아도 됩니다.<br>내일부터는 소장님이 출근 인원을 체크합니다.</div></div>';
  else body='<p class="desc">로그인 계정 <b>'+escapeText(state.email)+'</b> 으로 등록합니다. <b>본인 계정</b>인지 확인해 주세요. 이 공사에서 처음 한 번만 하면 됩니다. <button class="linkbtn" type="button" onclick="relogin()">다른 계정으로 로그인</button></p><form onsubmit="sendWk(event)">'+input('kName','이름','','text',false,'예: 홍길동')+'<div class="field"><label for="f_kRole">구분</label><select id="f_kRole">'+r.roles.map(x=>'<option '+(x==='근로자'?'selected':'')+'>'+escapeText(x)+'</option>').join('')+'</select></div>'+tradeSel('f_kTrade',r.trades)
   +certFieldHtml('kCert')
@@ -786,7 +786,7 @@ function showWk(r){const head='<div class="card"><small class="muted">'+escapeTe
  $('my').innerHTML=head+body+'</div>'}
 async function sendWk(e){e.preventDefault();const info={name:value('kName'),role:$('f_kRole').value,tradeKey:$('f_kTrade')?$('f_kTrade').value:'',agree:$('kAgree').checked};if(!info.name){markMissing([{key:'kName'}]);return}if(!info.agree){popup('확인해 주세요','작업 안전 수칙 교육 확인·서약에 체크해 주세요.','확인');return}
  // F1.8b 기초안전보건교육 이수증 (없으면 '미제출'로 등록 · 소장님이 나중에 올릴 수 있음)
- const cf=certPick.kCert;if(cf){try{info.cert=await readFile(cf,PHOTO_DEFAULT)}catch(x){showErr('이수증 사진을 읽지 못했습니다',x);return}}
+ const cf=certPick.kCert;if(cf){try{info.cert=await readFile(cf,PHOTO_CERT)}catch(x){showErr('이수증 사진을 읽지 못했습니다',x);return}}
  else if(!await askOk('이수증 없이 등록할까요?','건설업 기초안전보건교육 이수증이 없으면 "미제출"로 등록됩니다.\n교육을 받지 않고 투입된 것으로 보고 업체 평가에 반영됩니다.\n\n이수증을 가져왔으면 [취소]를 누르고 사진을 찍어 주세요.','이수증 없이 등록'))return;
  await wkCheckIn(info);certPick.kCert=null}
 /* F1.8c 사진 넣기: 아래에서 올라오는 창 [📷 촬영] [🖼 앨범·파일] (뒤 화면은 어둡게) → 고른 파일을 cb로 */
@@ -812,7 +812,7 @@ function pickCert(id){pickPhoto(f=>{certPick[id]=f;const p=$(id+'Prev');if(p)p.i
 /** F1.8b [업체] 작업자 이수증 올리기 (오늘 등록 표 · 신규교육 현황) */
 function pickCertFor(wid){const w=vjob&&vjob.workers.find(x=>x.id===wid);pickPhoto(f=>uploadCertFile(wid,f),{title:(w?w.name+' 님 ':'')+'이수증 사진 넣기',accept:'image/*,.pdf'})}
 async function uploadCertFile(wid,f0){const w=vjob.workers.find(x=>x.id===wid);
- try{const f=await readFile(f0,PHOTO_DEFAULT);vjob=await call('uploadWorkerCert',vjob.job.id,wid,f);const y=window.scrollY;renderVJob();window.scrollTo(0,y);msg((w?w.name+' 님 ':'')+'이수증을 올렸습니다.')}catch(e){showErr('이수증을 올리지 못했습니다',e)}}
+ try{const f=await readFile(f0,PHOTO_CERT);vjob=await call('uploadWorkerCert',vjob.job.id,wid,f);const y=window.scrollY;renderVJob();window.scrollTo(0,y);msg((w?w.name+' 님 ':'')+'이수증을 올렸습니다.')}catch(e){showErr('이수증을 올리지 못했습니다',e)}}
 async function uploadCertFor(wid){const inp=$('wc_'+wid),f0=inp&&inp.files[0];if(f0)await uploadCertFile(wid,f0)}
 /** F1.8c 잘못 누른 것 되돌리기 */
 async function undoWorker(wid){const w=vjob.workers.find(x=>x.id===wid);if(!w)return;
@@ -828,15 +828,36 @@ async function loadStaff(){orgLoad()}
 /** 휴대폰 사진(1.5MB 초과)은 긴 변 2000px JPEG로 줄여서 올림 */
 /* F1.6b 일부 휴대폰 카메라는 찍은 사진의 파일 종류(image/jpeg)를 비워서 줌 → 예전에는 사진으로 못 알아봐 "사진만 올릴 수 있습니다"로 막힘
  *  → 종류가 비었거나 이름이 사진이면 일단 사진으로 열어 보고, 열리면 JPEG로 다시 만듦 (HEIC·WEBP도 JPEG로) */
-function shrinkImage(f,o){o=o||{};const MX=o.max||2000,Q=o.q||0.82,t=String(f.type||'').toLowerCase(),okType=/^image\/(jpeg|png)$/.test(t);
+function shrinkImage(f,o){o=o||{};if(f&&f._st)return Promise.resolve(f);/* F1.9y 이미 스탬프를 찍은 사진은 다시 줄이지 않음 (글씨 흐려짐 방지) */const MX=o.max||2000,Q=o.q||0.82,t=String(f.type||'').toLowerCase(),okType=/^image\/(jpeg|png)$/.test(t);
  const maybe=!t||t==='application/octet-stream'||/^image\//.test(t)||/\.(jpe?g|png|heic|heif|webp)$/i.test(f.name||'');
- return new Promise(res0=>{if(!maybe||(!o.max&&okType&&f.size<=1.5*1024*1024))return res0(f);const url=URL.createObjectURL(f),img=new Image();
+ if(!maybe||(!o.max&&okType&&f.size<=1.5*1024*1024))return Promise.resolve(f);
+ return (o.stamp?exifTime(f):Promise.resolve(null)).then(at=>new Promise(res0=>{const url=URL.createObjectURL(f),img=new Image();
   /* F1.7f 일부 휴대폰·앱 안 브라우저는 사진을 열다가 아무 응답이 없음 → 15초 지나면 원본 그대로 (예전: 끝없이 멈춤) */
   let done=false;const res=x=>{if(done)return;done=true;clearTimeout(tm);res0(x)},tm=setTimeout(()=>{try{URL.revokeObjectURL(url)}catch(e){}res(f)},15000);
   img.onload=()=>{const s=Math.min(1,MX/Math.max(img.width,img.height)),cv=document.createElement('canvas');cv.width=Math.round(img.width*s);cv.height=Math.round(img.height*s);cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);URL.revokeObjectURL(url);
+   let st=false;if(o.stamp){try{photoStamp(cv,at,stampWho());st=true}catch(e){}}
    const base=(String(f.name||'').replace(/\.[^.]+$/,'')||'photo_'+Date.now());
-   cv.toBlob(b=>{const out=b&&(!okType||b.size<f.size)?new File([b],base+'.jpg',{type:'image/jpeg'}):f;cv.width=0;cv.height=0;img.src='';res(out)},'image/jpeg',Q)};/* F1.8z 그림판·원본 그림 바로 비움 (오래된 휴대폰 메모리) */
-  img.onerror=()=>{URL.revokeObjectURL(url);res(f)};img.src=url})}
+   cv.toBlob(b=>{const out=b&&(st||!okType||b.size<f.size)?new File([b],base+'.jpg',{type:'image/jpeg'}):f;if(st&&out!==f)out._st=1;cv.width=0;cv.height=0;img.src='';res(out)},'image/jpeg',Q)};/* F1.8z 그림판·원본 그림 바로 비움 (오래된 휴대폰 메모리) */
+  img.onerror=()=>{URL.revokeObjectURL(url);res(f)};img.src=url}))}
+/* ---------- F1.9y 사진 시각 스탬프 (사진 맨 아래 얇은 반투명 띠 · 왼쪽 업체명 작게 · 오른쪽 촬영 날짜·시간) ----------
+ *  시각 = 사진 파일 안의 촬영 시각(EXIF) · 없으면 올린 시각 + 「올림」 · 현장 사진(순회점검·합동점검)과 이수증에만 (서류는 안 찍음) */
+const PHOTO_STAMP={max:1024,q:0.55,stamp:true},PHOTO_CERT={max:1280,q:0.55,stamp:true};
+const stampWho=()=>{try{if(state&&state.staff)return '아성다이소';return String((state&&state.company&&state.company.company)||window.__wkCo||'')}catch(e){return ''}};
+function exifTime(f){return new Promise(res=>{try{const r=new FileReader();r.onload=()=>{try{res(exifParse(new DataView(r.result)))}catch(e){res(null)}};r.onerror=()=>res(null);r.readAsArrayBuffer(f.slice(0,262144))}catch(e){res(null)}})}
+/** JPEG EXIF → 촬영 시각 (DateTimeOriginal → DateTimeDigitized → DateTime) · 없거나 못 읽으면 null */
+function exifParse(v){if(v.byteLength<4||v.getUint16(0)!==0xFFD8)return null;let p=2;
+ while(p+10<v.byteLength){const m=v.getUint16(p);if((m&0xFF00)!==0xFF00)return null;const len=v.getUint16(p+2);
+  if(m===0xFFE1&&v.getUint32(p+4)===0x45786966){const t=p+10,le=v.getUint16(t)===0x4949,u16=o=>v.getUint16(t+o,le),u32=o=>v.getUint32(t+o,le);
+   const ifd=(o,want)=>{const n=u16(o),r={};for(let i=0;i<n;i++){const e=o+2+i*12,tag=u16(e);if(want.includes(tag))r[tag]=u32(e+8)}return r};
+   const str=o=>{let s='';for(let i=0;i<19;i++)s+=String.fromCharCode(v.getUint8(t+o+i));return s};
+   const i0=ifd(u32(4),[0x8769,0x0132]);let s='';if(i0[0x8769]){const i1=ifd(i0[0x8769],[0x9003,0x9004]);s=i1[0x9003]?str(i1[0x9003]):i1[0x9004]?str(i1[0x9004]):''}if(!s&&i0[0x0132])s=str(i0[0x0132]);
+   const d=/^(\d{4}):(\d\d):(\d\d) (\d\d):(\d\d)/.exec(s);if(!d||+d[1]<2000)return null;return new Date(+d[1],d[2]-1,+d[3],+d[4],+d[5])}
+  if(m===0xFFDA)return null;p+=2+len}return null}
+function photoStamp(cv,at,who){const g=cv.getContext('2d'),w=cv.width,h=cv.height,s=Math.min(w,h),f=Math.max(12,Math.round(s*.032)),sm=Math.round(f*.72),pad=Math.round(f*.55),bh=Math.round(f*1.55),two=n=>String(n).padStart(2,'0');
+ const d=at||new Date(),t1=d.getFullYear()+'.'+two(d.getMonth()+1)+'.'+two(d.getDate())+' '+two(d.getHours())+':'+two(d.getMinutes())+(at?'':' 올림'),font=n=>(n===f?'bold ':'')+n+"px 'Malgun Gothic','Apple SD Gothic Neo','Noto Sans KR',sans-serif";
+ g.save();g.textBaseline='middle';g.fillStyle='rgba(0,0,0,.42)';g.fillRect(0,h-bh,w,bh);
+ g.fillStyle='rgba(255,255,255,.95)';g.font=font(f);g.textAlign='right';g.fillText(t1,w-pad,h-bh/2);
+ if(who){g.fillStyle='rgba(255,255,255,.82)';g.font=font(sm);g.textAlign='left';g.fillText(who,pad,h-bh/2,Math.max(10,w-pad*3-g.measureText(t1).width*1.4))}g.restore()}
 const MAX_MB=10;
 /* F1.7 사진 용량 최소화: 사진은 크기와 상관없이 항상 줄여서 올림 (긴 변 1280px · 화질 0.55 → 보통 100~250KB)
  *  현장 사진(순회점검·합동점검·조치 후)은 화면에서 더 작게 지정 (긴 변 1024px · 0.5 → 보통 80~150KB) · PDF·문서 파일은 그대로 */
@@ -850,7 +871,7 @@ const isPend=id=>/^L-/.test(String(id||''));
 /** up(file) → {id} (서버 업로드 함수) */
 function pendAdd(f0,up){const id='L-'+Date.now().toString(36)+(pendSeq++);let url='';try{if(/^image\//.test(f0.type||'')||!f0.type)url=URL.createObjectURL(f0)}catch(e){}PEND[id]={f0,up,url,name:f0.name||'',done:''};return id}
 /** F1.8z 사진을 고르는 즉시 한 장씩 차례로 작게 줄여서 보관 (원본 큰 사진을 들고 있지 않음 → 메모리 부족 줄임) */
-async function pendPhotos(files,up){const ids=[];if(files.length)barStart();try{for(const f0 of files){let f=f0;try{f=await shrinkImage(f0,PHOTO_SITE)}catch(e){}ids.push(pendAdd(f,up))}}finally{if(files.length)barEnd()}return ids}
+async function pendPhotos(files,up){const ids=[];if(files.length)barStart();try{for(const f0 of files){let f=f0;try{f=await shrinkImage(f0,PHOTO_STAMP)}catch(e){}/* F1.9y 현장 사진 = 시각 스탬프 */ids.push(pendAdd(f,up))}}finally{if(files.length)barEnd()}return ids}
 /** 고른 사진 빼기 → 미리보기 주소도 정리 */
 function pendDrop(id){const p=PEND[id];if(!p)return;try{if(p.url)URL.revokeObjectURL(p.url)}catch(e){}delete PEND[id]}
 /** 여러 목록 안의 아직 안 올린 사진 수 */
