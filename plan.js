@@ -22,7 +22,7 @@ function plTabsHtml(){const n=plStep,first=plFirst();return '<div id="plTabs"><d
 function plJump(i){if(i===plStep||i<plFirst())return;plCollect();plLeave();plStep=i;renderPlan();const m=plMiss(i).filter(x=>x!=='sigBox');if(m.length&&plSeen.has(i))setTimeout(()=>inspFlag(m,'빨간 칸을 채워 주세요'),50)}
 /** 지금 단계를 떠날 때: 본 단계로 표시 · 다 채웠으면 제출 때 돌려받은 표시도 지움 */
 function plLeave(){plSeen.add(plStep);if(plSrv[plStep]&&!plMiss(plStep).filter(x=>x!=='sigBox').length)delete plSrv[plStep]}
-const DRILL_PLAN=[['NEW','신규자 투입 시 대피 경로·집결 장소 안내'],['EVAC','공사 중 비상대피 훈련 1회 이상'],['CPR','심폐소생술(CPR) 교육'],['FIRE','소화기 사용 훈련']];
+const DRILL_PLAN=[['NEW','신규자 투입 시 대피 경로·집결 장소 안내'],['EVAC','공사 중 비상대피 훈련 1회 이상'],['CPR','심폐소생술(CPR) 교육'],['FIRE','소화기 사용 훈련'],['SHOCK','감전 사고 대응 훈련 (전원 차단 · 구조 · 신고)']];  // F1.9z2 감전 별도
 const plKey=()=>'planDraft:'+(state.company&&state.company.id);
 const plRow=c=>(((state.docBoard||{}).rows||[]).find(x=>x.code===c))||{uploads:[]};
 /** 이번에 다시 만들 수 있는 문서 (작성 중 · 보완 요청받은 문서) */
@@ -124,7 +124,7 @@ function plTrade(k,on){plCollect();const t=(state.forms.plan.trades||[]).find(x=
  const o=$('csheet'),y=o?o.scrollTop:0;renderPlan();if(o)o.scrollTop=y}
 function plRisk(id,on){pl.risks=on?[...new Set(pl.risks.concat(id))]:pl.risks.filter(x=>x!==id);$('plRisks')?.classList.remove('miss','shake');try{localStorage.setItem(plKey(),JSON.stringify(pl))}catch(e){}}
 /* F1.9h 시나리오 → 필요한 훈련 (중계 서버 SCEN_DRILL_과 같게) · 켜면 체크 · 끄면 다른 시나리오에도 필요 없는 훈련만 체크를 풂 */
-const PL_SCEN_DRILL={FIRE:['FIRE'],SHOCK:['CPR'],FALL:['CPR'],SICK:['CPR']};
+const PL_SCEN_DRILL={FIRE:['FIRE'],SHOCK:['SHOCK'],FALL:['CPR'],SICK:['CPR']};  // F1.9z2 감전 → 감전 사고 대응 훈련 (예전: CPR)
 function plNeedDrill(sc){const s=new Set();(sc||[]).forEach(k=>{s.add('NEW');s.add('EVAC');(PL_SCEN_DRILL[k]||[]).forEach(x=>s.add(x))});return s}
 function plScen(k,on){plCollect();const before=plNeedDrill(pl.scen);pl.scen=on?[...new Set(pl.scen.concat(k))]:pl.scen.filter(x=>x!==k);const after=plNeedDrill(pl.scen),it=new Set(pl.drill.items);
  before.forEach(x=>{if(!after.has(x))it.delete(x)});after.forEach(x=>{if(!before.has(x))it.add(x)});pl.drill.items=DRILL_PLAN.map(d=>d[0]).filter(x=>it.has(x));$('plScen').classList.remove('miss','shake');try{localStorage.setItem(plKey(),JSON.stringify(pl))}catch(e){}}

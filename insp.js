@@ -16,7 +16,7 @@ function inspCardHtml(v){const I=v.insp||{open:[],recent:[]};
   +(I.todayDone&&v.jobStatus!=='ENDED'&&I.recent[0]&&I.recent[0].date===v.today&&!I.recent[0].checkedAt?'<div class="row" style="justify-content:space-between;margin-top:8px"><span class="muted">오늘 점검 제출함</span><button class="button ghost" type="button" id="btnInspCancel" style="padding:4px 8px;font-size:12px" onclick="cancelInspToday()">제출 취소</button></div>':'')
   +(I.todayDone?'':'<button class="button" type="button" id="btnInsp" style="width:100%;padding:10px;margin-top:8px" onclick="openInspForm()">오늘 순회점검 작성</button>')
   +(I.open.length?'<div class="stage">미조치 지적사항 <span class="cnt">'+I.open.length+'</span></div>'+I.open.map(f=>findRow(f,'vendor')).join(''):'')
-  +(I.recent.length?'<details class="hist" style="margin-top:12px"><summary>순회점검일지 '+I.recent.length+'건</summary>'+I.recent.map(x=>'<div class="item"><div class="row" style="justify-content:space-between"><span>'+escapeText(x.date)+(x.bad?' · <b class="req">지적 '+x.bad+'</b>':' · 이상 없음')+(x.drill?' · '+escapeText(x.drill.label):'')+' '+(x.checkedAt?'<span class="pill ok">도급인 확인</span>':'<span class="pill todo">확인 대기</span>')+'</span><button class="button ghost" type="button" onclick="openInspSheet(\''+escapeText(x.id)+'\',\'vendor\')">일지 보기</button></div></div>').join('')+'</details>':'')+'</div>'}
+  +(I.recent.length?'<details class="hist" style="margin-top:12px"><summary>순회점검일지 '+I.recent.length+'건</summary>'+I.recent.map(x=>'<div class="item"><div class="row" style="justify-content:space-between"><span>'+escapeText(x.date)+(x.bad?' · <b class="req">지적 '+x.bad+'</b>':' · 이상 없음')+((x.drills||[]).length?' · '+x.drills.map(d=>escapeText(d.label)).join(' · '):'')+' '+(x.checkedAt?'<span class="pill ok">도급인 확인</span>':'<span class="pill todo">확인 대기</span>')+'</span><button class="button ghost" type="button" onclick="openInspSheet(\''+escapeText(x.id)+'\',\'vendor\')">일지 보기</button></div></div>').join('')+'</details>':'')+'</div>'}
 function findRow(f,who){return '<div class="item"><div class="row" style="justify-content:space-between"><div><b>'+f.no+'. '+escapeText(f.item)+'</b>'+(who==='staff'?' <span class="muted">'+escapeText(f.company)+'</span>':'')+'<div class="muted">지적 '+escapeText(f.foundDate)+' · '+escapeText(f.memo)+'</div></div><button class="button" type="button" onclick="openResolve(\''+escapeText(f.id)+'\',\''+who+'\')">조치 등록</button></div></div>'}
 /* ---------- F1.9w 업체 공사 화면: 비상대응훈련 현황 (계획서에서 필요한 훈련 = 했음 / 아직) · 결과보고서는 종료 평가 때 ---------- */
 function drillStatusHtml(v){const D=v.drill;if(!D||!Array.isArray(D.need))return '';const LV={G:['완료','ok'],N:['일부','todo'],P:['아직','bad']}[D.lv]||['','todo'];
@@ -25,7 +25,7 @@ function drillStatusHtml(v){const D=v.drill;if(!D||!Array.isArray(D.need))return
   +D.need.map(k=>{const l=(D.recs||[]).filter(r=>r.type===k),r=l[l.length-1];return '<div class="row" style="justify-content:space-between;padding:6px 0;border-top:1px solid var(--line)"><span>'+escapeText(drillLabel(k))+'</span>'
    +(r?'<b style="color:var(--ok)">'+escapeText(String(r.date).slice(5))+(r.n!=null?' · '+r.n+(r.crew?'/'+r.crew:'')+'명':'')+(l.length>1?' 외 '+(l.length-1)+'회':'')+'</b>':'<b class="req">아직 안 함</b>')+'</div>'}).join('')+'</div>'}
 /* ---------- 업체: 점검 작성 ---------- */
-function openInspForm(){ins={items:{},notes:{},list:[],tbm:[],drill:{type:'',photos:[],memo:'',pick:null},name:vjob.siteManager||'',works:[],none:false};inspRemap(inspList());renderInspForm()}
+function openInspForm(){ins={items:{},notes:{},list:[],tbm:[],drills:[],name:vjob.siteManager||'',works:[],none:false};inspRemap(inspList());renderInspForm()}
 /* ---------- F1.9w 오늘 공정 → 점검표 (공통 5항목 + 고른 공종의 계획서 위험요인) · 계획서에 위험요인이 없으면 예전 항목 그대로 ---------- */
 const inspHasWorks=()=>!!(vjob&&vjob.insp&&Array.isArray(vjob.insp.works)&&vjob.insp.works.length);
 /** 지금 고른 공정의 점검표 [{t:항목, g:묶음}] · 공정을 아직 안 골랐으면 null */
@@ -38,35 +38,46 @@ function inspWork(k){ins.name=value('inName')||ins.name;if(k==='NONE'){ins.none=
 function worksCardHtml(){const W=vjob.insp.works;return '<div class="card" id="inWorks"><h2>③ 오늘 공정 <span class="req">*</span></h2><p class="desc">안전보건관리계획서에서 고른 공종입니다. <b>오늘 하는 공정을 모두</b> 눌러 주세요. 누른 공정의 위험요인이 점검표에 들어갑니다.</p>'
  +'<div style="display:flex;flex-wrap:wrap;gap:8px">'+W.map(w=>{const on=ins.works.includes(w.t);return '<button type="button" class="button'+(on?'':' ghost')+'" aria-pressed="'+on+'" onclick="inspWork(\''+escapeText(w.t)+'\')">'+(on?'✔ ':'')+escapeText(w.tl)+' <span style="font-size:12px;opacity:.75">'+w.qs.length+'</span></button>'}).join('')
  +'<button type="button" class="button'+(ins.none?'':' ghost')+'" aria-pressed="'+ins.none+'" style="border-style:dashed" onclick="inspWork(\'NONE\')">'+(ins.none?'✔ ':'')+'공통 항목만 (오늘 해당 공정 없음)</button></div></div>'}
-/* ---------- F1.8b 교육·비상대응훈련 사진 (TBM 다음 · 한 날만) ---------- */
-const DRILL_TYPES=[['EVAC','🚨 비상대피 훈련'],['CPR','❤️ 심폐소생술(CPR)'],['FIRE','🧯 소화기 사용 훈련'],['EDU','📘 기타 안전교육']];
-function drillCardHtml(){const d=ins.drill||(ins.drill={type:'',photos:[]});
- return '<div class="card" id="drillCard"><h2>② 교육 · 비상대응훈련 사진 <span class="muted" style="font-size:13px;font-weight:400">(한 날만)</span></h2><p class="desc">오늘 비상대피·CPR·소화기 훈련이나 안전교육을 했으면 종류를 고르고 사진을 올리세요. <b>안 했으면 그냥 넘어가면 됩니다.</b></p>'
-  +'<div id="drTypes" style="display:flex;flex-wrap:wrap;gap:8px">'+DRILL_TYPES.map(([k,l])=>'<button type="button" class="button'+(d.type===k?'':' ghost')+'" aria-pressed="'+(d.type===k)+'" onclick="inspDrillType(\''+k+'\')">'+(d.type===k?'✔ ':'')+escapeText(l)+'</button>').join('')+'</div>'
-  +'<div class="row" id="drList" style="margin-top:10px">'+drListHtml()+'</div>'+(DRILL_EMG.includes(d.type)?drillAttHtml():'')+'</div>'}
-/* ---------- F1.9w 비상훈련 참석자: 오늘 신규 등록자 = 자동 · 전에 등록한 사람 = 체크 (처음엔 최근 출근 명단이 체크된 채) ---------- */
-const DRILL_EMG=['EVAC','CPR','FIRE'];
+/* ---------- F1.8b 교육·비상대응훈련 사진 (TBM 다음) · F1.9z2 하루에 여러 훈련 (종류마다 칸 따로 · 사진 5장 · 참석자 · 내용) ---------- */
+const DRILL_TYPES=[['EVAC','🚨 비상대피 훈련'],['CPR','❤️ 심폐소생술(CPR)'],['FIRE','🧯 소화기 사용 훈련'],['SHOCK','⚡ 감전 사고 대응 훈련'],['EDU','📘 기타 안전교육']];
+const DRILL_EMG=['EVAC','CPR','FIRE','SHOCK'];
+const drArr=()=>ins.drills||(ins.drills=[]);
+function drillCardHtml(){const L=drArr(),on=k=>L.some(d=>d.type===k);
+ return '<div class="card" id="drillCard"><h2>② 교육 · 비상대응훈련 사진 <span class="muted" style="font-size:13px;font-weight:400">(선택 · 여러 개 가능)</span></h2><p class="desc">오늘 한 훈련·교육을 <b>모두</b> 누르세요. 누른 훈련마다 아래에 사진 · 참석자 칸이 생깁니다. <b>안 했으면 그냥 넘어가면 됩니다.</b></p>'
+  +'<div id="drTypes" style="display:flex;flex-wrap:wrap;gap:8px">'+DRILL_TYPES.map(([k,l])=>'<button type="button" class="button'+(on(k)?'':' ghost')+'" aria-pressed="'+on(k)+'" onclick="inspDrillType(\''+k+'\')">'+(on(k)?'✔ ':'')+escapeText(l)+'</button>').join('')+'</div>'
+  +L.map((d,i)=>drillBoxHtml(i)).join('')+'</div>'}
+function drillBoxHtml(i){const d=drArr()[i],emg=DRILL_EMG.includes(d.type);
+ return '<div class="subbox" id="drBox_'+i+'" style="margin-top:12px;border-left:4px solid var(--main,#111827);padding:10px;border-radius:8px;background:#fafafa"><b>'+escapeText((DRILL_TYPES.find(x=>x[0]===d.type)||[])[1]||'')+'</b> <span class="muted">· 사진 '+d.photos.length+'/5</span>'
+  +'<div class="row" id="drList_'+i+'" style="margin-top:8px">'+drListHtml(i)+'</div>'+(emg?drillAttHtml(i):'')+'</div>'}
+/* F1.9w 참석자: 첫 비상훈련 칸 = 오늘 신규 등록자 자동 + 전에 등록한 사람 체크 (처음엔 최근 출근 명단) · F1.9z2 다음 칸 = 바로 위 비상훈련 칸 명단이 체크된 채 */
 const isNewToday=w=>{try{return !!w.eduAt&&new Date(w.eduAt).toLocaleDateString('sv-SE',{timeZone:'Asia/Seoul'})===vjob.today}catch(e){return false}};
-function drillPeople(){const W=vjob.workers||[],nw=W.filter(isNewToday),old=W.filter(w=>!isNewToday(w));const d=ins.drill;
- if(!Array.isArray(d.pick))d.pick=(vjob.crewDefault||[]).filter(id=>old.some(w=>w.id===id));return {nw,old,pick:d.pick}}
-function drillAttHtml(){const {nw,old,pick}=drillPeople(),d=ins.drill,n=nw.length+pick.length,dt=w=>{try{return new Date(w.eduAt).toLocaleDateString('sv-SE',{timeZone:'Asia/Seoul'}).slice(5)}catch(e){return ''}};
- return '<div id="drAtt" style="margin-top:12px"><div class="stage" style="margin-top:0">훈련 참석자 <span class="req">*</span> <span class="cnt">'+n+'</span></div>'
+const drFirstEmg=()=>drArr().findIndex(d=>DRILL_EMG.includes(d.type));
+function drPrevIds(i){for(let k=i-1;k>=0;k--){if(DRILL_EMG.includes(drArr()[k].type))return drillAttIds(k)}return null}
+function drillPeople(i){const W=vjob.workers||[],d=drArr()[i],first=i===drFirstEmg();const nw=first?W.filter(isNewToday):[],old=first?W.filter(w=>!isNewToday(w)):W.slice();
+ if(!Array.isArray(d.pick)){const pv=first?null:drPrevIds(i);d.pick=pv?pv.filter(id=>old.some(w=>w.id===id)):(vjob.crewDefault||[]).filter(id=>old.some(w=>w.id===id))}return {nw,old,pick:d.pick,first}}
+function drillAttHtml(i){const {nw,old,pick,first}=drillPeople(i),d=drArr()[i],n=nw.length+pick.length,dt=w=>{try{return new Date(w.eduAt).toLocaleDateString('sv-SE',{timeZone:'Asia/Seoul'}).slice(5)}catch(e){return ''}},sb='padding:4px 8px;font-size:12px';
+ return '<div id="drAtt_'+i+'" style="margin-top:12px"><div class="stage" style="margin-top:0">참석자 <span class="req">*</span> <span class="cnt">'+n+'</span></div>'
   +(nw.length?'<div class="note" style="background:var(--okbg);color:var(--ok)">오늘 신규 등록 <b>'+nw.length+'명</b>은 자동으로 들어갑니다<br>'+nw.map(w=>escapeText(w.name)).join(' · ')+'</div>':'')
-  +(old.length?'<p class="muted" style="margin:8px 0 4px">전에 등록한 사람 중 오늘 나온 사람을 체크하세요.</p>'
-   +old.map(w=>'<label class="wk"><input type="checkbox" '+(pick.includes(w.id)?'checked':'')+' onchange="drillPick(\''+escapeText(w.id)+'\',this.checked)"><span><b>'+escapeText(w.name)+'</b> <span class="muted">'+escapeText(dt(w))+' 등록 · '+escapeText(w.role||'')+'</span></span></label>').join('')
-   +'<div class="row" style="gap:6px;margin-top:6px"><button type="button" class="button ghost" style="padding:4px 8px;font-size:12px" onclick="drillPickAll(\'last\')">최근 명단 그대로</button><button type="button" class="button ghost" style="padding:4px 8px;font-size:12px" onclick="drillPickAll(\'all\')">전체 선택</button><button type="button" class="button ghost" style="padding:4px 8px;font-size:12px" onclick="drillPickAll(\'none\')">모두 해제</button></div>'
+  +(old.length?'<p class="muted" style="margin:8px 0 4px">'+(first?'전에 등록한 사람 중 오늘 나온 사람을 체크하세요.':'위 훈련 참석자가 체크되어 있습니다. 빠진 사람만 해제하세요.')+'</p>'
+   +old.map(w=>'<label class="wk"><input type="checkbox" '+(pick.includes(w.id)?'checked':'')+' onchange="drillPick('+i+',\''+escapeText(w.id)+'\',this.checked)"><span><b>'+escapeText(w.name)+'</b> <span class="muted">'+escapeText(dt(w))+' 등록 · '+escapeText(w.role||'')+(isNewToday(w)?' · 신규':'')+'</span></span></label>').join('')
+   +'<div class="row" style="gap:6px;margin-top:6px">'+(first?'<button type="button" class="button ghost" style="'+sb+'" onclick="drillPickAll('+i+',\'last\')">최근 명단 그대로</button>':'<button type="button" class="button ghost" style="'+sb+'" onclick="drillPickAll('+i+',\'prev\')">↺ 위 참석자 그대로</button>')+'<button type="button" class="button ghost" style="'+sb+'" onclick="drillPickAll('+i+',\'all\')">전체 선택</button><button type="button" class="button ghost" style="'+sb+'" onclick="drillPickAll('+i+',\'none\')">모두 해제</button></div>'
    :(nw.length?'':'<div class="note">등록된 작업자가 없습니다. ① 신규자 등록을 먼저 해 주세요.</div>'))
-  +'<div class="field"><label for="f_drMemo">훈련 내용 한 줄 (선택)</label><input id="f_drMemo" maxlength="120" value="'+escapeText(d.memo||'')+'" oninput="ins.drill.memo=this.value" placeholder="예) 화재 상황 가정 · 비상구로 대피 · 인원 확인"></div></div>'}
-function drillPick(id,on){const d=ins.drill;d.pick=on?[...new Set(d.pick.concat(id))]:d.pick.filter(x=>x!==id);drillAttRefresh()}
-function drillPickAll(k){const {old}=drillPeople(),d=ins.drill;d.pick=k==='all'?old.map(w=>w.id):k==='none'?[]:(vjob.crewDefault||[]).filter(id=>old.some(w=>w.id===id));drillAttRefresh()}
-function drillAttRefresh(){const el=$('drAtt');if(el)el.outerHTML=drillAttHtml();$('drillCard')?.classList.remove('miss','shake')}
-function drillAttIds(){const {nw,pick}=drillPeople();return [...new Set(nw.map(w=>w.id).concat(pick))]}
+  +'<div class="field"><label for="f_drMemo_'+i+'">훈련 내용 한 줄 (선택)</label><input id="f_drMemo_'+i+'" maxlength="120" value="'+escapeText(d.memo||'')+'" oninput="ins.drills['+i+'].memo=this.value" placeholder="'+(d.type==='SHOCK'?'예) 전원 차단 → 절연봉으로 구조 → 119 신고':'예) 화재 상황 가정 · 비상구로 대피 · 인원 확인')+'"></div></div>'}
+function drillPick(i,id,on){const d=drArr()[i];d.touched=1;d.pick=on?[...new Set(d.pick.concat(id))]:d.pick.filter(x=>x!==id);drillAttRefresh(i)}
+function drillPickAll(i,k){const {old}=drillPeople(i),d=drArr()[i],pv=drPrevIds(i)||[];d.touched=1;d.pick=k==='all'?old.map(w=>w.id):k==='none'?[]:k==='prev'?pv.filter(id=>old.some(w=>w.id===id)):(vjob.crewDefault||[]).filter(id=>old.some(w=>w.id===id));drillAttRefresh(i)}
+function drillAttRefresh(i){const el=$('drAtt_'+i);if(el)el.outerHTML=drillAttHtml(i);$('drillCard')?.classList.remove('miss','shake')}
+function drillAttIds(i){const {nw,pick}=drillPeople(i);return [...new Set(nw.map(w=>w.id).concat(pick))]}
 /* F1.8y 사진 버튼 2개: 📷 촬영 · 🖼 앨범 (여러 장 한 번에) — 예전 자동 앨범 버튼이 안 되던 휴대폰도 됨 · call = 'addTbm(' 처럼 */
 function phBtns(id,call,label){return '<label class="button ghost" for="'+id+'">📷 촬영</label><input class="hidefile" type="file" id="'+id+'" data-gal="1" accept="image/*" capture="environment" onchange="'+call+'this.id)" aria-label="'+escapeText(label)+' 촬영"><label class="button ghost" for="'+id+'_m">🖼 앨범 (여러 장)</label><input class="hidefile" type="file" id="'+id+'_m" accept="image/*" multiple onchange="'+call+'this.id)" aria-label="'+escapeText(label)+' 앨범에서 여러 장 고르기">'}
-function drListHtml(){return thumbs(ins.drill.photos,'dropDrill')+phBtns('drFile','addDrill(','교육·훈련 사진')}
-function inspDrillType(k){ins.name=value('inName')||ins.name;ins.drill.type=ins.drill.type===k?'':k;const c=$('drillCard');if(c){c.outerHTML=drillCardHtml();$('drillCard')?.classList.remove('miss','shake')}}
-async function addDrill(src){const ids=await upInsp(src||'drFile',null,5-ins.drill.photos.length);if(!ids.length)return;ins.drill.photos=ins.drill.photos.concat(ids).slice(0,5);$('drList').innerHTML=drListHtml();$('drillCard').classList.remove('miss','shake')}
-function dropDrill(id){ins.drill.photos=ins.drill.photos.filter(x=>x!==id);if(isPend(id)){pendDrop(id);delete inspPhoto[id]}$('drList').innerHTML=drListHtml()}
+function drListHtml(i){return thumbs(drArr()[i].photos,'dropDrill'+i+'_')+phBtns('drFile_'+i,'addDrill('+i+',','교육·훈련 사진')}
+function drRedraw(){const c=$('drillCard');if(c){const y=window.scrollY;c.outerHTML=drillCardHtml();window.scrollTo(0,y);$('drillCard')?.classList.remove('miss','shake')}}
+async function inspDrillType(k){ins.name=value('inName')||ins.name;const L=drArr(),i=L.findIndex(d=>d.type===k);
+ if(i>=0){if(L[i].photos.length&&!await askOk('훈련 빼기',drillLabel(k)+' 칸을 뺄까요?\n올린 사진 '+L[i].photos.length+'장도 같이 빠집니다.','빼기'))return;L[i].photos.forEach(id=>{if(isPend(id)){pendDrop(id);delete inspPhoto[id]}});L.splice(i,1)}
+ else{L.push({type:k,photos:[],memo:'',pick:null});const o=DRILL_TYPES.map(x=>x[0]);L.sort((a,b)=>o.indexOf(a.type)-o.indexOf(b.type));L.forEach(d=>{if(DRILL_EMG.includes(d.type)&&d.photos.length===0&&!d.memo)d.pick=Array.isArray(d.pick)&&d.touched?d.pick:null})}
+ drRedraw()}
+async function addDrill(i,src){const d=drArr()[i];if(!d)return;const ids=await upInsp(src||'drFile_'+i,null,5-d.photos.length);if(!ids.length)return;d.photos=d.photos.concat(ids).slice(0,5);const b=$('drBox_'+i);if(b)b.outerHTML=drillBoxHtml(i);$('drillCard')?.classList.remove('miss','shake')}
+function dropDrillAt(i,id){const d=drArr()[i];if(!d)return;d.photos=d.photos.filter(x=>x!==id);if(isPend(id)){pendDrop(id);delete inspPhoto[id]}const b=$('drBox_'+i);if(b)b.outerHTML=drillBoxHtml(i)}
+for(let k=0;k<5;k++)window['dropDrill'+k+'_']=id=>dropDrillAt(k,id);
 const drillLabel=t=>((DRILL_TYPES.find(x=>x[0]===t)||[])[1]||'').replace(/^\S+ /,'');
 function thumbs(ids,del){return ids.map(id=>'<span class="thumb"><img data-doc="'+escapeText(id)+'" alt="사진" '+(inspPhoto[id]?'src="'+inspPhoto[id]+'"':'')+' onclick="viewInspPhoto(\''+escapeText(id)+'\')">'+(del?'<button type="button" class="tx" aria-label="사진 빼기" onclick="'+del+'(\''+escapeText(id)+'\')">✕</button>':'')+'</span>').join('')}
 function renderInspForm(keep){const v=vjob,I=v.insp;clearInterval(wkTimer);
@@ -97,17 +108,16 @@ async function addInspBad(n,src){const nt=ins.notes[n],ids=await upInsp(src||'if
 function inspFlag(ids,text){document.querySelectorAll('.miss').forEach(x=>x.classList.remove('miss','shake'));ids.forEach(id=>{const el=$(id);if(!el)return;el.classList.add('miss');void el.offsetWidth;el.classList.add('shake')});const f=$(ids[0]);if(f){f.scrollIntoView({behavior:'smooth',block:'center'});if(f.tagName==='INPUT')setTimeout(()=>f.focus({preventScroll:true}),400)}msg(text)}
 async function submitInspNow(){ins.name=value('inName');const miss=[];if(!ins.tbm.length)miss.push('tbmCard');
  Object.entries(ins.items).forEach(([n,x])=>{if(x==='BAD'&&!String(ins.notes[n]?.memo||'').trim())miss.push('f_im'+n)});if(!ins.name)miss.push('f_inName');
- const dr=ins.drill||{type:'',photos:[]};if(dr.photos.length&&!dr.type||dr.type&&!dr.photos.length)miss.unshift('drillCard');  // F1.8b 종류만·사진만이면 확인
- const emg=DRILL_EMG.includes(dr.type)&&dr.photos.length,att=emg?drillAttIds():[],noAtt=emg&&!att.length,noWork=inspHasWorks()&&!ins.works.length&&!ins.none;  // F1.9w 참석자 · 오늘 공정
- if(noWork)miss.unshift('inWorks');if(noAtt&&!miss.includes('drillCard'))miss.unshift('drillCard');
- if(miss.length){inspFlag(miss,miss[0]==='tbmCard'?'TBM 사진을 먼저 올려 주세요':miss[0]==='inWorks'?'오늘 공정을 골라 주세요 (해당 공정이 없으면 [공통 항목만])':miss[0]==='drillCard'?(noAtt&&dr.type&&dr.photos.length?'훈련 참석자를 체크해 주세요':dr.type?'교육·훈련 사진을 올려 주세요 (안 했으면 종류 선택을 다시 눌러 끄세요)':'교육·훈련 종류를 골라 주세요'):miss[0]==='f_inName'?'점검자 이름을 적어 주세요':'불량 항목의 지적 내용을 적어 주세요');return}
+ const DL=drArr(),noPh=DL.find(d=>!d.photos.length),noAt=DL.map((d,i)=>[d,i]).find(([d,i])=>DRILL_EMG.includes(d.type)&&!drillAttIds(i).length),noWork=inspHasWorks()&&!ins.works.length&&!ins.none;  // F1.8b 사진 없는 훈련 · F1.9w 참석자 · 오늘 공정
+ if(noWork)miss.unshift('inWorks');if(noPh||noAt)miss.unshift('drillCard');
+ if(miss.length){inspFlag(miss,miss[0]==='tbmCard'?'TBM 사진을 먼저 올려 주세요':miss[0]==='inWorks'?'오늘 공정을 골라 주세요 (해당 공정이 없으면 [공통 항목만])':miss[0]==='drillCard'?(noPh?drillLabel(noPh.type)+' 사진을 올려 주세요 (안 했으면 종류 버튼을 다시 눌러 빼세요)':drillLabel(noAt[0].type)+' 참석자를 체크해 주세요'):miss[0]==='f_inName'?'점검자 이름을 적어 주세요':'불량 항목의 지적 내용을 적어 주세요');return}
  const bad=Object.values(ins.items).filter(x=>x==='BAD').length;
  /* F1.7f 확인·결과를 화면 안 창으로 (일부 휴대폰은 confirm/alert를 말없이 막아 "눌러도 반응 없음"이 됨) */
  if(!await askOk('순회점검 제출',bad?'지적사항 '+bad+'건은 조치될 때까지 미조치로 남습니다.':'전 항목 이상 없음으로 제출합니다.','제출'))return;
  /* F1.8p 불량이 아닌 항목에 남은 사진은 버림 → 사진 올리기 → 일지 저장 (체크리스트 한 번) */
  Object.keys(ins.notes).forEach(n=>{if(ins.items[n]!=='BAD')ins.notes[n].photos=[]});
- const lists=[ins.tbm,dr.photos].concat(Object.values(ins.notes).map(x=>x.photos)),np=pendCount(lists);
- try{await subRun('순회점검 제출',[np&&['사진 '+np+'장 올리기',set=>pendUpload(lists,set,inspPhoto)],['순회점검일지 저장',async()=>{vjob=await api('submitInspection',[vjob.job.id,{tbm:ins.tbm,items:ins.items,notes:ins.notes,name:ins.name,works:ins.works,none:ins.none,drill:dr.photos.length?{type:dr.type,photos:dr.photos,...(emg?{attendees:att,memo:dr.memo||''}:{})}:null}])}]]);ins=null;renderVJob();$('inspCard')?.scrollIntoView({block:'start'});popup('순회점검 제출 완료','오늘 순회점검일지를 제출했습니다.'+(bad?'\n지적사항 '+bad+'건은 조치 후 [조치 등록]을 해 주세요.':''),'확인')}
+ const lists=[ins.tbm].concat(DL.map(d=>d.photos),Object.values(ins.notes).map(x=>x.photos)),np=pendCount(lists);
+ try{await subRun('순회점검 제출',[np&&['사진 '+np+'장 올리기',set=>pendUpload(lists,set,inspPhoto)],['순회점검일지 저장',async()=>{vjob=await api('submitInspection',[vjob.job.id,{tbm:ins.tbm,items:ins.items,notes:ins.notes,name:ins.name,works:ins.works,none:ins.none,drills:DL.map((d,i)=>({type:d.type,photos:d.photos,...(DRILL_EMG.includes(d.type)?{attendees:drillAttIds(i),memo:d.memo||''}:{})}))}])}]]);ins=null;renderVJob();$('inspCard')?.scrollIntoView({block:'start'});popup('순회점검 제출 완료','오늘 순회점검일지를 제출했습니다.'+(bad?'\n지적사항 '+bad+'건은 조치 후 [조치 등록]을 해 주세요.':''),'확인')}
  catch(e){showErr('순회점검을 제출하지 못했습니다',e)}}
 /* ---------- 지적사항 조치 등록 (업체·도급인 공용) ---------- */
 /** F1.8k 도급인 책임자 이름 (서버가 공사 화면과 함께 보내 줌 · 없으면 기본값) */
@@ -151,8 +161,8 @@ async function openInspSheet(id,who){let x,fs,items,job,area;
   +'<tr><th>검토 (도급인 담당)</th><td colspan="3">'+(x.checkedAt?'<b>'+escapeText(x.checkedBy)+'</b> <span class="muted">'+escapeText(fmtTime(x.checkedAt))+'</span>':'<span class="req">확인 대기</span>')+'</td></tr>'
   +'<tr><th>승인 (도급인 책임자)</th><td colspan="3">'+(x.checkedAt?'<b>'+escapeText(principalName('delegate'))+'</b> <span class="stamp">승인</span> <span class="muted">('+escapeText(principalName('ceo',1))+' 위임)</span>':'<span class="muted">검토 후 자동</span>')+'</td></tr></table>'
   +'<div class="stage">TBM 실시 사진</div><div class="row">'+thumbs(x.tbm,'')+'</div>'
-  +(x.drill?'<div class="stage">교육 · 비상대응훈련 · '+escapeText(x.drill.label||drillLabel(x.drill.type))+'</div><div class="row">'+thumbs(x.drill.photos,'')+'</div>'
-   /* F1.9w 참석자 · 훈련 내용 */+(Array.isArray(x.drill.attendees)?'<p class="desc" style="margin-top:6px">참석 <b>'+x.drill.attendees.length+'명</b>'+(x.drill.crew?' (출근 '+x.drill.crew+'명)':'')+' · '+x.drill.attendees.map(w=>escapeText(w.name)+(w.isNew?' <span class="muted">(신규)</span>':'')).join(' · ')+(x.drill.memo?'<br>'+escapeText(x.drill.memo):'')+'</p>':''):'')
+  +(x.drills||[]).map(d=>'<div class="stage">교육 · 비상대응훈련 · '+escapeText(d.label||drillLabel(d.type))+'</div><div class="row">'+thumbs(d.photos,'')+'</div>'
+   /* F1.9w 참석자 · 훈련 내용 */+(Array.isArray(d.attendees)?'<p class="desc" style="margin-top:6px">참석 <b>'+d.attendees.length+'명</b>'+(d.crew?' (출근 '+d.crew+'명)':'')+' · '+d.attendees.map(w=>escapeText(w.name)+(w.isNew?' <span class="muted">(신규)</span>':'')).join(' · ')+(d.memo?'<br>'+escapeText(d.memo):'')+'</p>':'')).join('')
   /* F1.9w 오늘 공정 */+(Array.isArray(x.works)?'<div class="note" style="margin-top:10px"><b>오늘 공정</b> '+(x.works.length?x.works.map(escapeText).join(' · '):'공통 항목만')+'</div>':'')
   +'<table class="rtable" style="margin-top:12px"><tr><th style="width:44px">No</th><th>점검 항목</th><th style="width:90px">결과</th></tr>'+items.map((t,i)=>{const r=x.items[i+1];return '<tr><td style="text-align:center">'+(i+1)+'</td><td>'+escapeText(t)+'</td><td style="text-align:center"'+(r==='BAD'?' class="req"':'')+'>'+escapeText(INSP_MARK[r]||'-')+'</td></tr>'}).join('')+'</table>'
   +'<div class="stage">지적사항 · 조치 결과</div>'+(fs.length?fs.map(f=>'<table class="rtable" style="margin-top:8px"><tr><th style="width:90px">항목</th><td colspan="3"><b>'+f.no+'. '+escapeText(f.item)+'</b></td></tr><tr><th>지적</th><td>'+escapeText(f.foundDate)+' · '+escapeText(f.memo)+'</td><th style="width:70px">상태</th><td style="width:90px">'+(f.status==='DONE'?'<b style="color:var(--ok)">조치 완료</b>':'<b class="req">미조치</b>')+'</td></tr>'
