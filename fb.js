@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F1.9z';
+  const VERSION = '26.10.24 F2.0';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   const CFG = {
     INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
@@ -848,20 +848,23 @@
   }
   async function inspItemsOf(a, b) { return inspItemsFor(await planOf(a, b)); }
   /* F1.8b 순회점검 때 같이 올리는 교육·비상대응훈련 사진 (한 날만) · 비상훈련 = 대피·CPR·소화기 → 종료 평가 11번 */
-  const DRILL_TYPES = { EVAC: '비상대피 훈련', CPR: '심폐소생술(CPR) 교육', FIRE: '소화기 사용 훈련', EDU: '기타 안전교육' }, DRILL_EMERGENCY = ['EVAC', 'CPR', 'FIRE'];
-  /* F1.9w 비상훈련(대피·CPR·소화기)은 참석자(attendees) · 그날 출근 인원(crew) · 훈련 내용 한 줄(memo)도 같이 (예전 기록은 attendees 없음 = null) */
-  const drillOf = (x) => { const d = x && x.drill; if (!(d && DRILL_TYPES[d.type] && photoIds(d.photos, 5).length)) return null;
+  /* F1.9z2 감전 사고 대응 훈련(SHOCK) 추가 · 하루에 여러 훈련 (INSPECTIONS.drills 목록 · 예전 기록은 drill 하나) */
+  const DRILL_TYPES = { EVAC: '비상대피 훈련', CPR: '심폐소생술(CPR) 교육', FIRE: '소화기 사용 훈련', SHOCK: '감전 사고 대응 훈련', EDU: '기타 안전교육' }, DRILL_EMERGENCY = ['EVAC', 'CPR', 'FIRE', 'SHOCK'];
+  /* F1.9w 비상훈련은 참석자(attendees) · 그날 출근 인원(crew) · 훈련 내용 한 줄(memo)도 같이 (예전 기록은 attendees 없음 = null) */
+  const drillOne = (d) => { if (!(d && DRILL_TYPES[d.type] && photoIds(d.photos, 5).length)) return null;
     const at = Array.isArray(d.attendees) ? d.attendees.map((w) => ({ id: String(w.id || ''), name: String(w.name || ''), role: String(w.role || ''), isNew: !!w.isNew })) : null;
     return { type: d.type, label: DRILL_TYPES[d.type], photos: photoIds(d.photos, 5), memo: String(d.memo || ''), attendees: at, crew: Number(d.crew) || 0 }; };
+  const drillsOf = (x) => (Array.isArray(x && x.drills) ? x.drills : x && x.drill ? [x.drill] : []).map(drillOne).filter(Boolean);
+  const drillOf = (x) => drillsOf(x)[0] || null;
   /* F1.9w 비상훈련 결과 (종료 평가 11번 · 비상훈련 실시 보고서 · 업체 공사 화면) — 중계 서버 drillSum_ 과 같은 규칙
    *  필요한 훈련 = 계획서 6단계에서 체크한 대피·CPR·소화기 (비상대피는 늘 포함)
    *  우수 = 필요한 훈련 모두 + 평균 참석률 80% 이상 · 보통 = 비상대피는 했지만 빠진 훈련 또는 80% 미만 · 미흡 = 비상대피 0회 */
-  const DRILL_SHORT = { EVAC: '비상대피', CPR: 'CPR', FIRE: '소화기' };
-  const DRILL_FIX = { EVAC: '착공 첫 주 안에 비상대피 훈련을 실시하고 순회점검 때 사진·참석자를 기록', CPR: 'CPR 교육은 공사 첫 주 TBM 때 함께 실시', FIRE: '소화기 사용 훈련은 화기·전기 작업 시작 전에 실시' };
+  const DRILL_SHORT = { EVAC: '비상대피', CPR: 'CPR', FIRE: '소화기', SHOCK: '감전' };
+  const DRILL_FIX = { EVAC: '착공 첫 주 안에 비상대피 훈련을 실시하고 순회점검 때 사진·참석자를 기록', CPR: 'CPR 교육은 공사 첫 주 TBM 때 함께 실시', FIRE: '소화기 사용 훈련은 화기·전기 작업 시작 전에 실시', SHOCK: '감전 사고 대응 훈련(전원 차단 · 구조 · 신고)은 전기 작업 시작 전에 실시' };
   function drillSum(plan, ins) {
     const pd = (plan && plan.drill) || {}, it = Array.isArray(pd.items) ? pd.items : [];
-    const need = ['EVAC'].concat(['CPR', 'FIRE'].filter((k) => it.includes(k))), pct = (r) => Math.round(r * 100) + '%', md = (d) => String(d || '').slice(5);
-    const recs = ins.map((x) => ({ date: x.date, d: drillOf(x) })).filter((x) => x.d && DRILL_EMERGENCY.includes(x.d.type)).sort((p, q) => (p.date < q.date ? -1 : 1)).map((x) => {
+    const need = ['EVAC'].concat(['CPR', 'FIRE', 'SHOCK'].filter((k) => it.includes(k))), pct = (r) => Math.round(r * 100) + '%', md = (d) => String(d || '').slice(5);
+    const recs = [].concat(...ins.map((x) => drillsOf(x).map((d) => ({ date: x.date, d })))).filter((x) => x.d && DRILL_EMERGENCY.includes(x.d.type)).sort((p, q) => (p.date < q.date ? -1 : 1)).map((x) => {
       const n = x.d.attendees ? x.d.attendees.length : null, c = n == null ? null : Math.max(n, x.d.crew || 0);
       return { date: x.date, type: x.d.type, label: x.d.label, photos: x.d.photos, memo: x.d.memo, attendees: x.d.attendees || [], n, crew: c, rate: n == null || !c ? null : n / c }; });
     const done = need.filter((k) => recs.some((r) => r.type === k)), miss = need.filter((k) => !done.includes(k));
@@ -1274,7 +1277,7 @@
    *  지적사항 조치: 업체·도급인 누구나 (조치 내용·조치일·조치 후 사진) · 도급인이 일지를 [확인]
    *  INSPECTIONS/{공사ID_업체ID_날짜} (하루 1장) · FINDINGS/{FD-…} · 사진은 구글 드라이브(중계 서버) */
   const photoIds = (v, max) => (Array.isArray(v) ? v : []).map((x) => tidy(x, 60)).filter((x) => /^[A-Za-z0-9-]+$/.test(x)).slice(0, max || 5);
-  const inspView = (x) => ({ id: x.id, date: x.date, company: x.company, companyId: x.companyId, items: x.items || {}, labels: inspLabels(x), drill: drillOf(x), tbm: photoIds(x.tbm, 5), submittedName: x.submittedName, submittedAt: x.submittedAt,
+  const inspView = (x) => ({ id: x.id, date: x.date, company: x.company, companyId: x.companyId, items: x.items || {}, labels: inspLabels(x), drill: drillOf(x), drills: drillsOf(x), tbm: photoIds(x.tbm, 5), submittedName: x.submittedName, submittedAt: x.submittedAt,
     works: Array.isArray(x.works) ? x.works.map((w) => String((w && (w.tl || w.t)) || '')).filter(Boolean) : null, worksNone: !!x.worksNone,  // F1.9w 오늘 공정 (예전 기록 = null)
     checkedBy: x.checkedBy || '', checkedAt: x.checkedAt || '', bad: Object.values(x.items || {}).filter((v) => v === 'BAD').length });
   const findView = (f) => ({ id: f.id, inspId: f.inspId, company: f.company, companyId: f.companyId, no: Number(f.no), item: f.item, memo: f.memo, before: photoIds(f.before), foundDate: f.foundDate, status: f.status,
@@ -1316,25 +1319,30 @@
     LB.forEach((_, i) => { const v = String((d?.items || {})[i + 1] || ''); if (!['OK', 'BAD', 'NA'].includes(v)) bad.push((i + 1) + '번 결과'); items[i + 1] = v; });
     LB.forEach((_, i) => { if (items[i + 1] === 'BAD' && !tidy(((d?.notes || {})[i + 1] || {}).memo, 500)) bad.push((i + 1) + '번 지적 내용'); });
     const name = tidy(d?.name, 40); if (!name) bad.push('점검자 이름');
-    const dp = photoIds(d?.drill?.photos, 5), dt = String(d?.drill?.type || '');  // F1.8b 교육·훈련 (선택)
-    if (dp.length && !DRILL_TYPES[dt]) bad.push('교육·훈련 종류'); if (DRILL_TYPES[dt] && !dp.length) bad.push('교육·훈련 사진');
-    /* F1.9w 비상훈련(대피·CPR·소화기) 참석자 = 고른 작업자 · 그날 출근 인원 = 오늘 인원 ∪ 참석자 (참석자는 오늘 인원에도 넣음) */
-    let att = null, crewIds = null;
-    if (dp.length && DRILL_EMERGENCY.includes(dt)) {
+    /* F1.8b 교육·훈련 (선택) · F1.9z2 하루에 여러 훈련 (종류마다 1번 · 예전 화면이 보낸 drill 하나도 받음) */
+    const dIn = (Array.isArray(d?.drills) ? d.drills : d?.drill ? [d.drill] : []).slice(0, 5), seenT = new Set(), pre = [];
+    dIn.forEach((x) => { const dp = photoIds(x?.photos, 5), dt = String(x?.type || ''), lab = DRILL_TYPES[dt] || '교육·훈련';
+      if (!dp.length && !dt) return; if (!DRILL_TYPES[dt]) { bad.push('교육·훈련 종류'); return; } if (seenT.has(dt)) return; seenT.add(dt);
+      if (!dp.length) { bad.push(lab + ' 사진'); return; } pre.push({ x, dp, dt, lab }); });
+    /* F1.9w 비상훈련 참석자 = 고른 작업자 · 그날 출근 인원 = 오늘 인원 ∪ 모든 훈련 참석자 (참석자는 오늘 인원에도 넣음) */
+    let crewIds = null; const drills = [];
+    if (pre.some((p) => DRILL_EMERGENCY.includes(p.dt))) {
       const ws = (await mineOf('WORKERS', a, j.id)).filter((w) => w.companyId === b.id && w.active !== 'N');
-      att = [...new Set((Array.isArray(d?.drill?.attendees) ? d.drill.attendees : []).map(String))].map((wid) => ws.find((w) => w.id === wid)).filter(Boolean)
-        .map((w) => ({ id: w.id, name: w.name, role: w.role || '', isNew: !!w.eduAt && kst(w.eduAt) === t }));
-      if (!att.length) bad.push('훈련 참석자');
-      const cur = (await mineOf('CREW', a, j.id)).find((x) => x.date === t && x.companyId === b.id);
-      crewIds = [...new Set((cur ? (cur.workers || []).map((x) => x.id) : []).concat(att.map((x) => x.id)))];
+      const cur = (await mineOf('CREW', a, j.id)).find((x) => x.date === t && x.companyId === b.id), all = new Set(cur ? (cur.workers || []).map((x) => x.id) : []);
+      pre.forEach((p) => { if (!DRILL_EMERGENCY.includes(p.dt)) return;
+        p.att = [...new Set((Array.isArray(p.x.attendees) ? p.x.attendees : []).map(String))].map((wid) => ws.find((w) => w.id === wid)).filter(Boolean)
+          .map((w) => ({ id: w.id, name: w.name, role: w.role || '', isNew: !!w.eduAt && kst(w.eduAt) === t }));
+        if (!p.att.length) bad.push(p.lab + ' 참석자'); p.att.forEach((w) => all.add(w.id)); });
+      crewIds = [...all];
     }
     if (bad.length) fail('제출 전에 확인해 주세요:\n- ' + bad.join('\n- '));
-    const drill = dp.length ? { type: dt, photos: dp, ...(att ? { attendees: att, crew: crewIds.length, memo: tidy(d?.drill?.memo, 120) } : {}) } : null;
+    pre.forEach((p) => drills.push({ type: p.dt, photos: p.dp, ...(p.att ? { attendees: p.att, crew: crewIds.length, memo: tidy(p.x.memo, 120) } : {}) }));
+    const drill = drills[0] || null;  // 예전 화면·서버가 읽는 첫 훈련
     const id = j.id + '_' + b.id + '_' + t;
     if ((await mineOf('INSPECTIONS', a, j.id)).some((x) => x.id === id)) fail('오늘 이행점검은 이미 제출했습니다.');
     await crewWith(a, b, j, crewIds ? { ids: crewIds } : d?.crew);  // F1.8a 오늘 인원(수칙 서명)도 같이 저장
     const B = db.batch(), at = now(), wk = W.length ? { works: wsel.map((k) => ({ t: k, tl: (W.find((w) => w.t === k) || {}).tl || k })), worksNone: wnone } : {};
-    B.set(db.collection('INSPECTIONS').doc(id), { id, jobId: j.id, companyId: b.id, company: b.company, vendorUid: a.uid, date: t, tbm, items, labels: LB, ...wk, ...(drill ? { drill } : {}), submittedBy: a.email, submittedName: name, submittedAt: at, checkedBy: '', checkedAt: '' });
+    B.set(db.collection('INSPECTIONS').doc(id), { id, jobId: j.id, companyId: b.id, company: b.company, vendorUid: a.uid, date: t, tbm, items, labels: LB, ...wk, ...(drill ? { drill, drills } : {}), submittedBy: a.email, submittedName: name, submittedAt: at, checkedBy: '', checkedAt: '' });
     LB.forEach((it, i) => {
       const n = i + 1; if (items[n] !== 'BAD') return; const nt = (d.notes || {})[n] || {}, fid = 'FD-' + rand8();
       B.set(db.collection('FINDINGS').doc(fid), { id: fid, inspId: id, jobId: j.id, companyId: b.id, company: b.company, vendorUid: a.uid, no: n, item: it, memo: tidy(nt.memo, 500), before: photoIds(nt.photos, 5),
