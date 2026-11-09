@@ -52,7 +52,9 @@ const WDAY='일월화수목금토',mdw=d=>/^\d{4}-\d{2}-\d{2}$/.test(d||'')?Numb
 /** 도급인이 만든 협의체·합동점검 (실시 완료되면 사라짐) → 참여 화면(현장 QR) */
 function meetAlertHtml(d){return (d.meets||[]).map(m=>'<button class="vmeet" type="button" onclick="vgo(\'meet\')"><span><b>📢 '+escapeText((m.kinds.length?m.kinds.join(' · '):'현장 미팅'))+'</b><span class="muted">'+mdw(m.date)+(m.time?' '+escapeText(m.time):'')+' · '+escapeText(m.place||m.store)+'</span></span><span class="go">'+(m.attended?'✔ 참석 완료':'바로가기 ›')+'</span></button>').join('')}
 /** 큰 동그라미 → 오늘 현장 업무 (공사가 2개 이상이면 고르기) */
-function dayStartHtml(act){return act.length?'<div class="vgo-wrap"><button class="vgo" type="button" onclick="dayStart()"><span class="vgo-ic" aria-hidden="true">▶</span><b>금일 작업<br>수행하기</b></button><div class="muted">신규자 등록 → 허가서 → 순회점검</div></div>':''}
+function dayStartHtml(act){return act.length?'<div class="vgo-wrap"><button class="vgo" type="button" onclick="dayStart()"><span class="vgo-ic" aria-hidden="true">▶</span><b>금일 작업<br>수행하기</b></button><div class="muted">'+(isOpenVendor()?'신규자 등록 → 지적사항 조치':'신규자 등록 → 허가서 → 순회점검')+'</div></div>':''}
+/** F2.1 업종이 오픈지원인 업체 (작업허가서·업체 순회점검 작성 없음) */
+const isOpenVendor=()=>!!(state&&state.company&&state.company.industry==='오픈지원');
 function dayStart(){const act=((vjobs&&vjobs.jobs)||[]).filter(j=>j.status!=='ENDED');if(act.length===1){vgo('today',act[0].id);return}
  jobPick('어느 공사인가요?',act.map(j=>['vgo(\'today\',\''+escapeText(j.id)+'\')',escapeText(j.title),escapeText(j.storeName)]))}
 /** F1.8g 현장 고르기 창 (업체·도급인 공용) · items = [[누르면 실행할 코드, 제목 HTML, 설명 HTML]] */

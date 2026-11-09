@@ -184,7 +184,10 @@ function startTour(kind){if(!TOUR_STEPS[kind]||(TODAY_KINDS.includes(kind)&&!vjo
  const mk=(id,tag)=>{const e=document.createElement(tag||'div');e.id=id;document.body.appendChild(e);return e};
  const mask=mk('tourMask');mask.onclick=()=>tourGo(1);mk('tourHole');const hand=mk('tourHand');hand.textContent='👆';hand.setAttribute('aria-hidden','true');
  const box=mk('tourBox');box.setAttribute('role','dialog');box.setAttribute('aria-modal','true');box.setAttribute('aria-label','사용 가이드');
- tour={kind,steps:TOUR_STEPS[kind],i:-1,play:true,timer:0,dir:1,demo:false,busy:false};
+ /* F2.1 오픈지원 공사 화면: 허가서·순회점검·이수증 안내는 건너뜀 (그 칸이 없음) */
+ const st0=TOUR_STEPS[kind],st=vjob&&vjob.open&&TODAY_KINDS.includes(kind)?st0.filter(s=>!/^(permit|insp)/.test(s.scr||'')&&!/[Pp]ermit|[Ii]nsp/.test(s.sel||'')&&!/이수증|허가서|순회점검/.test(s.text||'')):st0;
+ if(!st.length){['tourMask','tourHole','tourHand','tourBox'].forEach(id=>$(id)?.remove());document.body.classList.remove('touring');return}
+ tour={kind,steps:st,i:-1,play:true,timer:0,dir:1,demo:false,busy:false};
  tour.key=e=>{if(e.key==='Escape')endTour();else if(e.key==='ArrowRight')tourGo(1);else if(e.key==='ArrowLeft')tourGo(-1)};document.addEventListener('keydown',tour.key);
  tour.pos=()=>tourPlace();window.addEventListener('resize',tour.pos);window.addEventListener('scroll',tour.pos,true);
  tourGo(1)}

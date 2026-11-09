@@ -61,7 +61,7 @@ function ckBar(jid,cur){const j=jobData&&jobData.jobs.find(x=>x.id===jid);if(!j)
 function sCheck(d){return sJobList(d,'현장 확인','작업허가서 승인 · 순회점검일지 확인 · 미조치 지적사항',j=>{const n=(j.permitWaiting||0)+(j.inspUnchecked||0);return ['openCheck(\''+escapeText(j.id)+'\')',n?'<span class="cnt">'+n+'</span>':'','허가서 대기 '+(j.permitWaiting||0)+' · 일지 확인 대기 '+(j.inspUnchecked||0)+(j.findOpen?' · <b class="req">미조치 '+j.findOpen+'</b>':'')]})}
 /** 공사 1건의 주의 사항 (업체별) */
 function jWatch(j,t){const rows=[];if(j.status!=='ENDED'&&j.end&&j.end.state==='OVER')rows.push(['공사 전체','종료일 경과 · 연장 또는 종료 필요']);
- (j.vstats||[]).forEach(v=>{const r=[];if(v.inspNeed&&v.insp/v.inspNeed<0.6)r.push('순회점검 '+Math.round(v.insp/v.inspNeed*100)+'%');if(v.openFindings>=2)r.push('미조치 지적 '+v.openFindings+'건');if(v.workDays&&v.permitDays/v.workDays<0.6)r.push('허가서 '+Math.round(v.permitDays/v.workDays*100)+'%');if(v.lastInsp&&!v.inspToday&&dd(v.lastInsp,t)>=4)r.push('순회점검 '+dd(v.lastInsp,t)+'일 없음');if(r.length)rows.push([v.company,r.join(' · ')])});return rows}
+ (j.vstats||[]).forEach(v=>{const r=[];if(v.inspNeed&&v.insp/v.inspNeed<0.6)r.push('순회점검 '+Math.round(v.insp/v.inspNeed*100)+'%');if(v.openFindings>=2)r.push('미조치 지적 '+v.openFindings+'건');if(!v.noPermit&&v.workDays&&v.permitDays/v.workDays<0.6)r.push('허가서 '+Math.round(v.permitDays/v.workDays*100)+'%');if(v.lastInsp&&!v.inspToday&&dd(v.lastInsp,t)>=4)r.push('순회점검 '+dd(v.lastInsp,t)+'일 없음');if(r.length)rows.push([v.company,r.join(' · ')])});return rows}
 /* ---------- ① 대시보드: 공사 목록 ---------- */
 function sDash(d){if(dashJob){const j=d.jobs.find(x=>x.id===dashJob);if(j)return sDashJob(d,j);dashJob=''}
  const t=kstToday(),safety=d.me.role==='SAFETY',act=sAct(d),ended=sEnded(d);
