@@ -6,10 +6,11 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.24 F2.0';
+  const VERSION = '26.10.25 F2.1';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
+  /* F2.1 업종 '오픈지원' 추가 (매장 오픈 인력 · 인력사무소형) · 인테리어(마감) = 지금까지의 공사 흐름 그대로 */
   const CFG = {
-    INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '사인', '냉난방기', '집기', '본사 식당'],
+    INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '오픈지원', '사인', '냉난방기', '집기', '본사 식당'],
     TEST_SKIP_FILES: false,         // F1.8z 운영 (테스트 모드 끔): 계약 전 검토 승인된 업체만 공사 업무·배정 · 규정·계획서 작성 필수
     APPROVER_DOMAINS: ['daiso.co.kr'],
   };
@@ -28,7 +29,7 @@
   const INDUSTRY_FIELDS = {
     '입고도우미': ['롤테이너·L카 이동 안전조치', '하차 중 차량 및 작업자 동선 분리'], '재고조사': ['사다리 및 창고작업 안전조치', '고객 동선과 조사구역 분리'],
     '인테리어(마감)': ['전기·고소·화기작업 안전조치', '분진·소음 및 작업구역 통제'], '사인': ['고소·낙하물 방지대책', '외부 보행자 보호 및 전기 작업'],
-    '냉난방기': ['전원 차단·전기 작업관리', '냉매·중량물·고소작업 관리'], '집기': ['집기 전도 및 낙하 방지', '전동공구 및 고객 동선 관리'], '본사 식당': ['미끄러짐·화상·절단 방지', 'MSDS·근골격계 예방'],
+    '냉난방기': ['전원 차단·전기 작업관리', '냉매·중량물·고소작업 관리'], '집기': ['집기 전도 및 낙하 방지', '전동공구 및 고객 동선 관리'], '오픈지원': ['집기 운반·조립 중 끼임·근골격계 예방', '사다리·박스 정리 및 고객 동선 관리'], '본사 식당': ['미끄러짐·화상·절단 방지', 'MSDS·근골격계 예방'],
   };
   const NOTICE_LABEL = { VENDOR_APPROVED: '계약 전 평가 확정', JOB_EXTENDED: '공사 연장', JOB_ENDED: '공사 종료', JOB_EVAL_DONE: '공사 종료 평가 확정', ACC_CERT: '산재 확인서 추가 제출' };
   /* @@v527-start (v5.27 Code.gs에서 그대로 복사한 상수 · 중계 Relay.gs와 같은 값) */
@@ -161,7 +162,28 @@
    ['KITCHEN','조리·주방 (본사 식당)','화상·베임·미끄러짐','방열장갑, 안전칼집, 미끄럼방지화',false,'조리기구·튀김기·칼',[
     ['KIT1','조리','화상','방열장갑 착용, 기름 온도 관리','중','조리 시 방열장갑을 쓰고 튀김기 주변이 정리되어 있는가?'],
     ['KIT2','칼 사용','베임','안전칼집 사용, 지정 장소 보관','하','칼을 칼집·지정 장소에 보관하는가?'],
-    ['KIT3','바닥','미끄러짐','미끄럼방지화 착용, 물기 즉시 제거','중','주방 바닥 물기를 바로 닦고 미끄럼방지화를 신는가?']]]];
+    ['KIT3','바닥','미끄러짐','미끄럼방지화 착용, 물기 즉시 제거','중','주방 바닥 물기를 바로 닦고 미끄럼방지화를 신는가?']]],
+   /* F2.1 오픈지원 전용 공종 4개 (업종 '오픈지원'이면 계획서에 이 4개만 · 다른 업종에는 안 나옴) */
+   ['OPEN_MOVE','집기 운반','근골격계·끼임·부딪힘','2인 1조 운반, 대차 사용, 이동 동선 확보',false,'대차·핸드카트',[
+    ['OPM1','중량 집기 운반','무거운 집기를 혼자 들어 허리 부상(근골격계)','2인 1조, 대차 사용, 무릎 굽혀 들기','중','무거운 집기를 2인 1조·대차로 운반하는가?'],
+    ['OPM2','출입구·통로 통과','문틀·벽 사이에 손 끼임, 집기에 부딪힘','통로 확보, 안전장갑 착용, 서로 신호하며 이동','중','집기 운반 통로가 확보되고 안전장갑을 착용했는가?'],
+    ['OPM3','계단·경사로','계단에서 집기와 함께 넘어짐','계단 운반 최소화, 엘리베이터 사용, 3인 이상 운반','상','계단·경사로에서 집기를 무리하게 옮기지 않는가?']]],
+   ['OPEN_ASM','집기 조립','베임·끼임·넘어짐','전동드릴 바른 사용, 안전장갑, 조립 후 고정 확인',false,'전동드릴·드라이버·망치',[
+    ['OPA1','전동드릴 사용','드릴 날에 손 베임·장갑 말려 들어감','회전부에 손 가까이 금지, 비트 확실히 고정, 코팅장갑 착용','중','전동드릴 사용 시 회전부에 손이 가까이 가지 않게 쓰는가?'],
+    ['OPA2','선반·곤돌라 조립','선반·부재 사이에 손가락 끼임','2인 1조로 맞잡기, 안전장갑 착용','중','선반 조립 때 2인 1조·안전장갑을 지키는가?'],
+    ['OPA3','조립 후 설치','고정 안 된 집기가 넘어짐','수평 맞춤·벽체 고정 확인 후 상품 진열','상','조립한 집기가 수평이 맞고 넘어지지 않게 고정되어 있는가?'],
+    ['OPA4','공구 전선','전선에 걸려 넘어짐, 손상된 멀티탭 누전','전선 정리, 손상된 멀티탭 사용 금지','하','공구 전선이 정리되어 걸려 넘어질 위험은 없는가?']]],
+   ['OPEN_DISP','상품 진열','떨어짐·맞음·근골격계','사다리 2인 1조, 무거운 상품은 아래 칸, 적재 높이 제한',false,'사다리·발판·대차',[
+    ['OPD1','사다리 사용','사다리·발판에서 떨어짐','2인 1조, 최상단 사용 금지, 박스·의자 딛기 금지','상','사다리를 2인 1조로 쓰고 박스·의자를 밟고 올라가지 않는가?'],
+    ['OPD2','상단 진열','상단 상품이 떨어져 맞음','무거운 상품은 아래 칸, 상단 적재 높이 제한','중','무거운 상품을 아래 칸에 두고 상단에 과하게 쌓지 않았는가?'],
+    ['OPD3','반복 진열','반복 허리 굽힘·팔 들기로 근골격계 부담','교대 작업, 중간 휴식, 대차 높이 활용','하','반복 진열 때 교대·휴식을 하고 있는가?']]],
+   ['OPEN_WASTE','박스·폐기물 정리','베임·넘어짐·화재','커터칼 바른 사용, 통로 박스 즉시 정리, 폐기물 지정 장소',false,'커터칼·대차',[
+    ['OPW1','박스 개봉','커터칼에 손 베임','몸 반대 방향으로 자르기, 쓴 뒤 칼날 넣기, 안전장갑','중','커터칼을 몸 반대 방향으로 쓰고 칼날을 넣어 보관하는가?'],
+    ['OPW2','통로 정리','통로에 쌓인 박스·비닐에 걸려 넘어짐','빈 박스 즉시 정리, 통로·비상구 확보','중','통로·비상구에 빈 박스·비닐이 쌓여 있지 않은가?'],
+    ['OPW3','폐기물 적치','박스 더미 화재, 쌓은 더미 무너짐','지정 장소에 적치, 주변 화기 금지, 소화기 위치 확인','하','폐기물을 지정 장소에 쌓고 주변에 화기가 없는가?']]]];
+  /* F2.1 오픈지원 구분 (업종 · 공사 구분 · 공종) */
+  const OPEN_IND = '오픈지원', OPEN_TRADES = ['OPEN_MOVE', 'OPEN_ASM', 'OPEN_DISP', 'OPEN_WASTE'], OPEN_ROLES = ['보통인부'];
+  const isOpenInd = (x) => String(x || '') === OPEN_IND;
   /* 예전 위험작업 표와 같은 모양 (계획서 Ⅱ-4 · Ⅲ-2 · 계약 전 자동 평가에서 씀) [키, 이름, 재해, 대책, -, -, 허가대상, 설비] */
   const PLAN_WORKS=RISK_TRADES.map(t=>[t[0],t[1],t[2],t[3],0,0,t[4],t[5]]);
   const RISK_ALL=[].concat(...RISK_TRADES.map(t=>t[6].map(r=>({t:t[0],tl:t[1],id:r[0],step:r[1],haz:r[2],meas:r[3],lv:r[4],q:r[5]}))));
@@ -186,7 +208,7 @@
   const eduTrades=(plan)=>Object.keys(EDU_SPECIAL).map(Number).sort((p,q)=>p-q).map(n=>({key:String(n),name:EDU_SPECIAL[n][2],special:['[별표 5] '+n+'번 특별교육']}));
   /** 계획서의 고른 위험요인 (예전 계획서는 고른 위험작업의 위험요인 전부) */
   const planRisks=(v)=>{v=v||{};const ok=new Set(RISK_ALL.map(r=>r.id));if(Array.isArray(v.risks))return RISK_ALL.filter(r=>v.risks.includes(r.id));const w=Array.isArray(v.works)?v.works:[];return RISK_ALL.filter(r=>w.includes(r.t)&&ok.has(r.id));};
-  const PLAN_INDUSTRY_WORKS={'입고도우미':['LOAD','FORK'],'재고조사':['STOCK','LOAD'],'인테리어(마감)':['DEMO','SCAF','LGW','LGC','PAINT'],'사인':['SIGN','SCAF','ELEC'],'냉난방기':['MECH','ELEC','HOT','SCAF'],'집기':['LOAD','SCAF','METAL'],'본사 식당':['KITCHEN','CHEM']};
+  const PLAN_INDUSTRY_WORKS={'입고도우미':['LOAD','FORK'],'재고조사':['STOCK','LOAD'],'인테리어(마감)':['DEMO','SCAF','LGW','LGC','PAINT'],'사인':['SIGN','SCAF','ELEC'],'냉난방기':['MECH','ELEC','HOT','SCAF'],'집기':['LOAD','SCAF','METAL'],'오픈지원':['OPEN_MOVE','OPEN_ASM','OPEN_DISP','OPEN_WASTE'],'본사 식당':['KITCHEN','CHEM']};
   const PLAN_SCEN=[
    ['FIRE','화재',[['상황전파','최초 발견자','"불이야"를 외쳐 주변에 알리고 119에 신고'],['초기소화','최초 발견자·주변 근로자','부상자를 안전한 곳으로 옮기고 소화기로 초기 소화'],['대피','현장대리인','작업 중지, 전기·가스 차단, 비상구로 전원 대피 후 인원 확인'],['현장인계','현장대리인','출동한 소방대에 현장 상황 보고, 진입로 확보'],['보고','현장대리인','다이소 담당자에게 즉시 보고, 재발방지 대책 수립']]],
    ['SHOCK','감전',[['상황전파','최초 발견자','"감전 사고!"를 외치고 지휘계통에 통보'],['전원차단','현장대리인','해당 선로 차단 (맨손으로 사고자 접촉 금지)'],['응급조치','안전담당자','호흡 확인, 119 신고, 필요 시 심폐소생술·AED'],['보고','현장대리인','다이소 담당자에게 즉시 보고']]],
@@ -397,7 +419,8 @@
     if (d && Array.isArray(d.years) && JSON.stringify(d.years.map(Number)) !== JSON.stringify(D.years)) { const old = d.years.map(Number), ac = d.accidents || []; d.accidents = D.years.map((y) => { const i = old.indexOf(y); return i >= 0 ? String(ac[i] ?? '') : ''; }); d.years = D.years; }
     const fmap = (ids) => (ids || []).map((id) => { const x = files.find((y) => y.id === id); return x ? { id, name: x.name } : null; }).filter(Boolean), ev = fmap(d && d.evidence), pev = fmap(d && d.practiceEv);  // F1.9b 이행 사례 증빙
     return { today: today(), hq: HQ_NAME, hqRep: b.approverName || '', rule: { title: RULE_TITLE, text: RULE_TEXT }, C01: r.d ? { data: r.d, savedAt: r.f.updatedAt } : null,
-      plan: { works: PLAN_WORKS, trades: RISK_TRADES.map((t) => [t[0], t[1], t[4], t[6]]), after: RISK_AFTER, scen: PLAN_SCEN.map((s) => [s[0], s[1]]), laws: PLAN_LAWS, defaults: D, C02: d ? { data: Object.assign(d, { evidenceFiles: ev, practiceFiles: pev }), savedAt: p.f.updatedAt } : null } };
+      /* F2.1 계획서 공종: 오픈지원 업체 = 오픈지원 공종 4개만 · 다른 업종 = 예전 공종 그대로 (오픈지원 공종은 안 보임) */
+      plan: { works: PLAN_WORKS, trades: RISK_TRADES.filter((t) => OPEN_TRADES.includes(t[0]) === isOpenInd(b.industry)).map((t) => [t[0], t[1], t[4], t[6]]), after: RISK_AFTER, scen: PLAN_SCEN.map((s) => [s[0], s[1]]), laws: PLAN_LAWS, defaults: D, C02: d ? { data: Object.assign(d, { evidenceFiles: ev, practiceFiles: pev }), savedAt: p.f.updatedAt } : null } };
   }
   /** 화면에 보여 줄 업체 정보 (기존 publicCompany_와 같은 항목) */
   function publicCompany(b) {
@@ -813,7 +836,8 @@
    *  JOB_VENDORS/{공사ID_업체ID}   배정 (workerToken = 작업자 등록 QR 값)
    *  WORKERS/{WK-…}               작업자 명단 = 신규자 교육일지 (본인 QR 등록은 중계 서버가 씀)
    *  CREW/{공사ID_업체ID_날짜}      오늘 작업 인원 = 그날 작업안전수칙 서명 */
-  const JOB_KINDS = { WORK: '매장 공사', CONTRACT: '계약 단위(입고도우미·재고조사 등)' };
+  /* F2.1 OPEN = 오픈지원 매장 건 (업종 '오픈지원' 업체만 배정) · WORK·CONTRACT에는 오픈지원 업체 배정 안 함 */
+  const JOB_KINDS = { WORK: '매장 공사', OPEN: '오픈지원 (매장 오픈)', CONTRACT: '계약 단위(입고도우미·재고조사 등)' };
   const MEET_KINDS = { COUNCIL: '안전보건협의체 회의', JOINT: '합동안전보건점검' };
   const WORK_RULES = ['작업에 적합한 단정한 복장을 착용한다.',
     '안전화, 안전모 등 안전보호구를 착용하고, 작업에 따라 안전보호구를 선별하며 철저히 착용 후 관리자의 인가를 받고 작업한다.',
@@ -928,7 +952,7 @@
       inspTotal: ins.length, inspUnchecked: ins.filter((x) => !x.checkedAt).length, findOpen: fd.filter((f) => f.status !== 'DONE').length,
       // F1.8g 도급인 메인 '지적사항 · 시정조치' 목록
       findings: fd.map((f) => ({ id: f.id, inspId: f.inspId, company: f.company, companyId: f.companyId, no: Number(f.no), item: f.item, memo: f.memo, foundDate: f.foundDate, status: f.status, actionDate: f.actionDate || '' })),
-      vstats: vs.map((v) => Object.assign({ company: v.company, companyId: v.companyId }, vjStats(by(cr, v), by(pm, v), by(ins, v), by(fd, v)))),
+      vstats: vs.map((v) => Object.assign({ company: v.company, companyId: v.companyId, noPermit: j.kind === 'OPEN' /* F2.1 오픈지원은 작업허가서 없음 */ }, vjStats(by(cr, v), by(pm, v), by(ins, v), by(fd, v)))),
       end: jobEndInfo(j), evalDone: of(evs).filter((e) => e.status === 'DONE').length, evalTotal: of(evs).length, crewDays: cr.length,
       meetings: of(mts).sort((x, y) => String(x.createdAt).localeCompare(String(y.createdAt))).map((m) => meetSummary(m, of(ats))) };
   }
@@ -966,6 +990,9 @@
     // 계약 전 평가 유효기간(1년)이 지난 업체는 새로 배정하지 않음 (이미 배정된 업체는 그대로)
     const add = pick.filter((c) => !have.some((h) => h.companyId === c)).map((c) => choices.find((x) => x.id === c));
     const exp = add.filter((v) => v.expired && !CFG.TEST_SKIP_FILES);
+    /* F2.1 오픈지원 매장 건에는 오픈지원 업체만 · 매장 공사·계약 단위에는 오픈지원 업체를 새로 배정하지 않음 (이미 배정된 업체는 그대로) */
+    const mis = add.filter((v) => (kind === 'OPEN') !== isOpenInd(v.industry));
+    if (mis.length) fail(kind === 'OPEN' ? '오픈지원 매장 건에는 업종이 「오픈지원」인 업체만 배정할 수 있습니다:\n- ' + mis.map((v) => v.company + ' (' + v.industry + ')').join('\n- ') : '업종이 「오픈지원」인 업체는 구분을 「오픈지원 (매장 오픈)」으로 골라야 배정할 수 있습니다:\n- ' + mis.map((v) => v.company).join('\n- '));
     if (exp.length) fail('계약 전 평가 유효기간(1년)이 지난 업체는 새로 배정할 수 없습니다.\n업체가 계약 전 서류를 고쳐 다시 제출하고 승인받으면 배정할 수 있습니다:\n- ' + exp.map((v) => v.company + ' (유효기간 ~' + v.valid.until + ')').join('\n- '));
     // 체크 해제한 업체 배정 취소 (그 업체의 작업자·작업 기록이 있으면 취소 불가)
     const drop = have.filter((v) => !want.includes(v.companyId));
@@ -1071,11 +1098,12 @@
     return { today: t, job: { id: j.id, title: j.title, storeName: j.storeName, address: j.address, startDate: j.startDate, endDate: j.endDate, hostName: j.hostName },
       company: { id: b.id, company: b.company, trade: jv.trade }, link: location.origin + location.pathname + '?review=WRK-' + jv.workerToken,
       workers: ws.map((w) => ({ id: w.id, name: w.name, role: w.role, trade: w.trade, tradeKey: w.tradeKey || '', special: w.special || [], eduHours: Number(w.eduHours) || 1, method: w.method, eduAt: w.eduAt, email: w.email, certDoc: w.certDoc || '', certAt: w.certAt || '' })),
-      trades: eduTrades(PL),
+      /* F2.1 오픈지원: 특별교육·이수증 없음 · 근로자는 모두 보통인부 · 작업허가서·업체 순회점검 작성 없음 */
+      open: isOpenInd(b.industry) || j.kind === 'OPEN', trades: (isOpenInd(b.industry) || j.kind === 'OPEN') ? [] : eduTrades(PL),
       todayCrew: tc ? day(tc) : null, history: cr.slice(0, 30).map(day), siteManager: tc ? tc.siteManager : sm0,
       // F1.8a 오늘 인원 기본 체크: 오늘 저장한 인원 → 없으면 가장 최근 날 인원 → 없으면 등록된 전원
       crewDefault: ((tc || cr[0]) ? ((tc || cr[0]).workers || []).map((w) => w.id) : ws.map((w) => w.id)).filter((id) => ws.some((w) => w.id === id)),
-      rules: WORK_RULES, pledge: WORK_PLEDGE, roles: WORKER_ROLES,
+      rules: WORK_RULES, pledge: WORK_PLEDGE, roles: (isOpenInd(b.industry) || j.kind === 'OPEN') ? OPEN_ROLES : WORKER_ROLES,
       edu: { type: EDU_TYPE, hire: EDU_HIRE, etc: EDU_ETC, special: EDU_SPECIAL },  // F1.8u 앱에서 교육일지 미리 보기 (ZIP PDF와 같은 내용)
       permits: pms.filter((p) => p.companyId === b.id).sort((x, y) => (x.date < y.date ? 1 : -1)).slice(0, 30).map(permitSummary), insp: inspPack(inss.filter((x) => x.companyId === b.id), fds.filter((x) => x.companyId === b.id), LBI, planWorks(PL)),
       drill: (() => { const S = drillSum(PL, inss.filter((x) => x.companyId === b.id)); return { lv: S.lv, need: S.need, miss: S.miss, recs: S.recs.map((r) => ({ date: r.date, type: r.type, label: r.label, n: r.n, crew: r.crew })) }; })(),  // F1.9w 공사 화면 비상훈련 현황
@@ -1096,8 +1124,9 @@
   /** [업체] Google 계정이 없는 작업자를 소장이 직접 등록 (교육 실시 확인 필수) */
   API.addWorker = async (a, jobId, info, requestId) => {
     const b = await execVendor(a), { j, jv } = await vendorJobOf(a, b, jobId, true);
-    const E = eduOf(tidy(info?.tradeKey, 20));  // F1.8s 공종 고르면 특별교육 → 2시간
-    const name = tidy(info?.name, 40), role = WORKER_ROLES.includes(info?.role) ? info.role : '', trade = E.tradeName || tidy(info?.trade, 40) || jv.trade;
+    const op = isOpenInd(b.industry) || j.kind === 'OPEN';  // F2.1 오픈지원 = 보통인부 · 특별교육 없음
+    const E = eduOf(op ? '' : tidy(info?.tradeKey, 20));  // F1.8s 공종 고르면 특별교육 → 2시간
+    const name = tidy(info?.name, 40), role = op ? OPEN_ROLES[0] : WORKER_ROLES.includes(info?.role) ? info.role : '', trade = E.tradeName || tidy(info?.trade, 40) || jv.trade;
     const bad = []; if (!name) bad.push('이름'); if (!role) bad.push('구분(관리자/근로자)'); if (!info?.agree) bad.push('교육 실시·수칙 설명 확인 체크');
     if (bad.length) fail('다음 항목을 확인해 주세요:\n- ' + bad.join('\n- '));
     const rid = String(requestId || '').toLowerCase(); if (rid && !/^[a-f0-9]{32}$/.test(rid)) fail('잘못된 요청 식별값입니다.');
