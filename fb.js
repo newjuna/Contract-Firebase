@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.26 F2.2';
+  const VERSION = '26.10.27 F2.3';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   /* F2.1 업종 '오픈지원' 추가 (매장 오픈 인력 · 인력사무소형) · 인테리어(마감) = 지금까지의 공사 흐름 그대로 */
   const CFG = {
@@ -479,10 +479,11 @@
   }
   API.portalData = async (a) => {
     const memo = {}, st = await staffOf(a, memo), b = await myCompany(a), verified = !!b && b.status === 'VERIFIED';
-    const [isApprover, V, bd, mg] = await Promise.all([
+    const [isApprover, V, bd, mg, sm0] = await Promise.all([
       isInternalEmail(a.email) ? db.collection('COMPANIES').where('approverEmail', '==', a.email).limit(1).get().then((s) => !s.empty) : false,
       verified ? vendorBundle(a, b) : null, badges(a, memo),
-      !b && !st && a.mode !== 'STAFF' ? myMgrs(a) : []]);  // F2.2 업체 계정이 아니면 인력관리자인지 확인
+      !b && !st && a.mode !== 'STAFF' ? myMgrs(a) : [],  // F2.2 업체 계정이 아니면 인력관리자인지 확인
+      !b && !st && a.mode !== 'STAFF' ? mySms(a) : []]);  // F2.3 현장관리자인지 확인
     let steps = [], documents = [], docBoard = null, forms = null;
     if (V) {
       steps = V.profiles.map((x) => ({ step: Number(x.step), data: staleForm(b, x.updatedAt) ? {} : (x.data || {}) }));
@@ -506,6 +507,7 @@
       company: publicCompany(b),
       role: st ? st.role : 'VENDOR', industries: CFG.INDUSTRIES, fields: FIELDS, stepNames: STEP_NAMES, industryFields: (b && INDUSTRY_FIELDS[b.industry]) || [],
       steps, documents, docBoard, forms, appVersion: VERSION, mode: a.mode,
+      sm: sm0.some((s) => s.status === 'ACTIVE') ? { name: sm0.find((s) => s.status === 'ACTIVE').name, n: sm0.filter((s) => s.status === 'ACTIVE').length } : null,  // F2.3 현장관리자 (끝난 매장 건은 smHome이 거름)
       mgr: mg.length ? { name: (mg.find((m) => m.status === 'ACTIVE') || mg[0]).name, active: mg.some((m) => m.status === 'ACTIVE'), companies: mg.map((m) => ({ company: m.company, status: m.status })) } : null,
       badges: bd, loginUrl: location.origin + location.pathname,
     };
@@ -1103,9 +1105,14 @@
     const day = (c) => ({ date: c.date, count: Number(c.count) || (c.workers || []).length, siteManager: c.siteManager, savedAt: c.savedAt, workers: c.workers || [] }), tc = cr.find((x) => x.date === t);
     return { today: t, job: { id: j.id, title: j.title, storeName: j.storeName, address: j.address, startDate: j.startDate, endDate: j.endDate, hostName: j.hostName },
       company: { id: b.id, company: b.company, trade: jv.trade }, link: location.origin + location.pathname + '?review=WRK-' + jv.workerToken,
-      workers: ws.map((w) => ({ id: w.id, name: w.name, role: w.role, trade: w.trade, tradeKey: w.tradeKey || '', special: w.special || [], eduHours: Number(w.eduHours) || 1, method: w.method, eduAt: w.eduAt, email: w.email, certDoc: w.certDoc || '', certAt: w.certAt || '' })),
+      workers: ws.map((w) => ({ id: w.id, name: w.name, role: w.role, trade: w.trade, tradeKey: w.tradeKey || '', special: w.special || [], eduHours: Number(w.eduHours) || 1, method: w.method, eduAt: w.eduAt, email: w.email, certDoc: w.certDoc || '', certAt: w.certAt || '', confirmBy: w.confirmBy || '' })),  // F2.3 confirmBy = 현장관리자 직접 등록
       /* F2.1 오픈지원: 특별교육·이수증 없음 · 근로자는 모두 보통인부 · 작업허가서·업체 순회점검 작성 없음 */
       open: isOpenInd(b.industry) || j.kind === 'OPEN', trades: (isOpenInd(b.industry) || j.kind === 'OPEN') ? [] : eduTrades(PL),
+      /* F2.3 오픈지원: 이 매장 건 현장관리자 · TBM 날짜 (계약담당자 화면에서 보기) · 규칙을 아직 안 올렸으면 빈 목록 */
+      ...((isOpenInd(b.industry) || j.kind === 'OPEN') ? await Promise.all([
+        db.collection('SITE_MGRS').where('vendorUid', '==', a.uid).get().then(docs).then((l) => l.filter((x) => x.jobId === j.id && x.companyId === b.id)).catch(() => []),
+        db.collection('TBMS').where('vendorUid', '==', a.uid).get().then(docs).then((l) => l.filter((x) => x.jobId === j.id && x.companyId === b.id)).catch(() => [])])
+        .then(([sm, tb]) => ({ siteMgrs: sm.sort((p, q) => String(q.designatedAt).localeCompare(String(p.designatedAt))).map(smView), tbms: tb.sort((p, q) => String(q.date).localeCompare(String(p.date))).map((x) => ({ date: x.date, n: (x.photos || []).length, by: x.by || '', photos: x.photos || [] })) })) : {}),
       todayCrew: tc ? day(tc) : null, history: cr.slice(0, 30).map(day), siteManager: tc ? tc.siteManager : sm0,
       // F1.8a 오늘 인원 기본 체크: 오늘 저장한 인원 → 없으면 가장 최근 날 인원 → 없으면 등록된 전원
       crewDefault: ((tc || cr[0]) ? ((tc || cr[0]).workers || []).map((w) => w.id) : ws.map((w) => w.id)).filter((id) => ws.some((w) => w.id === id)),
@@ -1138,9 +1145,11 @@
   API.mgrBoard = async (a) => {
     const b = await openOwner(a), t = today();
     const [ms, ivs, jm, jvs] = await Promise.all(['OPEN_MGRS', 'MGR_INVITES', 'JOB_MGRS'].map((c) => db.collection(c).where('vendorUid', '==', a.uid).get().then(docs).then((l) => l.filter((x) => x.companyId === b.id))).concat([myAssign(a, b)]));
-    const js = await Promise.all(jvs.map((v) => db.collection('JOBS').doc(v.jobId).get().then((s) => (s.exists ? s.data() : null)).catch(() => null)));
+    const [js, roster] = await Promise.all([Promise.all(jvs.map((v) => db.collection('JOBS').doc(v.jobId).get().then((s) => (s.exists ? s.data() : null)).catch(() => null))),
+      db.collection('SITE_MGRS').where('vendorUid', '==', a.uid).get().then(docs).then((l) => l.filter((x) => x.companyId === b.id)).catch(() => [])]);  // F2.3 인력 명부
     const now0 = now();
     return { company: b.company, today: t, days: MGR_INVITE_DAYS,
+      roster: roster.sort((p, q) => String(q.designatedAt).localeCompare(String(p.designatedAt))).map(smView),
       mgrs: ms.sort((p, q) => (p.status === q.status ? String(p.name).localeCompare(String(q.name)) : p.status === 'ACTIVE' ? -1 : 1)).map((m) => mgrView(m, jm)),
       invites: ivs.filter((x) => !x.usedAt && String(x.expAt || '') > now0).sort((p, q) => String(q.createdAt).localeCompare(String(p.createdAt))).map((x) => ({ token: x.token, link: mgrLink(x.token), createdAt: x.createdAt, expAt: x.expAt })),
       used: ivs.filter((x) => x.usedAt).length,
@@ -1205,10 +1214,16 @@
   API.mgrHome = async (a) => {
     const ms = await myMgrs(a), act = ms.filter((m) => m.status === 'ACTIVE');
     const jm = act.length ? docs(await db.collection('JOB_MGRS').where('email', '==', a.email).get()).filter((x) => act.some((m) => m.companyId === x.companyId)) : [];
-    const js = await Promise.all(jm.map((x) => db.collection('JOBS').doc(x.jobId).get().then((s) => (s.exists ? s.data() : null)).catch(() => null)));
+    const [js, sms, ivs] = await Promise.all([Promise.all(jm.map((x) => db.collection('JOBS').doc(x.jobId).get().then((s) => (s.exists ? s.data() : null)).catch(() => null))),
+      db.collection('SITE_MGRS').where('designatedBy', '==', a.email).get().then(docs).catch(() => []),  // F2.3 내가 지정한 현장관리자
+      db.collection('SM_INVITES').where('createdBy', '==', a.email).get().then(docs).catch(() => [])]);
+    const n0 = now();
     return { today: today(), email: a.email, mgrs: ms.map((m) => ({ companyId: m.companyId, company: m.company, name: m.name, status: m.status })),
-      jobs: jm.map((x, i) => { const j = js[i]; return j && j.status !== 'ENDED' ? { id: j.id, title: j.title, storeName: j.storeName, address: j.address || '', startDate: j.startDate, endDate: j.endDate, hostName: j.hostName, company: x.company, companyId: x.companyId } : null; })
-        .filter(Boolean).sort((p, q) => String(p.startDate).localeCompare(String(q.startDate))) };
+      jobs: jm.map((x, i) => { const j = js[i]; return j && j.status !== 'ENDED' ? { id: j.id, title: j.title, storeName: j.storeName, address: j.address || '', startDate: j.startDate, endDate: j.endDate, hostName: j.hostName, company: x.company, companyId: x.companyId,
+        siteMgrs: sms.filter((s) => s.jobId === j.id).sort((p, q) => String(q.designatedAt).localeCompare(String(p.designatedAt))).map(smView),
+        invite: (ivs.filter((v) => v.jobId === j.id && !v.usedAt && String(v.expAt || '') > n0).sort((p, q) => String(q.createdAt).localeCompare(String(p.createdAt)))[0] || null) } : null; })
+        .filter(Boolean).map((j) => (j.invite ? Object.assign(j, { invite: { link: smLink(j.invite.token), token: j.invite.token, expAt: j.invite.expAt } }) : j))
+        .sort((p, q) => String(p.startDate).localeCompare(String(q.startDate))), rules: WORK_RULES.length };
   };
   /** [로그인한 누구나] 초대 링크 정보 (업체명 · 사용 여부) */
   API.mgrInviteInfo = async (a, token) => {
@@ -1224,6 +1239,48 @@
     const r = await relay('mgrJoin', { token: String(token || '').toLowerCase(), name: tidy(name, 30) });
     return Object.assign(await API.portalData(a), { joined: r });
   };
+  /* ---------- F2.3 오픈지원 현장관리자 (= 관리감독자 · 대표 근로자) ----------
+   *  인력관리자: 배정된 매장 건에서 [현장관리자 지정 QR] (SM_INVITES · 1번 · 2일) → 대표 근로자가 찍고 등록
+   *  현장관리자: 등록·화면·TBM·직접 등록·조치는 모두 중계 서버 (Relay.gs sm*_)
+   *  인력 명부 = SITE_MGRS (계약담당자 · 지정한 인력관리자 · 본인이 봄) */
+  const SM_INVITE_HOURS = 48;
+  const smLink = (token) => location.origin + location.pathname + '?review=SMG-' + token;
+  const smView = (x) => ({ jobId: x.jobId, name: x.name, email: x.email, status: x.status, designatedAt: x.designatedAt || '', designatedBy: x.designatedBy || '', designatedName: x.designatedName || '',
+    storeName: x.storeName || '', jobTitle: x.jobTitle || '', startDate: x.startDate || '', endDate: x.endDate || '', replacedAt: x.replacedAt || '', company: x.company || '' });
+  /** [인력관리자] 현장관리자 지정 QR 만들기 (배정된 진행 중 매장 건만) */
+  API.smInvite = async (a, jobId) => {
+    const id = tidy(jobId, 40), jm = await db.collection('JOB_MGRS').doc(id + '_' + a.email).get().catch(() => null);
+    if (!jm || !jm.exists) fail('이 매장 건에 배정된 인력관리자가 아닙니다.');
+    const x = jm.data(), m = (await myMgrs(a)).find((y) => y.companyId === x.companyId && y.status === 'ACTIVE'); if (!m) fail('사용 중지된 인력관리자입니다. 계약담당자에게 문의해 주세요.');
+    const js = await db.collection('JOBS').doc(id).get(); if (!js.exists || js.data().status === 'ENDED') fail('끝난 매장 건입니다.');
+    const j = js.data(), token = newToken(), t = now();
+    await db.collection('SM_INVITES').doc(token).set({ token, jobId: id, companyId: x.companyId, company: x.company || m.company, vendorUid: x.vendorUid, storeName: j.storeName || '', jobTitle: j.title || '',
+      createdBy: a.email, createdName: m.name, createdAt: t, expAt: new Date(Date.now() + SM_INVITE_HOURS * 3600000).toISOString(), usedAt: '', usedBy: '', usedName: '' });
+    audit(a, x.companyId, 'SITE_MGR_INVITE', id + ' ' + token.slice(0, 8));
+    return { link: smLink(token), token, expAt: new Date(Date.now() + SM_INVITE_HOURS * 3600000).toISOString() };
+  };
+  /** [로그인한 누구나] 지정 QR 정보 (매장 · 업체 · 사용 여부 · 작업 안전 수칙) */
+  API.smInviteInfo = async (a, token) => {
+    const id = String(token || '').toLowerCase(); if (!/^[a-f0-9]{32}$/.test(id)) fail('잘못된 지정 QR입니다.');
+    const s = await db.collection('SM_INVITES').doc(id).get().catch(() => null); if (!s || !s.exists) fail('지정 QR을 찾을 수 없습니다. 인력관리자에게 새 QR을 요청해 주세요.');
+    const x = s.data(), mine = await db.collection('SITE_MGRS').doc(x.jobId + '_' + a.email).get().catch(() => null);
+    return { company: x.company, storeName: x.storeName, jobTitle: x.jobTitle, by: x.createdName || '', used: !!x.usedAt, usedByMe: !!x.usedAt && x.usedBy === a.email, expired: !x.usedAt && String(x.expAt || '') < now(),
+      self: x.createdBy === a.email, owner: x.vendorUid === a.uid, already: mine && mine.exists && mine.data().status === 'ACTIVE' ? { name: mine.data().name } : null, rules: WORK_RULES, pledge: WORK_PLEDGE };
+  };
+  /** [현장관리자] 지정 QR로 등록 (이름 · 수칙 서약) */
+  API.smJoin = async (a, token, info) => {
+    if (a.mode === 'STAFF') fail('다이소 담당자로 접속했습니다. 로그인 화면에서 [협력업체]를 고르고 다시 로그인해 주세요.');
+    const r = await relay('smJoin', { token: String(token || '').toLowerCase(), info: { name: tidy(info?.name, 30), agree: !!info?.agree } });
+    return Object.assign(await API.portalData(a), { smJoined: r });
+  };
+  /** [현장관리자] 내 화면 · 사진 · TBM · 직접 등록 · 조치 (중계 서버가 권한 확인) */
+  API.smHome = async (a) => relay('smHome', {}, true);
+  API.smPhoto = async (a, jobId, f) => { if (!isPhoto(f)) fail('사진(JPG·PNG)만 올릴 수 있습니다.'); return relay('smPhoto', { jobId: tidy(jobId, 40), f }); };
+  API.smTbm = async (a, jobId, photos) => relay('smTbm', { jobId: tidy(jobId, 40), photos: photoIds(photos, 10) });
+  API.smAddWorker = async (a, jobId, info, rid) => relay('smWorker', { jobId: tidy(jobId, 40), info: { name: tidy(info?.name, 40), agree: !!info?.agree }, rid: String(rid || '') });
+  API.smResolve = async (a, findingId, d) => relay('smResolve', { findingId: tidy(findingId, 40), d: { memo: tidy(d?.memo, 500), date: tidy(d?.date, 10), photos: photoIds(d?.photos, 5) } });
+  /** 내가 현장관리자인 매장 건 (portalData) · 보안 규칙을 아직 안 올렸으면 빈 목록 */
+  const mySms = (a) => db.collection('SITE_MGRS').where('email', '==', a.email).get().then(docs).catch(() => []);
   /** [업체] QR 새로 만들기 (링크가 외부로 퍼졌을 때) — 이전 QR은 바로 사용 불가 */
   API.renewWorkerQr = async (a, jobId) => {
     const b = await execVendor(a), { jv, j } = await vendorJobOf(a, b, jobId, true);
