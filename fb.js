@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.27 F2.3';
+  const VERSION = '26.10.27 F2.3a';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   /* F2.1 업종 '오픈지원' 추가 (매장 오픈 인력 · 인력사무소형) · 인테리어(마감) = 지금까지의 공사 흐름 그대로 */
   const CFG = {
@@ -507,7 +507,7 @@
       company: publicCompany(b),
       role: st ? st.role : 'VENDOR', industries: CFG.INDUSTRIES, fields: FIELDS, stepNames: STEP_NAMES, industryFields: (b && INDUSTRY_FIELDS[b.industry]) || [],
       steps, documents, docBoard, forms, appVersion: VERSION, mode: a.mode,
-      sm: sm0.some((s) => s.status === 'ACTIVE') ? { name: sm0.find((s) => s.status === 'ACTIVE').name, n: sm0.filter((s) => s.status === 'ACTIVE').length } : null,  // F2.3 현장관리자 (끝난 매장 건은 smHome이 거름)
+      sm: sm0.some((s) => s.status === 'ACTIVE') ? { name: sm0.find((s) => s.status === 'ACTIVE').name, n: sm0.filter((s) => s.status === 'ACTIVE').length } : null,  // F2.3 현장관리자 (끝난 오픈 매장은 smHome이 거름)
       mgr: mg.length ? { name: (mg.find((m) => m.status === 'ACTIVE') || mg[0]).name, active: mg.some((m) => m.status === 'ACTIVE'), companies: mg.map((m) => ({ company: m.company, status: m.status })) } : null,
       badges: bd, loginUrl: location.origin + location.pathname,
     };
@@ -840,7 +840,7 @@
    *  JOB_VENDORS/{공사ID_업체ID}   배정 (workerToken = 작업자 등록 QR 값)
    *  WORKERS/{WK-…}               작업자 명단 = 신규자 교육일지 (본인 QR 등록은 중계 서버가 씀)
    *  CREW/{공사ID_업체ID_날짜}      오늘 작업 인원 = 그날 작업안전수칙 서명 */
-  /* F2.1 OPEN = 오픈지원 매장 건 (업종 '오픈지원' 업체만 배정) · WORK·CONTRACT에는 오픈지원 업체 배정 안 함 */
+  /* F2.1 OPEN = 오픈지원 매장 (업종 '오픈지원' 업체만 배정) · WORK·CONTRACT에는 오픈지원 업체 배정 안 함 */
   const JOB_KINDS = { WORK: '매장 공사', OPEN: '오픈지원 (매장 오픈)', CONTRACT: '계약 단위(입고도우미·재고조사 등)' };
   const MEET_KINDS = { COUNCIL: '안전보건협의체 회의', JOINT: '합동안전보건점검' };
   const WORK_RULES = ['작업에 적합한 단정한 복장을 착용한다.',
@@ -994,9 +994,9 @@
     // 계약 전 평가 유효기간(1년)이 지난 업체는 새로 배정하지 않음 (이미 배정된 업체는 그대로)
     const add = pick.filter((c) => !have.some((h) => h.companyId === c)).map((c) => choices.find((x) => x.id === c));
     const exp = add.filter((v) => v.expired && !CFG.TEST_SKIP_FILES);
-    /* F2.1 오픈지원 매장 건에는 오픈지원 업체만 · 매장 공사·계약 단위에는 오픈지원 업체를 새로 배정하지 않음 (이미 배정된 업체는 그대로) */
+    /* F2.1 오픈지원 매장에는 오픈지원 업체만 · 매장 공사·계약 단위에는 오픈지원 업체를 새로 배정하지 않음 (이미 배정된 업체는 그대로) */
     const mis = add.filter((v) => (kind === 'OPEN') !== isOpenInd(v.industry));
-    if (mis.length) fail(kind === 'OPEN' ? '오픈지원 매장 건에는 업종이 「오픈지원」인 업체만 배정할 수 있습니다:\n- ' + mis.map((v) => v.company + ' (' + v.industry + ')').join('\n- ') : '업종이 「오픈지원」인 업체는 구분을 「오픈지원 (매장 오픈)」으로 골라야 배정할 수 있습니다:\n- ' + mis.map((v) => v.company).join('\n- '));
+    if (mis.length) fail(kind === 'OPEN' ? '오픈지원 매장에는 업종이 「오픈지원」인 업체만 배정할 수 있습니다:\n- ' + mis.map((v) => v.company + ' (' + v.industry + ')').join('\n- ') : '업종이 「오픈지원」인 업체는 구분을 「오픈지원 (매장 오픈)」으로 골라야 배정할 수 있습니다:\n- ' + mis.map((v) => v.company).join('\n- '));
     if (exp.length) fail('계약 전 평가 유효기간(1년)이 지난 업체는 새로 배정할 수 없습니다.\n업체가 계약 전 서류를 고쳐 다시 제출하고 승인받으면 배정할 수 있습니다:\n- ' + exp.map((v) => v.company + ' (유효기간 ~' + v.valid.until + ')').join('\n- '));
     // 체크 해제한 업체 배정 취소 (그 업체의 작업자·작업 기록이 있으면 취소 불가)
     const drop = have.filter((v) => !want.includes(v.companyId));
@@ -1011,7 +1011,7 @@
     if (cur) b.update(ref, o); else b.set(ref, { id, ...o, hostEmail: a.email, hostName: s.name, status: 'OPEN', createdAt: now(), extensions: [], endedAt: '', endedBy: '' });
     add.forEach((v) => b.set(db.collection('JOB_VENDORS').doc(id + '_' + v.id), { jobId: id, companyId: v.id, company: v.company, trade: v.industry, vendorUid: v.uid, addedBy: a.email, addedAt: now(), workerToken: '' }));
     drop.forEach((v) => b.delete(db.collection('JOB_VENDORS').doc(v.id)));
-    /* F2.2 배정 취소한 업체의 인력관리자 배정도 같이 지움 (그 인력관리자에게 이 매장 건이 안 보이게) */
+    /* F2.2 배정 취소한 업체의 인력관리자 배정도 같이 지움 (그 인력관리자에게 이 오픈 매장이 안 보이게) */
     if (drop.length) docs(await db.collection('JOB_MGRS').where('jobId', '==', id).get().catch(() => ({ docs: [] }))).filter((x) => drop.some((v) => v.companyId === x.companyId)).forEach((x) => b.delete(db.collection('JOB_MGRS').doc(x.id)));
     await b.commit();
     if (drop.length) audit(a, '', 'JOB_VENDOR_REMOVE', id + ' ' + drop.map((v) => v.company).join(', '));
@@ -1081,7 +1081,7 @@
       // F1.8f 메인 화면 📢 미팅 알림 (도급인이 만든 협의체·합동점검) · 보안 규칙을 아직 안 올렸으면 알림만 빠짐
       db.collection('MEET_NOTICES').where('v.' + a.uid, '==', true).get().then(docs).catch(() => []),
       db.collection('ATTEND').where('uid', '==', a.uid).get().then(docs).catch(() => []),
-      isOpenInd(b.industry) ? db.collection('JOB_MGRS').where('vendorUid', '==', a.uid).get().then(docs).catch(() => []) : []]);  // F2.2 매장 건별 인력관리자 배정
+      isOpenInd(b.industry) ? db.collection('JOB_MGRS').where('vendorUid', '==', a.uid).get().then(docs).catch(() => []) : []]);  // F2.2 오픈 매장별 인력관리자 배정
     const jobIds = new Set(jvs.map((v) => v.jobId)), went = new Set(ats.filter((x) => x.status !== 'REJECTED').map((x) => x.meetingId));
     const meets = nts.filter((m) => m.done !== 'Y' && m.date >= t && jobIds.has(m.jobId)).sort((x, y) => (x.date + x.time < y.date + y.time ? -1 : 1))
       .map((m) => ({ id: m.id, jobId: m.jobId, title: m.title, store: m.store, date: m.date, time: m.time || '', place: m.place || '', kinds: (m.kinds || []).map((k) => MEET_KINDS[k]).filter(Boolean), attended: went.has(m.id) }));
@@ -1108,7 +1108,7 @@
       workers: ws.map((w) => ({ id: w.id, name: w.name, role: w.role, trade: w.trade, tradeKey: w.tradeKey || '', special: w.special || [], eduHours: Number(w.eduHours) || 1, method: w.method, eduAt: w.eduAt, email: w.email, certDoc: w.certDoc || '', certAt: w.certAt || '', confirmBy: w.confirmBy || '' })),  // F2.3 confirmBy = 현장관리자 직접 등록
       /* F2.1 오픈지원: 특별교육·이수증 없음 · 근로자는 모두 보통인부 · 작업허가서·업체 순회점검 작성 없음 */
       open: isOpenInd(b.industry) || j.kind === 'OPEN', trades: (isOpenInd(b.industry) || j.kind === 'OPEN') ? [] : eduTrades(PL),
-      /* F2.3 오픈지원: 이 매장 건 현장관리자 · TBM 날짜 (계약담당자 화면에서 보기) · 규칙을 아직 안 올렸으면 빈 목록 */
+      /* F2.3 오픈지원: 이 오픈 매장 현장관리자 · TBM 날짜 (계약담당자 화면에서 보기) · 규칙을 아직 안 올렸으면 빈 목록 */
       ...((isOpenInd(b.industry) || j.kind === 'OPEN') ? await Promise.all([
         db.collection('SITE_MGRS').where('vendorUid', '==', a.uid).get().then(docs).then((l) => l.filter((x) => x.jobId === j.id && x.companyId === b.id)).catch(() => []),
         db.collection('TBMS').where('vendorUid', '==', a.uid).get().then(docs).then((l) => l.filter((x) => x.jobId === j.id && x.companyId === b.id)).catch(() => [])])
@@ -1129,8 +1129,8 @@
     return jobPack(a, b, j, jv);
   };
   /* ---------- F2.2 오픈지원 인력관리자 (= 안전관리책임자 대리) ----------
-   *  계약담당자(업체 대표 계정): 초대 링크 · 직접 입력 · 사용 중지 · 매장 건 배정
-   *  인력관리자: 본인 Google 계정으로 초대 링크 → 이름 입력 (등록은 중계 서버) → 배정된 진행 중 매장 건만 보임
+   *  계약담당자(업체 대표 계정): 초대 링크 · 직접 입력 · 사용 중지 · 오픈 매장 배정
+   *  인력관리자: 본인 Google 계정으로 초대 링크 → 이름 입력 (등록은 중계 서버) → 배정된 진행 중 오픈 매장만 보임
    *  OPEN_MGRS/{업체ID_Gmail} · MGR_INVITES/{토큰} · JOB_MGRS/{공사ID_Gmail} · 연락처는 받지 않음 */
   const MGR_INVITE_DAYS = 7;
   const mgrLink = (token) => location.origin + location.pathname + '?review=MGR-' + token;
@@ -1141,7 +1141,7 @@
     return b;
   }
   const mgrView = (m, jm) => ({ email: m.email, name: m.name, status: m.status, method: m.method, joinedAt: m.joinedAt || '', createdAt: m.createdAt || '', jobs: jm.filter((x) => x.email === m.email).map((x) => x.jobId) });
-  /** [계약담당자] 인력관리자 화면 (명단 · 초대 링크 · 진행 중 매장 건과 배정) */
+  /** [계약담당자] 인력관리자 화면 (명단 · 초대 링크 · 진행 중 오픈 매장과 배정) */
   API.mgrBoard = async (a) => {
     const b = await openOwner(a), t = today();
     const [ms, ivs, jm, jvs] = await Promise.all(['OPEN_MGRS', 'MGR_INVITES', 'JOB_MGRS'].map((c) => db.collection(c).where('vendorUid', '==', a.uid).get().then(docs).then((l) => l.filter((x) => x.companyId === b.id))).concat([myAssign(a, b)]));
@@ -1185,7 +1185,7 @@
     audit(a, b.id, 'MGR_ADD', nm + ' ' + em);
     return API.mgrBoard(a);
   };
-  /** [계약담당자] 사용 중지 · 다시 사용 (기록은 남김 · 중지하면 배정된 매장 건도 안 보임) */
+  /** [계약담당자] 사용 중지 · 다시 사용 (기록은 남김 · 중지하면 배정된 오픈 매장도 안 보임) */
   API.mgrSetStatus = async (a, email, on) => {
     const b = await openOwner(a), em = lower(email), ref = db.collection('OPEN_MGRS').doc(b.id + '_' + em), s = await ref.get().catch(() => null);
     if (!s || !s.exists || s.data().vendorUid !== a.uid) fail('인력관리자를 찾을 수 없습니다.');
@@ -1193,7 +1193,7 @@
     audit(a, b.id, on ? 'MGR_RESUME' : 'MGR_STOP', s.data().name + ' ' + em);
     return API.mgrBoard(a);
   };
-  /** [계약담당자] 매장 건에 인력관리자 배정 (체크한 사람만 남김 · 종료된 매장 건은 못 바꿈) */
+  /** [계약담당자] 오픈 매장에 인력관리자 배정 (체크한 사람만 남김 · 종료된 오픈 매장은 못 바꿈) */
   API.mgrAssign = async (a, jobId, emails) => {
     const b = await openOwner(a), { j, jv } = await vendorJobOf(a, b, jobId, true);
     const ms = docs(await db.collection('OPEN_MGRS').where('vendorUid', '==', a.uid).get()).filter((m) => m.companyId === b.id);
@@ -1210,7 +1210,7 @@
   };
   /** 내가 인력관리자로 등록된 업체 (portalData · 인력관리자 화면) · 보안 규칙을 아직 안 올렸으면 빈 목록 */
   const myMgrs = (a) => db.collection('OPEN_MGRS').where('email', '==', a.email).get().then(docs).catch(() => []);
-  /** [인력관리자] 내 화면: 배정된 진행 중 매장 건 (끝난 매장 건은 안 보임) */
+  /** [인력관리자] 내 화면: 배정된 진행 중 오픈 매장 (끝난 오픈 매장은 안 보임) */
   API.mgrHome = async (a) => {
     const ms = await myMgrs(a), act = ms.filter((m) => m.status === 'ACTIVE');
     const jm = act.length ? docs(await db.collection('JOB_MGRS').where('email', '==', a.email).get()).filter((x) => act.some((m) => m.companyId === x.companyId)) : [];
@@ -1240,19 +1240,19 @@
     return Object.assign(await API.portalData(a), { joined: r });
   };
   /* ---------- F2.3 오픈지원 현장관리자 (= 관리감독자 · 대표 근로자) ----------
-   *  인력관리자: 배정된 매장 건에서 [현장관리자 지정 QR] (SM_INVITES · 1번 · 2일) → 대표 근로자가 찍고 등록
+   *  인력관리자: 배정된 오픈 매장에서 [현장관리자 지정 QR] (SM_INVITES · 1번 · 2일) → 대표 근로자가 찍고 등록
    *  현장관리자: 등록·화면·TBM·직접 등록·조치는 모두 중계 서버 (Relay.gs sm*_)
    *  인력 명부 = SITE_MGRS (계약담당자 · 지정한 인력관리자 · 본인이 봄) */
   const SM_INVITE_HOURS = 48;
   const smLink = (token) => location.origin + location.pathname + '?review=SMG-' + token;
   const smView = (x) => ({ jobId: x.jobId, name: x.name, email: x.email, status: x.status, designatedAt: x.designatedAt || '', designatedBy: x.designatedBy || '', designatedName: x.designatedName || '',
     storeName: x.storeName || '', jobTitle: x.jobTitle || '', startDate: x.startDate || '', endDate: x.endDate || '', replacedAt: x.replacedAt || '', company: x.company || '' });
-  /** [인력관리자] 현장관리자 지정 QR 만들기 (배정된 진행 중 매장 건만) */
+  /** [인력관리자] 현장관리자 지정 QR 만들기 (배정된 진행 중 오픈 매장만) */
   API.smInvite = async (a, jobId) => {
     const id = tidy(jobId, 40), jm = await db.collection('JOB_MGRS').doc(id + '_' + a.email).get().catch(() => null);
-    if (!jm || !jm.exists) fail('이 매장 건에 배정된 인력관리자가 아닙니다.');
+    if (!jm || !jm.exists) fail('이 오픈 매장에 배정된 인력관리자가 아닙니다.');
     const x = jm.data(), m = (await myMgrs(a)).find((y) => y.companyId === x.companyId && y.status === 'ACTIVE'); if (!m) fail('사용 중지된 인력관리자입니다. 계약담당자에게 문의해 주세요.');
-    const js = await db.collection('JOBS').doc(id).get(); if (!js.exists || js.data().status === 'ENDED') fail('끝난 매장 건입니다.');
+    const js = await db.collection('JOBS').doc(id).get(); if (!js.exists || js.data().status === 'ENDED') fail('끝난 오픈 매장입니다.');
     const j = js.data(), token = newToken(), t = now();
     await db.collection('SM_INVITES').doc(token).set({ token, jobId: id, companyId: x.companyId, company: x.company || m.company, vendorUid: x.vendorUid, storeName: j.storeName || '', jobTitle: j.title || '',
       createdBy: a.email, createdName: m.name, createdAt: t, expAt: new Date(Date.now() + SM_INVITE_HOURS * 3600000).toISOString(), usedAt: '', usedBy: '', usedName: '' });
@@ -1279,7 +1279,7 @@
   API.smTbm = async (a, jobId, photos) => relay('smTbm', { jobId: tidy(jobId, 40), photos: photoIds(photos, 10) });
   API.smAddWorker = async (a, jobId, info, rid) => relay('smWorker', { jobId: tidy(jobId, 40), info: { name: tidy(info?.name, 40), agree: !!info?.agree }, rid: String(rid || '') });
   API.smResolve = async (a, findingId, d) => relay('smResolve', { findingId: tidy(findingId, 40), d: { memo: tidy(d?.memo, 500), date: tidy(d?.date, 10), photos: photoIds(d?.photos, 5) } });
-  /** 내가 현장관리자인 매장 건 (portalData) · 보안 규칙을 아직 안 올렸으면 빈 목록 */
+  /** 내가 현장관리자인 오픈 매장 (portalData) · 보안 규칙을 아직 안 올렸으면 빈 목록 */
   const mySms = (a) => db.collection('SITE_MGRS').where('email', '==', a.email).get().then(docs).catch(() => []);
   /** [업체] QR 새로 만들기 (링크가 외부로 퍼졌을 때) — 이전 QR은 바로 사용 불가 */
   API.renewWorkerQr = async (a, jobId) => {
@@ -1816,7 +1816,7 @@
       const w = docs(await db.collection('WORKERS').where('uid', '==', a.uid).get().catch(() => ({ docs: [] }))).find((x) => x.jobId === L.jobId && x.active !== 'N' && vs.some((v) => v.companyId === x.companyId));
       if (w) return rec({ name: w.name, side: 'VENDOR', companyId: w.companyId, company: w.company || (vs.find((v) => v.companyId === w.companyId) || {}).company || '', role: ATTEND_ROLES[1], status: 'OK', workerId: w.id });
     }
-    /* F2.2 이 매장 건에 배정된 오픈지원 인력관리자 본인 계정 → 바로 참석 (역할 = 인력관리자) */
+    /* F2.2 이 오픈 매장에 배정된 오픈지원 인력관리자 본인 계정 → 바로 참석 (역할 = 인력관리자) */
     if (!info) {
       const jms = await db.collection('JOB_MGRS').doc(L.jobId + '_' + a.email).get().catch(() => null), x = jms && jms.exists ? jms.data() : null;
       const m = x && vs.some((v) => v.companyId === x.companyId) ? (await myMgrs(a)).find((y) => y.companyId === x.companyId && y.status === 'ACTIVE') : null;
