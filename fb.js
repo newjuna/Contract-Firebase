@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.25 F2.1';
+  const VERSION = '26.10.26 F2.2';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   /* F2.1 업종 '오픈지원' 추가 (매장 오픈 인력 · 인력사무소형) · 인테리어(마감) = 지금까지의 공사 흐름 그대로 */
   const CFG = {
@@ -479,9 +479,10 @@
   }
   API.portalData = async (a) => {
     const memo = {}, st = await staffOf(a, memo), b = await myCompany(a), verified = !!b && b.status === 'VERIFIED';
-    const [isApprover, V, bd] = await Promise.all([
+    const [isApprover, V, bd, mg] = await Promise.all([
       isInternalEmail(a.email) ? db.collection('COMPANIES').where('approverEmail', '==', a.email).limit(1).get().then((s) => !s.empty) : false,
-      verified ? vendorBundle(a, b) : null, badges(a, memo)]);
+      verified ? vendorBundle(a, b) : null, badges(a, memo),
+      !b && !st && a.mode !== 'STAFF' ? myMgrs(a) : []]);  // F2.2 업체 계정이 아니면 인력관리자인지 확인
     let steps = [], documents = [], docBoard = null, forms = null;
     if (V) {
       steps = V.profiles.map((x) => ({ step: Number(x.step), data: staleForm(b, x.updatedAt) ? {} : (x.data || {}) }));
@@ -505,6 +506,7 @@
       company: publicCompany(b),
       role: st ? st.role : 'VENDOR', industries: CFG.INDUSTRIES, fields: FIELDS, stepNames: STEP_NAMES, industryFields: (b && INDUSTRY_FIELDS[b.industry]) || [],
       steps, documents, docBoard, forms, appVersion: VERSION, mode: a.mode,
+      mgr: mg.length ? { name: (mg.find((m) => m.status === 'ACTIVE') || mg[0]).name, active: mg.some((m) => m.status === 'ACTIVE'), companies: mg.map((m) => ({ company: m.company, status: m.status })) } : null,
       badges: bd, loginUrl: location.origin + location.pathname,
     };
   };
@@ -1007,6 +1009,8 @@
     if (cur) b.update(ref, o); else b.set(ref, { id, ...o, hostEmail: a.email, hostName: s.name, status: 'OPEN', createdAt: now(), extensions: [], endedAt: '', endedBy: '' });
     add.forEach((v) => b.set(db.collection('JOB_VENDORS').doc(id + '_' + v.id), { jobId: id, companyId: v.id, company: v.company, trade: v.industry, vendorUid: v.uid, addedBy: a.email, addedAt: now(), workerToken: '' }));
     drop.forEach((v) => b.delete(db.collection('JOB_VENDORS').doc(v.id)));
+    /* F2.2 배정 취소한 업체의 인력관리자 배정도 같이 지움 (그 인력관리자에게 이 매장 건이 안 보이게) */
+    if (drop.length) docs(await db.collection('JOB_MGRS').where('jobId', '==', id).get().catch(() => ({ docs: [] }))).filter((x) => drop.some((v) => v.companyId === x.companyId)).forEach((x) => b.delete(db.collection('JOB_MGRS').doc(x.id)));
     await b.commit();
     if (drop.length) audit(a, '', 'JOB_VENDOR_REMOVE', id + ' ' + drop.map((v) => v.company).join(', '));
     audit(a, '', cur ? 'JOB_EDIT' : 'JOB_ADD', id + ' ' + title + ' 업체 ' + pick.length);
@@ -1019,7 +1023,7 @@
   API.deleteJob = async (a, jobId) => {
     const s = await staffOnly(a), id = tidy(jobId, 40), js = await db.collection('JOBS').doc(id).get(), j = js.exists ? js.data() : null;
     if (!j || !canSeeJob(a, s, j)) fail('삭제할 수 없는 공사입니다.');
-    const COLS = ['JOB_VENDORS', 'WORKERS', 'CREW', 'PERMITS', 'INSPECTIONS', 'FINDINGS', 'MEETINGS', 'ATTEND', 'JOB_EVALS'], lists = await Promise.all(COLS.map((n) => db.collection(n).where('jobId', '==', id).get()));
+    const COLS = ['JOB_VENDORS', 'WORKERS', 'CREW', 'PERMITS', 'INSPECTIONS', 'FINDINGS', 'MEETINGS', 'ATTEND', 'JOB_EVALS', 'JOB_MGRS'], lists = await Promise.all(COLS.map((n) => db.collection(n).where('jobId', '==', id).get().catch((e) => { if (n === 'JOB_MGRS') return { docs: [] }; throw e; })));  // F2.2 JOB_MGRS (규칙을 아직 안 올렸으면 건너뜀)
     const b = db.batch(), cnt = {};
     COLS.forEach((n, i) => { cnt[n] = lists[i].docs.length; lists[i].docs.forEach((d) => b.delete(d.ref)); });
     lists[COLS.indexOf('MEETINGS')].docs.forEach((d) => { if (d.data().token) b.delete(db.collection('MEET_LINKS').doc(d.data().token)); });  // 참석 QR도 무효
@@ -1070,11 +1074,12 @@
   API.myJobs = async (a) => {
     const b = await execVendor(a), t = today(), jvs = (await myAssign(a, b)).sort((x, y) => String(y.addedAt).localeCompare(String(x.addedAt)));
     const mineAll = (col) => db.collection(col).where('vendorUid', '==', a.uid).get().then(docs);
-    const [jobs, wks, crews, pms, inss, fds, nts, ats] = await Promise.all([
+    const [jobs, wks, crews, pms, inss, fds, nts, ats, jma] = await Promise.all([
       Promise.all(jvs.map((v) => db.collection('JOBS').doc(v.jobId).get().then((s) => (s.exists ? s.data() : null)).catch(() => null))), mineAll('WORKERS'), mineAll('CREW'), mineAll('PERMITS'), mineAll('INSPECTIONS'), mineAll('FINDINGS'),
       // F1.8f 메인 화면 📢 미팅 알림 (도급인이 만든 협의체·합동점검) · 보안 규칙을 아직 안 올렸으면 알림만 빠짐
       db.collection('MEET_NOTICES').where('v.' + a.uid, '==', true).get().then(docs).catch(() => []),
-      db.collection('ATTEND').where('uid', '==', a.uid).get().then(docs).catch(() => [])]);
+      db.collection('ATTEND').where('uid', '==', a.uid).get().then(docs).catch(() => []),
+      isOpenInd(b.industry) ? db.collection('JOB_MGRS').where('vendorUid', '==', a.uid).get().then(docs).catch(() => []) : []]);  // F2.2 매장 건별 인력관리자 배정
     const jobIds = new Set(jvs.map((v) => v.jobId)), went = new Set(ats.filter((x) => x.status !== 'REJECTED').map((x) => x.meetingId));
     const meets = nts.filter((m) => m.done !== 'Y' && m.date >= t && jobIds.has(m.jobId)).sort((x, y) => (x.date + x.time < y.date + y.time ? -1 : 1))
       .map((m) => ({ id: m.id, jobId: m.jobId, title: m.title, store: m.store, date: m.date, time: m.time || '', place: m.place || '', kinds: (m.kinds || []).map((k) => MEET_KINDS[k]).filter(Boolean), attended: went.has(m.id) }));
@@ -1082,6 +1087,7 @@
       const j = jobs[i]; if (!j) return null;
       const cr = crews.filter((c) => c.jobId === j.id && c.companyId === b.id), c = cr.find((x) => x.date === t);
       return { id: j.id, title: j.title, storeName: j.storeName, startDate: j.startDate, endDate: j.endDate, hostName: j.hostName, trade: v.trade, status: j.status,
+        mgrs: isOpenInd(b.industry) ? jma.filter((x) => x.jobId === j.id && x.companyId === b.id).map((x) => x.name) : null,  // F2.2 배정된 인력관리자 이름
         workers: wks.filter((w) => w.jobId === j.id && w.companyId === b.id && w.active !== 'N').length, todayCount: c ? Number(c.count) : 0, todayDone: !!c, end: jobEndInfo(j),
         stats: vjStats(cr, ...[pms, inss, fds].map((l) => l.filter((x) => x.jobId === j.id && x.companyId === b.id))),
         // F1.8f 메인 화면 '지적사항 조치' 목록 (미조치 + 조치 완료)
@@ -1114,6 +1120,109 @@
     const b = await execVendor(a), { jv, j } = await vendorJobOf(a, b, jobId);
     if (!jv.workerToken) { jv.workerToken = newToken(); await db.collection('JOB_VENDORS').doc(jv.id).update({ workerToken: jv.workerToken }); }
     return jobPack(a, b, j, jv);
+  };
+  /* ---------- F2.2 오픈지원 인력관리자 (= 안전관리책임자 대리) ----------
+   *  계약담당자(업체 대표 계정): 초대 링크 · 직접 입력 · 사용 중지 · 매장 건 배정
+   *  인력관리자: 본인 Google 계정으로 초대 링크 → 이름 입력 (등록은 중계 서버) → 배정된 진행 중 매장 건만 보임
+   *  OPEN_MGRS/{업체ID_Gmail} · MGR_INVITES/{토큰} · JOB_MGRS/{공사ID_Gmail} · 연락처는 받지 않음 */
+  const MGR_INVITE_DAYS = 7;
+  const mgrLink = (token) => location.origin + location.pathname + '?review=MGR-' + token;
+  const isGmailLike = (e) => /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(e);
+  async function openOwner(a) {
+    const b = await execVendor(a);
+    if (!isOpenInd(b.industry)) fail('업종이 「오픈지원」인 업체만 쓰는 기능입니다.');
+    return b;
+  }
+  const mgrView = (m, jm) => ({ email: m.email, name: m.name, status: m.status, method: m.method, joinedAt: m.joinedAt || '', createdAt: m.createdAt || '', jobs: jm.filter((x) => x.email === m.email).map((x) => x.jobId) });
+  /** [계약담당자] 인력관리자 화면 (명단 · 초대 링크 · 진행 중 매장 건과 배정) */
+  API.mgrBoard = async (a) => {
+    const b = await openOwner(a), t = today();
+    const [ms, ivs, jm, jvs] = await Promise.all(['OPEN_MGRS', 'MGR_INVITES', 'JOB_MGRS'].map((c) => db.collection(c).where('vendorUid', '==', a.uid).get().then(docs).then((l) => l.filter((x) => x.companyId === b.id))).concat([myAssign(a, b)]));
+    const js = await Promise.all(jvs.map((v) => db.collection('JOBS').doc(v.jobId).get().then((s) => (s.exists ? s.data() : null)).catch(() => null)));
+    const now0 = now();
+    return { company: b.company, today: t, days: MGR_INVITE_DAYS,
+      mgrs: ms.sort((p, q) => (p.status === q.status ? String(p.name).localeCompare(String(q.name)) : p.status === 'ACTIVE' ? -1 : 1)).map((m) => mgrView(m, jm)),
+      invites: ivs.filter((x) => !x.usedAt && String(x.expAt || '') > now0).sort((p, q) => String(q.createdAt).localeCompare(String(p.createdAt))).map((x) => ({ token: x.token, link: mgrLink(x.token), createdAt: x.createdAt, expAt: x.expAt })),
+      used: ivs.filter((x) => x.usedAt).length,
+      jobs: jvs.map((v, i) => { const j = js[i]; return j && j.status !== 'ENDED' ? { id: j.id, title: j.title, storeName: j.storeName, startDate: j.startDate, endDate: j.endDate, hostName: j.hostName, mgrs: jm.filter((x) => x.jobId === j.id).map((x) => x.email) } : null; })
+        .filter(Boolean).sort((p, q) => String(p.startDate).localeCompare(String(q.startDate))) };
+  };
+  /** [계약담당자] 초대 링크 만들기 (1명 1번 · 7일) */
+  API.mgrInvite = async (a) => {
+    const b = await openOwner(a), token = newToken(), t = now();
+    await db.collection('MGR_INVITES').doc(token).set({ token, companyId: b.id, company: b.company, vendorUid: a.uid, createdBy: a.email, createdAt: t,
+      expAt: new Date(Date.now() + MGR_INVITE_DAYS * 86400000).toISOString(), usedAt: '', usedBy: '', usedName: '' });
+    audit(a, b.id, 'MGR_INVITE', token.slice(0, 8));
+    return Object.assign(await API.mgrBoard(a), { newLink: mgrLink(token) });
+  };
+  /** [계약담당자] 아직 안 쓴 초대 링크 취소 */
+  API.mgrInviteCancel = async (a, token) => {
+    const b = await openOwner(a), id = tidy(token, 40).toLowerCase(), s = await db.collection('MGR_INVITES').doc(id).get();
+    if (!s.exists || s.data().vendorUid !== a.uid || s.data().companyId !== b.id) fail('취소할 초대 링크를 찾을 수 없습니다.');
+    if (s.data().usedAt) fail('이미 사용한 초대 링크입니다.');
+    await db.collection('MGR_INVITES').doc(id).delete(); audit(a, b.id, 'MGR_INVITE_CANCEL', id.slice(0, 8));
+    return API.mgrBoard(a);
+  };
+  /** [계약담당자] 이름 · Gmail 직접 입력 (초대 링크를 못 쓸 때) */
+  API.mgrAdd = async (a, name, email) => {
+    const b = await openOwner(a), nm = tidy(name, 30), em = lower(email);
+    if (!nm) fail('이름을 입력해 주세요.'); if (!isGmailLike(em)) fail('Google 계정(Gmail) 주소를 정확히 입력해 주세요. 예: hong123@gmail.com');
+    if (em === a.email) fail('계약담당자 본인 계정은 인력관리자로 등록할 수 없습니다.');
+    const id = b.id + '_' + em, ref = db.collection('OPEN_MGRS').doc(id);
+    const cur = await ref.get().catch(() => null);
+    if (cur && cur.exists) fail(cur.data().status === 'STOPPED' ? '사용 중지된 인력관리자입니다. 명단에서 [다시 사용]을 눌러 주세요.' : '이미 등록된 인력관리자입니다.');
+    const t = now();
+    await ref.set({ id, companyId: b.id, company: b.company, vendorUid: a.uid, email: em, uid: '', name: nm, method: 'MANUAL', status: 'ACTIVE', createdAt: t, createdBy: a.email, joinedAt: '', updatedAt: t, updatedBy: a.email });
+    audit(a, b.id, 'MGR_ADD', nm + ' ' + em);
+    return API.mgrBoard(a);
+  };
+  /** [계약담당자] 사용 중지 · 다시 사용 (기록은 남김 · 중지하면 배정된 매장 건도 안 보임) */
+  API.mgrSetStatus = async (a, email, on) => {
+    const b = await openOwner(a), em = lower(email), ref = db.collection('OPEN_MGRS').doc(b.id + '_' + em), s = await ref.get().catch(() => null);
+    if (!s || !s.exists || s.data().vendorUid !== a.uid) fail('인력관리자를 찾을 수 없습니다.');
+    await ref.update({ status: on ? 'ACTIVE' : 'STOPPED', updatedAt: now(), updatedBy: a.email });
+    audit(a, b.id, on ? 'MGR_RESUME' : 'MGR_STOP', s.data().name + ' ' + em);
+    return API.mgrBoard(a);
+  };
+  /** [계약담당자] 매장 건에 인력관리자 배정 (체크한 사람만 남김 · 종료된 매장 건은 못 바꿈) */
+  API.mgrAssign = async (a, jobId, emails) => {
+    const b = await openOwner(a), { j, jv } = await vendorJobOf(a, b, jobId, true);
+    const ms = docs(await db.collection('OPEN_MGRS').where('vendorUid', '==', a.uid).get()).filter((m) => m.companyId === b.id);
+    const want = [...new Set((emails || []).map(lower))].slice(0, 5), bad = want.filter((e) => !ms.some((m) => m.email === e && m.status === 'ACTIVE'));
+    if (bad.length) fail('사용 중인 인력관리자만 배정할 수 있습니다:\n- ' + bad.join('\n- '));
+    const have = docs(await db.collection('JOB_MGRS').where('vendorUid', '==', a.uid).get()).filter((x) => x.jobId === j.id && x.companyId === b.id);
+    const bt = db.batch(), t = now();
+    want.filter((e) => !have.some((h) => h.email === e)).forEach((e) => { const m = ms.find((x) => x.email === e);
+      bt.set(db.collection('JOB_MGRS').doc(j.id + '_' + e), { id: j.id + '_' + e, jobId: j.id, companyId: b.id, company: b.company, vendorUid: a.uid, email: e, name: m.name, assignedAt: t, assignedBy: a.email }); });
+    have.filter((h) => !want.includes(h.email)).forEach((h) => bt.delete(db.collection('JOB_MGRS').doc(h.id)));
+    await bt.commit();
+    audit(a, b.id, 'MGR_ASSIGN', j.id + ' ' + (want.join(', ') || '없음'));
+    return API.mgrBoard(a);
+  };
+  /** 내가 인력관리자로 등록된 업체 (portalData · 인력관리자 화면) · 보안 규칙을 아직 안 올렸으면 빈 목록 */
+  const myMgrs = (a) => db.collection('OPEN_MGRS').where('email', '==', a.email).get().then(docs).catch(() => []);
+  /** [인력관리자] 내 화면: 배정된 진행 중 매장 건 (끝난 매장 건은 안 보임) */
+  API.mgrHome = async (a) => {
+    const ms = await myMgrs(a), act = ms.filter((m) => m.status === 'ACTIVE');
+    const jm = act.length ? docs(await db.collection('JOB_MGRS').where('email', '==', a.email).get()).filter((x) => act.some((m) => m.companyId === x.companyId)) : [];
+    const js = await Promise.all(jm.map((x) => db.collection('JOBS').doc(x.jobId).get().then((s) => (s.exists ? s.data() : null)).catch(() => null)));
+    return { today: today(), email: a.email, mgrs: ms.map((m) => ({ companyId: m.companyId, company: m.company, name: m.name, status: m.status })),
+      jobs: jm.map((x, i) => { const j = js[i]; return j && j.status !== 'ENDED' ? { id: j.id, title: j.title, storeName: j.storeName, address: j.address || '', startDate: j.startDate, endDate: j.endDate, hostName: j.hostName, company: x.company, companyId: x.companyId } : null; })
+        .filter(Boolean).sort((p, q) => String(p.startDate).localeCompare(String(q.startDate))) };
+  };
+  /** [로그인한 누구나] 초대 링크 정보 (업체명 · 사용 여부) */
+  API.mgrInviteInfo = async (a, token) => {
+    const id = String(token || '').toLowerCase(); if (!/^[a-f0-9]{32}$/.test(id)) fail('잘못된 초대 링크입니다.');
+    const s = await db.collection('MGR_INVITES').doc(id).get().catch(() => null); if (!s || !s.exists) fail('초대 링크를 찾을 수 없습니다. 이미 취소됐을 수 있습니다. 계약담당자에게 새 링크를 요청해 주세요.');
+    const x = s.data(), mine = (await myMgrs(a)).find((m) => m.companyId === x.companyId);
+    return { company: x.company, used: !!x.usedAt, usedByMe: !!x.usedAt && x.usedBy === a.email, expired: !x.usedAt && String(x.expAt || '') < now(), owner: x.vendorUid === a.uid,
+      already: mine ? { name: mine.name, status: mine.status } : null };
+  };
+  /** [인력관리자] 초대 링크로 등록 (이름만 · 중계 서버가 확인하고 기록) */
+  API.mgrJoin = async (a, token, name) => {
+    if (a.mode === 'STAFF') fail('다이소 담당자로 접속했습니다. 로그인 화면에서 [협력업체]를 고르고 다시 로그인해 주세요.');
+    const r = await relay('mgrJoin', { token: String(token || '').toLowerCase(), name: tidy(name, 30) });
+    return Object.assign(await API.portalData(a), { joined: r });
   };
   /** [업체] QR 새로 만들기 (링크가 외부로 퍼졌을 때) — 이전 QR은 바로 사용 불가 */
   API.renewWorkerQr = async (a, jobId) => {
@@ -1649,6 +1758,12 @@
     if (!info) {
       const w = docs(await db.collection('WORKERS').where('uid', '==', a.uid).get().catch(() => ({ docs: [] }))).find((x) => x.jobId === L.jobId && x.active !== 'N' && vs.some((v) => v.companyId === x.companyId));
       if (w) return rec({ name: w.name, side: 'VENDOR', companyId: w.companyId, company: w.company || (vs.find((v) => v.companyId === w.companyId) || {}).company || '', role: ATTEND_ROLES[1], status: 'OK', workerId: w.id });
+    }
+    /* F2.2 이 매장 건에 배정된 오픈지원 인력관리자 본인 계정 → 바로 참석 (역할 = 인력관리자) */
+    if (!info) {
+      const jms = await db.collection('JOB_MGRS').doc(L.jobId + '_' + a.email).get().catch(() => null), x = jms && jms.exists ? jms.data() : null;
+      const m = x && vs.some((v) => v.companyId === x.companyId) ? (await myMgrs(a)).find((y) => y.companyId === x.companyId && y.status === 'ACTIVE') : null;
+      if (m) return rec({ name: m.name, side: 'VENDOR', companyId: x.companyId, company: x.company || m.company, role: '인력관리자', status: 'OK', mgr: 'Y' });
     }
     /* F1.8p 승인된 업체 계정도 아니고 이 공사 작업자도 아니면 참석 불가 → 사업자 등록 안내 (승인 대기 중이면 대기 안내) */
     if (!own) { const p = cs.find((x) => x.status === 'PENDING'); return { ...base, state: 'NO_COMPANY', pending: p ? p.company : '' }; }
