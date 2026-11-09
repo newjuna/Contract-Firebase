@@ -61,7 +61,7 @@ function switchTab(which){tab=which;toggleMenu(false);stopScan();if($(which+'Tab
 /* F1.9t 홈 화면 앱(PWA): 서비스 워커 등록 (저장 안 함 · 홈 화면에 추가할 수 있게만) */
 if('serviceWorker' in navigator&&location.protocol==='https:')window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 // ★ 화면 버전: 여기 한 줄만 고침 (GitHub만 올리면 로그인 화면·앱 화면·메뉴에 모두 반영, Code.gs 수정 불필요)
-const UI_VERSION='26.10.26 F2.2';
+const UI_VERSION='26.10.27 F2.3';
 /* F1.8o 전화번호 · 사업자번호: 숫자만 쳐도 '-' 자동 (서버는 원래 숫자만 골라 씀) */
 function fmtTel(v){const d=String(v||'').replace(/\D/g,'').slice(0,11);if(d.startsWith('02'))return d.length<3?d:d.length<6?d.slice(0,2)+'-'+d.slice(2):d.length<10?d.slice(0,2)+'-'+d.slice(2,5)+'-'+d.slice(5):d.slice(0,2)+'-'+d.slice(2,6)+'-'+d.slice(6,10);
  return d.length<4?d:d.length<8?d.slice(0,3)+'-'+d.slice(3):d.length<11?d.slice(0,3)+'-'+d.slice(3,6)+'-'+d.slice(6):d.slice(0,3)+'-'+d.slice(3,7)+'-'+d.slice(7)}
@@ -572,7 +572,14 @@ function todayHtml(v){
 }
 /** F2.1 오픈지원 ② 지적사항 조치 (도급인 순회점검·합동점검에서 나온 것 · 조치 등록 화면은 공사와 같음) */
 function openFixCardHtml(v){const I=v.insp||{open:[]};
- return '<div class="card" id="openFixCard"><div class="vh-top"><h2 style="margin:0;font-size:16px">② 지적사항 조치</h2>'+(I.open.length?'<span class="pill bad">미조치 '+I.open.length+'</span>':'<span class="pill ok">미조치 없음</span>')+'</div>'
+ /* F2.3 현장관리자 · TBM 현황 (계약담당자 보기 · 현장관리자가 매일 저장) */
+ const S=(v.siteMgrs||[]).find(x=>x.status==='ACTIVE'),T=v.tbms||[],tt=T.find(x=>x.date===v.today);
+ const smCard=v.siteMgrs?'<div class="card" id="openSmCard"><div class="vh-top"><h2 style="margin:0;font-size:16px">현장관리자 · TBM</h2>'+(tt?'<span class="pill ok">오늘 TBM '+tt.n+'장</span>':'<span class="pill todo">오늘 TBM 전</span>')+'</div>'
+  +'<div class="muted" style="margin-top:6px">'+(S?'현장관리자 <b style="color:#111827">'+escapeText(S.name)+'</b> · '+escapeText(S.email)+' · 지정 '+escapeText(mgrHM(S.designatedAt))+(S.designatedName?' ('+escapeText(S.designatedName)+')':''):'<span class="req">현장관리자 미지정</span> · 인력관리자가 첫날 지정 QR로 지정합니다')+'</div>'
+  +'<div class="muted" style="margin-top:4px">TBM '+T.length+'일'+(T.length?' · 최근 '+T.slice(0,5).map(x=>escapeText(String(x.date).slice(5))).join(', '):'')+'</div>'
+  +(tt&&tt.photos.length?'<div class="row" style="margin-top:6px">'+thumbs(tt.photos.slice(0,4),'')+'</div>':'')+'</div>':'';
+ if(tt&&tt.photos.length)setTimeout(()=>loadInspPhotos(v.job.id),50);
+ return smCard+'<div class="card" id="openFixCard"><div class="vh-top"><h2 style="margin:0;font-size:16px">② 지적사항 조치</h2>'+(I.open.length?'<span class="pill bad">미조치 '+I.open.length+'</span>':'<span class="pill ok">미조치 없음</span>')+'</div>'
   +(I.open.length?I.open.map(f=>findRow(f,'vendor')).join(''):'<p class="muted" style="margin:8px 0 0">도급인이 순회점검에서 지적한 사항이 생기면 여기에 나옵니다. 조치하고 사진을 올려 주세요.</p>')+'</div>'}
 /** F1.8s 공종 고르기 (계획서에서 고른 공종) · 특별교육 대상 공종이면 교육 2H · 안 고르면 채용 시 교육 1H */
 function tradeSel(id,T){return '<div class="field"><label for="'+id+'">특별교육 공종 (해당 시)</label><select id="'+id+'" onchange="tradeHint(this)"><option value="">해당 없음 (채용 시 교육만)</option>'+(T||[]).map(t=>'<option value="'+escapeText(t.key)+'" data-sp="'+escapeText((t.special||[]).join(' / '))+'">'+escapeText(t.name)+'</option>').join('')+'</select><div class="muted" id="'+id+'_h" style="font-size:12px;margin-top:2px">채용 시 교육 1H</div></div>'}
@@ -588,7 +595,7 @@ function setNoNew(){try{localStorage.setItem(noNewKey(vjob),'1')}catch(e){}const
 function doneMask(label){return '<div class="doneMask" role="button" tabindex="0" aria-label="'+escapeText(label)+' 오늘 완료 · 눌러서 열기" onclick="this.remove()" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();this.remove()}" style="position:absolute;inset:0;z-index:3;border-radius:inherit;background:rgba(17,24,39,.55);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;cursor:pointer">'
  +'<span style="border:3px solid #fff;color:#fff;border-radius:10px;padding:6px 16px;font-size:20px;font-weight:800;transform:rotate(-8deg)">✔ 오늘 완료</span><span style="color:#fff;font-size:12px">눌러서 열기</span></div>'}
 /** 이수증 칸: 있으면 보기 · 없으면 바로 올리기 */
-function certCell(w){if(!w.certDoc&&w.role==='보통인부')return '<span class="muted" style="font-size:12px">해당 없음</span>';/* F2.1 오픈지원 보통인부 */return w.certDoc?'<button class="linkbtn" type="button" style="font-size:12px;color:var(--ok)" onclick="certView(\''+escapeText(w.certDoc)+'\',\''+escapeText(w.name)+'\')" aria-label="'+escapeText(w.name)+' 이수증 보기">✔ 보기</button>'
+function certCell(w){if(!w.certDoc&&(w.role==='보통인부'||w.role==='현장관리자'))return '<span class="muted" style="font-size:12px">해당 없음</span>';/* F2.1 오픈지원 보통인부 */return w.certDoc?'<button class="linkbtn" type="button" style="font-size:12px;color:var(--ok)" onclick="certView(\''+escapeText(w.certDoc)+'\',\''+escapeText(w.name)+'\')" aria-label="'+escapeText(w.name)+' 이수증 보기">✔ 보기</button>'
  :'<button class="linkbtn req" type="button" style="font-size:12px" onclick="pickCertFor(\''+escapeText(w.id)+'\')" aria-label="'+escapeText(w.name)+' 이수증 사진 넣기">📷 올리기</button>'}
 /** F1.8b ☰ 신규교육 현황: 이 공사에 등록한 전체 명단 · 이수증 놓친 사람 나중에 올리기 · 작업 안전 수칙 서명 기록 */
 function eduHtml(v){const W=v.workers.slice().sort((x,y)=>String(y.eduAt||'').localeCompare(String(x.eduAt||''))),ok=W.filter(w=>w.certDoc).length,method=w=>w.method==='SELF'?'본인':'소장';
@@ -659,10 +666,10 @@ function eduOneHtml(o){const e=o.esc,w=o.w,SPD=o.special||{};
  const ck=k=>k[1]?'<b style="color:'+RED+'">☑ '+k[0]+'</b>':'<span style="color:'+GRY+'">☐ '+k[0]+'</span>';
  const boxH=V(sp.length>1?150:sp.length?185:235);
  const sign='<div style="font-size:'+R(10)+'px;color:'+GRY+';margin-bottom:'+V(6)+'px">성명 <b style="color:#111827;font-size:'+R(13)+'px">'+e(w.name)+'</b></div><div style="padding:'+V(8)+'px 0">'+K.nm(e(w.name),'서명',38)+'</div>'
-  +'<div style="color:'+GRN+';font-weight:bold;font-size:'+R(10.5)+'px;margin-top:'+V(8)+'px">✔ '+(w.method==='SELF'?'본인 계정으로 서명':'현장책임자 '+e(o.teacher||'')+' 확인')+'</div>'
+  +'<div style="color:'+GRN+';font-weight:bold;font-size:'+R(10.5)+'px;margin-top:'+V(8)+'px">✔ '+(w.method==='SELF'?'본인 계정으로 서명':w.confirmBy?e(w.confirmBy)+' 확인':'현장책임자 '+e(o.teacher||'')+' 확인')+'</div>'
   +(o.signAt?'<div style="color:#374151;font-size:'+R(10)+'px;margin-top:2px">'+e(o.signAt)+'</div>':'')+(w.method==='SELF'&&w.email?'<div style="color:#374151;font-size:'+R(9.5)+'px;margin-top:2px;word-break:break-all">'+e(w.email)+'</div>':'')/* F1.9z 본인 계정 = Google 계정 */+'<div style="font-size:'+R(9.5)+'px;color:#4B5563;margin-top:'+V(10)+'px">위 교육을 받았고 안전 수칙 준수를 서약합니다.</div>';
  const cert=o.cert?String(o.cert).replace(/max-height:\s*\d+px/g,'max-height:'+Math.round(boxH-24)+'px')+'<div style="font-size:'+R(9.5)+'px;color:'+GRN+';font-weight:bold;margin-top:3px">✔ 제출'+(o.certAt?' · '+e(o.certAt):'')+'</div>'
-  :w.certDoc?'<div style="color:#4B5563">이수증 파일 있음 (원본 파일 참조)</div>':w.role==='보통인부'?'<div style="color:#4B5563">해당 없음 (오픈지원 · 보통인부)</div>':'<div style="color:'+RED+';font-weight:bold;font-size:'+R(13)+'px">✖ 미제출</div>';
+  :w.certDoc?'<div style="color:#4B5563">이수증 파일 있음 (원본 파일 참조)</div>':(w.role==='보통인부'||w.role==='현장관리자')?'<div style="color:#4B5563">해당 없음 (오픈지원 · 보통인부)</div>':'<div style="color:'+RED+';font-weight:bold;font-size:'+R(13)+'px">✖ 미제출</div>';
  return K.head('안전보건 교육일지','','<b>'+K.day(o.date)+'</b>')
   +K.sec(1,'교육 개요')
   +'<table style="'+T+'"><tr><td style="'+H+';width:15%">교육명칭</td><td style="'+B+';width:35%"><b>'+e(o.type)+(sp.length?' + 특별교육':'')+'</b></td><td style="'+H+';width:15%">교육시간</td><td style="'+B+';background:'+LR+'"><b style="color:'+RED+'">'+tm+'</b></td></tr>'
@@ -992,7 +999,7 @@ async function downloadAdminFile(id,doc){try{openFile(await call('getInternalFil
 async function loadReview(){try{const a=await fetcher('review')('reviewList');$('review').innerHTML=`<div class="card"><h2>안전보건정보 제출·검토</h2>${a.map(b=>`<div class="item"><b>${escapeText(b.company)}</b> · <span class="badge">${escapeText(b.submissionStatus)}</span><div class="desc">${escapeText(b.industry)}</div><button class="button ghost" onclick="openReview('${escapeText(b.id)}')">제출 정보 확인</button></div>`).join('')}</div><div id="reviewDetail"></div>`}catch(e){}}
 async function openReview(id){try{reviewing=await call('getReviewData',id);const b=reviewing.company;$('reviewDetail').innerHTML=`<div class="card"><h2>${escapeText(b.company)} · 제출 내용</h2>${reviewing.steps.map(s=>`<div class="item"><b>${escapeText(state.stepNames[Number(s.step)-1])}</b>${Object.entries(s.data).map(([k,v])=>`<p class="desc">${escapeText(k)}: ${escapeText(v)}</p>`).join('')}</div>`).join('')}<div class="line"></div><div class="desc">증빙: ${reviewing.documents.map(f=>`<a onclick="downloadAdminFile('${escapeText(b.id)}','${escapeText(f.id)}')">${escapeText(f.name)}</a>`).join(' / ')}</div><div class="line"></div><b>계약 단계 제출서류</b>${(reviewing.docSubmissions||[]).map(t=>`<div class="item"><b>${escapeText(t.name)}</b>${t.required?'<span class="badge" style="margin-left:6px">필수</span>':''}${t.uploads.length?`<span class="pill ok">v${escapeText(t.uploads[0].version)}</span>`:'<span class="pill todo">미등록</span>'} <span class="muted">보완키 4:doc${escapeText(t.code)}</span><div class="desc">${t.uploads.map(u=>`<a onclick="downloadAdminFile('${escapeText(b.id)}','${escapeText(u.id)}')">v${escapeText(u.version)} ${escapeText(u.name)}</a> <span class="muted">${escapeText(fmtTime(u.uploadedAt))}</span>`).join('<br>')||'등록된 파일 없음'}</div></div>`).join('')||'<p class="desc">설정된 제출서류가 없습니다.</p>'}<p>보완 요청(단계:항목명 형식, 예: 2:safetyManager, 서류는 4:docC01, 쉼표로 구분)</p><input id="corKeys" placeholder="2:safetyManager,3:riskFactors" style="padding:12px;width:100%"><textarea id="corReason" style="margin:9px 0;width:100%;min-height:70px;padding:10px" placeholder="보완 요청 사유"></textarea><div class="row"><button class="button ghost" onclick="reviewIt('${escapeText(b.id)}','CORRECT')">보완 요청</button><button class="button dark" onclick="reviewIt('${escapeText(b.id)}','CONTRACT_OK')">계약담당 1차 확인 완료</button><button class="button" onclick="reviewIt('${escapeText(b.id)}','SAFETY_OK')">안전보건팀 최종 승인</button></div><p class="desc">실제 법정 적격성 배점과 PDF 출력은 후속 모듈로 별도 개발됩니다. 이 버튼은 절차 상태 확인용입니다.</p></div>`}catch(e){}}
 async function reviewIt(id,decision){if(!confirm('검토 결과를 반영할까요?'))return;try{const reason=$('corReason')?.value||'',keys=($('corKeys')?.value||'').split(',').map(s=>s.trim()).filter(Boolean);await call('reviewAction',id,decision,reason,keys);msg('검토 결과 저장');loadReview()}catch(e){}}
-window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue=''}});async function bootApp(){try{if(/^WRK-[a-f0-9]{32}$/.test(LINK_REVIEW)){/* v5.20 내 정보(portalData) 없이 등록 화면만 바로 받음 (왕복 1번 줄임) */workerLinkMode=true;state={email:''};showVer(state);wkCheckIn();return}const mt=/^MEET-[a-f0-9]{32}$/.test(LINK_REVIEW);await bootPortal(mt);if(mt){meetCheckIn();return}if(LINK_REVIEW&&!/^MGR-/.test(LINK_REVIEW)&&(['ADMIN','SAFETY'].includes(state.role)||state.isApprover))switchTab('admin')}catch(e){}}
+window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue=''}});async function bootApp(){try{if(/^WRK-[a-f0-9]{32}$/.test(LINK_REVIEW)){/* v5.20 내 정보(portalData) 없이 등록 화면만 바로 받음 (왕복 1번 줄임) */workerLinkMode=true;state={email:''};showVer(state);wkCheckIn();return}const mt=/^MEET-[a-f0-9]{32}$/.test(LINK_REVIEW);await bootPortal(mt);if(mt){meetCheckIn();return}if(LINK_REVIEW&&!/^(MGR|SMG)-/.test(LINK_REVIEW)&&(['ADMIN','SAFETY'].includes(state.role)||state.isApprover))switchTab('admin')}catch(e){}}
 
 /* ---------- v4.0 로그인 · 서버 연결 (GitHub 화면 → Apps Script Code.gs) ---------- */
 const CONF=window.APP_CONFIG||{};
@@ -1017,7 +1024,7 @@ async function api(fn,args){const __pt=Date.now();let __ok=false;try{if(!EXEC_OK
 const LOGIN_HELP={VENDOR:'처음 방문한 업체는 로그인 후 사업자 등록을 신청합니다.',STAFF:'회사직원명단에 등록된 개인 Google 계정(Gmail)으로 로그인해 주세요.'};
 const isWorkerLink=()=>/^WRK-/.test(LINK_REVIEW);
 function loginMode(){const r=document.querySelector('input[name=loginMode]:checked');return r?r.value:'VENDOR'}
-function loginHelp(){/* F2.2 인력관리자 초대 링크 → 접속 구분은 협력업체로 */if(/^MGR-/.test(LINK_REVIEW)){const r=document.querySelector('input[name=loginMode][value=VENDOR]');if(r&&!r.checked){r.checked=true}$('loginHelp').textContent='인력관리자 초대 링크로 들어왔습니다. [협력업체]를 고르고 본인 Google 계정으로 로그인하세요.';return}
+function loginHelp(){/* F2.2 인력관리자 초대 링크 · F2.3 현장관리자 지정 QR → 접속 구분은 협력업체로 */if(/^(MGR|SMG)-/.test(LINK_REVIEW)){const r=document.querySelector('input[name=loginMode][value=VENDOR]');if(r&&!r.checked){r.checked=true}$('loginHelp').textContent=(/^SMG-/.test(LINK_REVIEW)?'현장관리자 지정 QR로':'인력관리자 초대 링크로')+' 들어왔습니다. [협력업체]를 고르고 본인 Google 계정으로 로그인하세요.';return}
  $('loginHelp').textContent=isWorkerLink()?'소장님이 보여 준 QR로 들어왔습니다. 이 공사에서 처음 한 번만 등록하면 됩니다.':LOGIN_HELP[loginMode()]}
 function showLogin(note){$('appView').hidden=true;$('loginView').hidden=false;document.title='도급 안전관리 | 로그인';$('loginStatus').textContent=note||'';renderGoogleBtn()}
 function showApp(){$('loginView').hidden=true;$('appView').hidden=false;document.title='도급 안전관리';navInit()}
@@ -1040,7 +1047,7 @@ async function onGoogleLogin(r){if(!r||!r.credential)return;const st=$('loginSta
  if(!d.portal){bootEnd();bootApp();return}  // 서버(Code.gs)가 아직 예전 버전이면 예전 방식
  try{await bootRest(d.portal,mt?-1:2)}catch(e){bootEnd();/* F1.7f 빈 화면 대신 안내 + 다시 시도 */$('my').innerHTML='<div class="card"><h2>화면을 열지 못했습니다</h2><p class="desc">'+escapeText(e.message||'')+'</p><button class="button" type="button" onclick="location.reload()">다시 시도</button></div>';if(mt){try{meetCheckIn()}catch(x){}}return}
  if(mt){try{if(d.meet)showCheckIn(d.meet);else await meetCheckIn()}catch(e){$('my').innerHTML='<div class="card"><h2>참석 화면을 열지 못했습니다</h2><p class="desc">'+escapeText(e.message||'')+'</p><button class="button" type="button" onclick="meetCheckIn()">다시 시도</button></div>'}switchTab('my');$('my').scrollIntoView();return}
- if(LINK_REVIEW&&!/^MGR-/.test(LINK_REVIEW)&&(['ADMIN','SAFETY'].includes(state.role)||state.isApprover))switchTab('admin')}
+ if(LINK_REVIEW&&!/^(MGR|SMG)-/.test(LINK_REVIEW)&&(['ADMIN','SAFETY'].includes(state.role)||state.isApprover))switchTab('admin')}
 /** 로그아웃: 저장된 로그인 정보 지우고 처음 화면으로 (주소창의 링크값도 정리) */
 const fbOut=()=>Promise.resolve(window.FB&&FB.ok?FB.signOut():0).catch(()=>{});
 function logout(note){cacheClear();try{localStorage.removeItem('fcUser')}catch(e){}sessClear();try{if(note)sessionStorage.setItem('loginNote',note)}catch(e){}dirty=false;fbOut().then(()=>{location.href=location.pathname})}
