@@ -17,7 +17,7 @@ const vOpenJobs=()=>vjobs&&vjobs.jobs?vjobs.jobs.filter(j=>j.status!=='ENDED').l
 function setupVMenu(){const ap=isVendorApproved(),open=ap&&vOpenJobs()>0,isJob=el=>!!el&&VJOB_MENUS.includes(String(el.id).replace('vm_',''));
  /* v5.20 메뉴 묶음(navg)은 안에 공사 업무 메뉴가 있으면 공사 업무로 봄 */
  document.querySelectorAll('.vmb').forEach(b=>{const job=b.classList.contains('navg')?[...b.querySelectorAll('button[id]')].some(isJob):isJob(b);b.classList.toggle('hidden',!ap||(job&&!open))});
- /* F2.2 인력관리자 관리 = 오픈지원 업체만 · 진행 중 매장 건이 없어도 보임 (미리 등록) · 묶음이 숨겨졌으면 꺼내 보이게 */
+ /* F2.2 인력관리자 관리 = 오픈지원 업체만 · 진행 중 오픈 매장이 없어도 보임 (미리 등록) · 묶음이 숨겨졌으면 꺼내 보이게 */
  const mb=$('vm_mgr');if(mb){const on=ap&&isOpenVendor();mb.classList.toggle('hidden',!on);const g=mb.closest('.navg');if(g&&on)g.classList.remove('hidden')}
  if(vmenu==='mgr'&&!(ap&&isOpenVendor()))vmenu='dash';
  if(ap&&!open&&VJOB_MENUS.includes(vmenu)&&!vjob)vmenu='dash';  // 종료 공사 기록을 보고 있을 때는 그대로
@@ -116,8 +116,8 @@ function renderDash(){const el=$('execArea');if(!el||!vjobs)return;if(!vDashTime
  const cb=state.company||{},cv=cb.valid,rn=cb.renewAt?{DRAFT:'작성 중',CORRECTION:'보완 요청',SUBMITTED:'본사 검토 중',SAFETY_REVIEW:'본사 검토 중'}[cb.submissionStatus]||'진행 중':'';
  el.innerHTML=gdRow('vdash')+'<div class="card"><h2 style="margin:0">'+escapeText(d.company)+'</h2><button class="linkbtn" type="button" style="font-size:13px;margin:2px 0" onclick="openEvalResult(\'CE\')">📊 계약 전 평가 결과 보기</button><div class="muted">'+escapeText(t)+' · 진행 중 공사 '+act.length+'건'+(ended.length?' · 종료 '+ended.length+'건':'')+'</div>'
   +(rn?'<button class="vtodo" type="button" onclick="vgo(\'docs\')"><span>신규 작성 (다음 계약 준비)</span><span class="req">'+escapeText(rn)+' ›</span></button>':cv&&(cv.expired||cv.days<=30)?validNote(cb)+'<button class="vtodo" type="button" onclick="openNewContract()"><span>신규 작성 (다음 계약 준비)</span><span class="req">'+(cv.expired?'만료':'D-'+cv.days)+' ›</span></button>':'')+'</div>'
-  /* F2.2 오픈지원: 인력관리자가 배정 안 된 진행 중 매장 건 → [인력관리자 관리]로 */
-  +(isOpenVendor()&&act.some(j=>Array.isArray(j.mgrs)&&!j.mgrs.length)?'<button class="vtodo" type="button" onclick="vgo(\'mgr\')"><span>👷 인력관리자 배정이 안 된 매장 건</span><span class="req">'+act.filter(j=>Array.isArray(j.mgrs)&&!j.mgrs.length).length+'건 ›</span></button>':'')
+  /* F2.2 오픈지원: 인력관리자가 배정 안 된 진행 중 오픈 매장 → [인력관리자 관리]로 */
+  +(isOpenVendor()&&act.some(j=>Array.isArray(j.mgrs)&&!j.mgrs.length)?'<button class="vtodo" type="button" onclick="vgo(\'mgr\')"><span>👷 인력관리자 배정이 안 된 오픈 매장</span><span class="req">'+act.filter(j=>Array.isArray(j.mgrs)&&!j.mgrs.length).length+'건 ›</span></button>':'')
   +meetAlertHtml(d)+dayStartHtml(act)+fixCardHtml()  // F1.8f 메인: 미팅 알림 → 큰 버튼 → 지적사항 조치
   +(d.jobs.length?'<div class="card"><h2>공사 일정</h2>'+act.concat(ended).map(j=>ganttRow(j,t)).join('')+'</div>'
   +act.map(j=>{const S=j.stats||{},wd=S.workDays||0;return '<div class="card"><div class="vh-top"><div><h2 style="margin:0">'+escapeText(j.title)+'</h2><div class="muted">'+escapeText(j.storeName)+' · 도급인 '+escapeText(j.hostName)+' · 작업자 '+j.workers+'명</div></div></div>'

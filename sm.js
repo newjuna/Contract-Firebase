@@ -1,6 +1,6 @@
 /* F2.3 오픈지원 현장관리자 (= 관리감독자 · 대표 근로자)
  *  지정 QR(?review=SMG-토큰) → 본인 Google 로그인 → 이름 · 작업 안전 수칙 서약 → 현장관리자 (인력 명부 자동 기록)
- *  내 화면 = 진행 중 매장 건만: ① 오늘 TBM 사진 ② 신규자 등록 (QR · 직접 등록 「관리자 확인」) ③ 지적사항 조치
+ *  내 화면 = 진행 중 오픈 매장만: ① 오늘 TBM 사진 ② 신규자 등록 (QR · 직접 등록 「관리자 확인」) ③ 지적사항 조치
  *  서버: fb.js smInviteInfo · smJoin · smHome · smPhoto · smTbm · smAddWorker · smResolve (쓰기·권한 확인은 중계 Relay.gs sm*_) */
 let smData=null,smSel='',smTbmNew=[],smShow='',smRs=null,smBusy=false;
 const SM_LINK=()=>/^SMG-[a-f0-9]{32}$/.test(LINK_REVIEW)&&!window.__smDone;
@@ -32,16 +32,16 @@ async function smJoinDone(){smClearLink();roleView='sm';try{display(await call('
 
 /* ---------- 현장관리자 내 화면 ---------- */
 async function renderSmHome(quiet){const el=$('my');$('pageTitle').textContent='현장관리자';$('myTab').textContent='내 업무';
- if(!smData&&!quiet)el.innerHTML='<div class="card"><h2>'+escapeText((state.sm&&state.sm.name)||'')+' 님 · 현장관리자</h2><p class="desc">매장 건을 불러오는 중입니다…</p></div>';
+ if(!smData&&!quiet)el.innerHTML='<div class="card"><h2>'+escapeText((state.sm&&state.sm.name)||'')+' 님 · 현장관리자</h2><p class="desc">오픈 매장을 불러오는 중입니다…</p></div>';
  try{smData=await callQuiet('smHome')}catch(e){if(!smData){el.innerHTML='<div class="card"><h2>현장관리자</h2><p class="desc">'+escapeText(e.message||'불러오지 못했습니다.')+'</p><button class="button" type="button" onclick="renderSmHome()">다시 시도</button></div>';return}}
  smDraw()}
 function smDraw(){const el=$('my'),d=smData;if(!el||!d)return;if(smRs){smResolveDraw();return}const j=smJob();
- if(!j){el.innerHTML=roleSwitchHtml('sm')+'<div class="card"><h2>'+escapeText(d.name||(state.sm&&state.sm.name)||'')+' 님 · 현장관리자</h2><div class="note">진행 중인 매장 건이 없습니다.<br>끝난 매장 건은 보이지 않습니다. 새 매장 건은 그날 인력관리자가 다시 지정합니다.</div></div>';return}
+ if(!j){el.innerHTML=roleSwitchHtml('sm')+'<div class="card"><h2>'+escapeText(d.name||(state.sm&&state.sm.name)||'')+' 님 · 현장관리자</h2><div class="note">진행 중인 오픈 매장이 없습니다.<br>끝난 오픈 매장은 보이지 않습니다. 새 오픈 매장은 그날 인력관리자가 다시 지정합니다.</div></div>';return}
  window.__wkCo=j.company||'';const t=j.today||smToday(),tt=j.tbmToday,todayW=j.workers.filter(w=>mgrDay(w.eduAt)===t),link=location.origin+location.pathname+'?review=WRK-'+j.workerToken;
  const sb='padding:8px 10px;font-size:13px';
  el.innerHTML=roleSwitchHtml('sm')
   +'<div class="card"><h2 style="margin:0">'+escapeText(j.name)+' 님 · 현장관리자</h2>'
-  +(d.jobs.length>1?'<label class="muted" for="smSel" style="display:block;margin-top:8px">매장 건 선택</label><select id="smSel" class="vjsel" onchange="smSel=this.value;smTbmNew=[];smShow=\'\';smDraw()">'+d.jobs.map(x=>'<option value="'+escapeText(x.id)+'" '+(x.id===j.id?'selected':'')+'>'+escapeText(x.title)+' ('+escapeText(x.storeName)+')</option>').join('')+'</select>':'')
+  +(d.jobs.length>1?'<label class="muted" for="smSel" style="display:block;margin-top:8px">오픈 매장 선택</label><select id="smSel" class="vjsel" onchange="smSel=this.value;smTbmNew=[];smShow=\'\';smDraw()">'+d.jobs.map(x=>'<option value="'+escapeText(x.id)+'" '+(x.id===j.id?'selected':'')+'>'+escapeText(x.title)+' ('+escapeText(x.storeName)+')</option>').join('')+'</select>':'')
   +'<div class="muted" style="margin-top:6px">'+escapeText(j.company)+' · 다이소 '+escapeText(j.storeName)+' · '+escapeText(j.startDate)+' ~ '+escapeText(j.endDate||'')+' · 도급인 '+escapeText(j.hostName)+'</div></div>'
   /* ① TBM */
   +'<div class="card" id="smTbmCard"><div class="vh-top"><h2 style="margin:0;font-size:16px">① 오늘 TBM</h2>'+(tt?'<span class="pill ok">✔ 저장 '+tt.photos.length+'장</span>':'<span class="pill bad">오늘 전</span>')+'</div>'
