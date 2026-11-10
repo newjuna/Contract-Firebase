@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.30 F2.6';
+  const VERSION = '26.10.30 F2.7';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   /* F2.1 업종 '오픈지원' 추가 (매장 오픈 인력 · 인력사무소형) · 인테리어(마감) = 지금까지의 공사 흐름 그대로 */
   const CFG = {
@@ -1081,12 +1081,14 @@
   API.myJobs = async (a) => {
     const b = await execVendor(a), t = today(), jvs = (await myAssign(a, b)).sort((x, y) => String(y.addedAt).localeCompare(String(x.addedAt)));
     const mineAll = (col) => db.collection(col).where('vendorUid', '==', a.uid).get().then(docs);
-    const [jobs, wks, crews, pms, inss, fds, nts, ats, jma] = await Promise.all([
+    const op = isOpenInd(b.industry), opQ = (col, f) => (op ? (f ? db.collection(col).where('vendorUids', 'array-contains', a.uid) : db.collection(col).where('vendorUid', '==', a.uid)).get().then(docs).catch(() => []) : []);
+    const [jobs, wks, crews, pms, inss, fds, nts, ats, jma, osm, otb, odr] = await Promise.all([
       Promise.all(jvs.map((v) => db.collection('JOBS').doc(v.jobId).get().then((s) => (s.exists ? s.data() : null)).catch(() => null))), mineAll('WORKERS'), mineAll('CREW'), mineAll('PERMITS'), mineAll('INSPECTIONS'), mineAll('FINDINGS'),
       // F1.8f 메인 화면 📢 미팅 알림 (도급인이 만든 협의체·합동점검) · 보안 규칙을 아직 안 올렸으면 알림만 빠짐
       db.collection('MEET_NOTICES').where('v.' + a.uid, '==', true).get().then(docs).catch(() => []),
       db.collection('ATTEND').where('uid', '==', a.uid).get().then(docs).catch(() => []),
-      isOpenInd(b.industry) ? db.collection('JOB_MGRS').where('vendorUid', '==', a.uid).get().then(docs).catch(() => []) : []]);  // F2.2 오픈 매장별 인력관리자 배정
+      isOpenInd(b.industry) ? db.collection('JOB_MGRS').where('vendorUid', '==', a.uid).get().then(docs).catch(() => []) : [],  // F2.2 오픈 매장별 인력관리자 배정
+      opQ('SITE_MGRS'), opQ('TBMS'), opQ('OPEN_DRILLS', true)]);  // F2.7 계약담당자 대시보드: 관리감독자 · 오늘 TBM · 비상훈련
     const jobIds = new Set(jvs.map((v) => v.jobId)), went = new Set(ats.filter((x) => x.status !== 'REJECTED').map((x) => x.meetingId));
     const meets = nts.filter((m) => m.done !== 'Y' && m.date >= t && jobIds.has(m.jobId)).sort((x, y) => (x.date + x.time < y.date + y.time ? -1 : 1))
       .map((m) => ({ id: m.id, jobId: m.jobId, title: m.title, store: m.store, date: m.date, time: m.time || '', place: m.place || '', kinds: (m.kinds || []).map((k) => MEET_KINDS[k]).filter(Boolean), attended: went.has(m.id) }));
@@ -1095,6 +1097,8 @@
       const cr = crews.filter((c) => c.jobId === j.id && c.companyId === b.id), c = cr.find((x) => x.date === t);
       return { id: j.id, title: j.title, storeName: j.storeName, startDate: j.startDate, endDate: j.endDate, hostName: j.hostName, trade: v.trade, status: j.status,
         mgrs: isOpenInd(b.industry) ? jma.filter((x) => x.jobId === j.id && x.companyId === b.id).map((x) => x.name) : null,  // F2.2 배정된 인력관리자 이름
+        ...(op ? { siteMgr: (osm.find((x) => x.jobId === j.id && x.companyId === b.id && x.status === 'ACTIVE') || {}).name || '',
+          tbmToday: otb.some((x) => x.jobId === j.id && x.companyId === b.id && x.date === t), drillDone: odr.some((x) => x.jobId === j.id && !!x.doneAt), drills: odr.filter((x) => x.jobId === j.id).length } : {}),  // F2.7
         workers: wks.filter((w) => w.jobId === j.id && w.companyId === b.id && w.active !== 'N').length, todayCount: c ? Number(c.count) : 0, todayDone: !!c, end: jobEndInfo(j),
         stats: vjStats(cr, ...[pms, inss, fds].map((l) => l.filter((x) => x.jobId === j.id && x.companyId === b.id))),
         // F1.8f 메인 화면 '지적사항 조치' 목록 (미조치 + 조치 완료)
@@ -1221,13 +1225,17 @@
   API.mgrHome = async (a) => {
     const ms = await myMgrs(a), act = ms.filter((m) => m.status === 'ACTIVE');
     const jm = act.length ? docs(await db.collection('JOB_MGRS').where('email', '==', a.email).get()).filter((x) => act.some((m) => m.companyId === x.companyId)) : [];
-    const [js, sms, ivs] = await Promise.all([Promise.all(jm.map((x) => db.collection('JOBS').doc(x.jobId).get().then((s) => (s.exists ? s.data() : null)).catch(() => null))),
+    const [js, sms, ivs, ats, mf] = await Promise.all([Promise.all(jm.map((x) => db.collection('JOBS').doc(x.jobId).get().then((s) => (s.exists ? s.data() : null)).catch(() => null))),
       db.collection('SITE_MGRS').where('designatedBy', '==', a.email).get().then(docs).catch(() => []),  // F2.3 내가 지정한 현장관리자
-      db.collection('SM_INVITES').where('createdBy', '==', a.email).get().then(docs).catch(() => [])]);
-    const n0 = now();
+      db.collection('SM_INVITES').where('createdBy', '==', a.email).get().then(docs).catch(() => []),
+      db.collection('ATTEND').where('uid', '==', a.uid).get().then(docs).catch(() => []),  // F2.7 협의체 · 합동점검 참석
+      jm.length ? relay('mgrFind', {}, true).catch(() => null) : null]);  // F2.7 지적사항 (중계 서버가 권한 확인)
+    const n0 = now(), fOf = (id) => ((mf && mf.jobs) || []).find((x) => x.id === id) || null;
     return { today: today(), email: a.email, mgrs: ms.map((m) => ({ companyId: m.companyId, company: m.company, name: m.name, status: m.status })),
       jobs: jm.map((x, i) => { const j = js[i]; return j && j.status !== 'ENDED' ? { id: j.id, title: j.title, storeName: j.storeName, address: j.address || '', startDate: j.startDate, endDate: j.endDate, hostName: j.hostName, company: x.company, companyId: x.companyId,
         siteMgrs: sms.filter((s) => s.jobId === j.id).sort((p, q) => String(q.designatedAt).localeCompare(String(p.designatedAt))).map(smView),
+        attended: ats.filter((r) => r.jobId === j.id && r.status !== 'REJECTED').map((r) => String(r.checkedAt || '')).sort().reverse(),
+        open: fOf(j.id) ? fOf(j.id).open : null, done: fOf(j.id) ? fOf(j.id).done : [],
         invite: (ivs.filter((v) => v.jobId === j.id && !v.usedAt && String(v.expAt || '') > n0).sort((p, q) => String(q.createdAt).localeCompare(String(p.createdAt)))[0] || null) } : null; })
         .filter(Boolean).map((j) => (j.invite ? Object.assign(j, { invite: { link: smLink(j.invite.token), token: j.invite.token, expAt: j.invite.expAt } }) : j))
         .sort((p, q) => String(p.startDate).localeCompare(String(q.startDate))), rules: WORK_RULES.length };
