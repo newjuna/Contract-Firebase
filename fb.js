@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.30 F2.8a';
+  const VERSION = '26.10.30 F2.9';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   /* F2.1 업종 '오픈지원' 추가 (매장 오픈 인력 · 인력사무소형) · 인테리어(마감) = 지금까지의 공사 흐름 그대로 */
   const CFG = {
@@ -399,10 +399,15 @@
     return { contract, later, rows };
   }
   const reviewDocBoard = (subs) => vendorDocTypes('CONTRACT').map((t) => ({ code: t.code, name: t.name, required: t.required === 'Y', uploads: docUploads(subs, t.code) }));
+  /* F2.9 오픈지원 문구: 순회점검 목표 = 주 1회 (산업안전보건법 시행규칙 제80조 · 건설업 외 1주 1회) · 규정 제7조도 같이 */
+  const KPI_INSP2 = '순회점검 실시율 (2일 1회)', KPI_INSPW = '순회점검 실시율 (주 1회)';
+  const inspKpi = (ind) => (isOpenInd(ind) ? KPI_INSPW : KPI_INSP2);
+  const kpisFor = (ind, L) => (Array.isArray(L) ? L.map((k) => (k && isOpenInd(ind) && k.name === KPI_INSP2 ? { ...k, name: KPI_INSPW } : k)) : L);
+  const ruleTextFor = (ind) => (isOpenInd(ind) ? RULE_TEXT.map(([t, x]) => [t, String(x).replace('2일에 1회 이상 안전보건총괄책임자를', '1주일에 1회 이상 안전보건총괄책임자를')]) : RULE_TEXT);
   function planDefaults(b, p) {
     const y = Number(today().slice(0, 4)), w = PLAN_INDUSTRY_WORKS[b.industry] || [];
     return { policy: planPolicy_(b.company), goal: '무재해 달성 (산업재해 0건)',
-      kpis: [{ name: '순회점검 실시율 (2일 1회)', target: '100%' }, { name: '작업 전 TBM·안전교육 실시율', target: '100%' }, { name: '지적사항 즉시 시정률', target: '100%' }],
+      kpis: [{ name: inspKpi(b.industry), target: '100%' }, { name: '작업 전 TBM·안전교육 실시율', target: '100%' }, { name: '지적사항 즉시 시정률', target: '100%' }],  // F2.9 오픈지원 = 주 1회
       org: [{ role: '안전관리책임자 (현장대리인)', name: p.siteManager || '', phone: p.siteManagerPhone || '' }],  // F1.8k 협력업체 관리자 = 현장대리인 1명
       agent: { birth: '', addr: '', licKind: '', licType: '', licNo: '' },  // F1.8k 현장대리인계 (공사마다 자동)
       /* F1.8r 위험성평가: 업종 기본 공종의 위험요인을 전부 체크해 두고 업체가 해당 없는 것만 뺌 */
@@ -418,7 +423,8 @@
     // 해가 바뀐 뒤 다시 작성하면 최근 3년이 달라짐 → 같은 연도 값만 옮김
     if (d && Array.isArray(d.years) && JSON.stringify(d.years.map(Number)) !== JSON.stringify(D.years)) { const old = d.years.map(Number), ac = d.accidents || []; d.accidents = D.years.map((y) => { const i = old.indexOf(y); return i >= 0 ? String(ac[i] ?? '') : ''; }); d.years = D.years; }
     const fmap = (ids) => (ids || []).map((id) => { const x = files.find((y) => y.id === id); return x ? { id, name: x.name } : null; }).filter(Boolean), ev = fmap(d && d.evidence), pev = fmap(d && d.practiceEv);  // F1.9b 이행 사례 증빙
-    return { today: today(), hq: HQ_NAME, hqRep: b.approverName || '', rule: { title: RULE_TITLE, text: RULE_TEXT }, C01: r.d ? { data: r.d, savedAt: r.f.updatedAt } : null,
+    if (d && d.kpis) d.kpis = kpisFor(b.industry, d.kpis);  // F2.9 예전에 저장한 목표 문구도 오픈지원이면 주 1회로
+    return { today: today(), hq: HQ_NAME, hqRep: b.approverName || '', open: isOpenInd(b.industry), rule: { title: RULE_TITLE, text: ruleTextFor(b.industry) }, C01: r.d ? { data: r.d, savedAt: r.f.updatedAt } : null,
       /* F2.1 계획서 공종: 오픈지원 업체 = 오픈지원 공종 4개만 · 다른 업종 = 예전 공종 그대로 (오픈지원 공종은 안 보임) */
       plan: { works: PLAN_WORKS, trades: RISK_TRADES.filter((t) => OPEN_TRADES.includes(t[0]) === isOpenInd(b.industry)).map((t) => [t[0], t[1], t[4], t[6]]), after: RISK_AFTER, scen: PLAN_SCEN.map((s) => [s[0], s[1]]), laws: PLAN_LAWS, defaults: D, C02: d ? { data: Object.assign(d, { evidenceFiles: ev, practiceFiles: pev }), savedAt: p.f.updatedAt } : null } };
   }
@@ -498,7 +504,9 @@
       docBoard = vendorDocBoard(b, V.tpl, V.subs);
       forms = contractFormsView(b, V.forms, V.files, (steps.find((x) => x.step === 1) || {}).data || {});
       // F1.8k 규정 "갑" 다이소 현장대리인 = 위임받은 도급인 책임자 (곽동민)
-      const P = await principal().catch(() => null); if (P && P.delegate.name) forms.hqRep = P.delegate.name;
+      /* F2.9 오픈지원 업체 = 오픈지원 현장대리인 (없으면 빈칸 → 화면에서 안전보건팀 문의 안내) */
+      const P = await principal().catch(() => null), PD = P ? (isOpenInd(b.industry) ? P.delegateOpen : P.delegate) : null;
+      if (isOpenInd(b.industry)) { forms.hqRep = (PD && PD.name) || ''; forms.hqRepMissing = !forms.hqRep; } else if (PD && PD.name) forms.hqRep = PD.name;
     }
     return {
       email: a.email, isApprover, correctionNote: b && b.submissionStatus === 'CORRECTION' ? b.correctionNote || '' : '', openJobs: V ? V.openJobs : null,
@@ -583,19 +591,21 @@
   API.viewCert = async (a, docId) => relay('certView', { docId: tidy(docId, 60) }, true);
   /* ---------- F1.8k 도급인 책임자 (SETTINGS/principal · 중계 서버 PRINCIPAL_DEF_와 같은 기본값) ---------- */
   const PRINCIPAL_DEF = { ceo: { name: '김기호', rank: '대표이사', title: '안전보건총괄책임자', org: '경영진' },
-    delegate: { name: '곽동민', rank: '부장', title: '인테리어부장', org: '영업본부 매장지원부문 인테리어부' }, manager: { name: '', rank: '', org: '' } };
+    delegate: { name: '곽동민', rank: '부장', title: '인테리어부장', org: '영업본부 매장지원부문 인테리어부' }, manager: { name: '', rank: '', org: '' },
+    delegateOpen: { name: '', rank: '', title: '', org: '' } };  // F2.9 오픈지원 현장대리인 (기본값 없음 → 안전보건팀이 조직도에서 지정)
+  const PR_KEYS = ['ceo', 'delegate', 'delegateOpen', 'manager'], PR_PK = ['ceo', 'delegate', 'delegateOpen'];
   let PRINC = null;
   async function principal(force) {
     if (PRINC && !force) return PRINC;
     let s = {}; try { const d = await db.collection('SETTINGS').doc('principal').get(); if (d.exists) s = d.data(); } catch (e) {}
-    const o = {}; ['ceo', 'delegate', 'manager'].forEach((k) => { o[k] = Object.assign({}, PRINCIPAL_DEF[k]); Object.keys(s[k] || {}).forEach((f) => { if (s[k][f]) o[k][f] = String(s[k][f]); }); });
+    const o = {}; PR_KEYS.forEach((k) => { o[k] = Object.assign({}, PRINCIPAL_DEF[k]); Object.keys(s[k] || {}).forEach((f) => { if (s[k][f]) o[k][f] = String(s[k][f]); }); });
     if (!o.manager.name) { try { const m = await db.collection('STAFF').doc(MASTER_EMAILS[0]).get(); if (m.exists) o.manager.name = m.data().name || ''; } catch (e) {} }
     PRINC = o; return o;
   }
   API.principalGet = async (a) => { await staffOnly(a); return { ...(await principal(true)), def: PRINCIPAL_DEF }; };
   API.principalSave = async (a, d) => {
     if (!isMaster(a)) fail('마스터 계정만 고칠 수 있습니다.');
-    const o = {}; ['ceo', 'delegate', 'manager'].forEach((k) => { o[k] = {}; ['name', 'rank', 'title', 'org', 'memberId'].forEach((f) => { o[k][f] = tidy(((d || {})[k] || {})[f], 60); }); });  // F1.9g memberId = 조직·구성원에서 고른 사람
+    const o = {}; PR_KEYS.forEach((k) => { o[k] = {}; ['name', 'rank', 'title', 'org', 'memberId'].forEach((f) => { o[k][f] = tidy(((d || {})[k] || {})[f], 60); }); });  // F1.9g memberId = 조직·구성원에서 고른 사람
     if (!o.ceo.name || !o.delegate.name) fail('총괄책임자와 위임받는 책임자 이름은 꼭 적어 주세요.');
     await db.collection('SETTINGS').doc('principal').set({ ...o, updatedAt: now(), updatedBy: a.email }); audit(a, '', 'PRINCIPAL_SAVE', o.ceo.name + ' → ' + o.delegate.name);
     return API.principalGet(a);
@@ -626,7 +636,7 @@
       if (!mem.some((m) => m.name === P.delegate.name)) add({ unitId: 'U-INT', name: P.delegate.name, title: P.delegate.rank || '부장', phone: '', companyEmail: '', gmail: '', role: 'NONE' });
       await B.commit();
     }
-    const P = await principal(true), pkOf = (id) => (P.ceo.memberId === id ? 'ceo' : P.delegate.memberId === id ? 'delegate' : '');
+    const P = await principal(true), pkOf = (id) => PR_PK.find((k) => P[k] && P[k].memberId === id) || '';
     return { me: a.email, units, members: mem.map((m) => ({ ...memView(m), pk: pkOf(m.id) })).sort((x, y) => x.name.localeCompare(y.name, 'ko')), principal: P };
   };
   /** 구성원 → 로그인 명단(STAFF) 맞추기 */
@@ -648,13 +658,13 @@
   const orgPathOf = (units, id) => { const L = []; let u = units.find((x) => x.id === id), g = 0; while (u && g++ < 20) { L.unshift(u.name); const p = u.parent; u = units.find((x) => x.id === p); } return L; };
   /** 위임장·규정에 들어가는 사람 (pk = ceo | delegate) → SETTINGS/principal */
   async function orgPrincipalSet(a, units, m, pk) {
-    const P = await principal(true), cur = {}; ['ceo', 'delegate', 'manager'].forEach((k) => { cur[k] = { ...(P[k] || {}) }; });
-    ['ceo', 'delegate'].forEach((k) => { if (cur[k].memberId === m.id && k !== pk) cur[k].memberId = ''; });  // 다른 역할로 바꾸거나 '해당 없음'이면 지정만 뺌 (이름은 남겨 문서가 비지 않게)
+    const P = await principal(true), cur = {}; PR_KEYS.forEach((k) => { cur[k] = { ...(P[k] || {}) }; });
+    PR_PK.forEach((k) => { if (cur[k].memberId === m.id && k !== pk) cur[k].memberId = ''; });  // 다른 역할로 바꾸거나 '해당 없음'이면 지정만 뺌 (이름은 남겨 문서가 비지 않게)
     if (pk) { const path = orgPathOf(units, m.unitId), unit = path.slice(-1)[0] || '';
       cur[pk] = { memberId: m.id, name: m.name, rank: m.title, org: path.join(' '), title: pk === 'ceo' ? (cur.ceo.title || '안전보건총괄책임자') : (/장$/.test(m.title) ? unit + '장' : unit + ' ' + m.title) }; }
-    const o = {}; ['ceo', 'delegate', 'manager'].forEach((k) => { o[k] = {}; ['name', 'rank', 'title', 'org', 'memberId'].forEach((f) => { o[k][f] = tidy((cur[k] || {})[f], 60); }); });
+    const o = {}; PR_KEYS.forEach((k) => { o[k] = {}; ['name', 'rank', 'title', 'org', 'memberId'].forEach((f) => { o[k][f] = tidy((cur[k] || {})[f], 60); }); });
     await db.collection('SETTINGS').doc('principal').set({ ...o, updatedAt: now(), updatedBy: a.email }); PRINC = null;
-    audit(a, '', 'PRINCIPAL_SAVE', o.ceo.name + ' → ' + o.delegate.name);
+    audit(a, '', 'PRINCIPAL_SAVE', o.ceo.name + ' → ' + o.delegate.name + ' / 오픈지원 ' + (o.delegateOpen.name || '-'));
   }
   API.orgSaveUnits = async (a, units) => {
     orgGate(a);
@@ -671,7 +681,7 @@
   };
   API.orgSaveMember = async (a, d) => {
     orgGate(a);
-    const units = (await orgUnits()) || ORG_SEED, id = /^M-[A-Za-z0-9]{1,12}$/.test(String((d && d.id) || '')) ? d.id : '', pk = ['ceo', 'delegate'].includes(d && d.pk) ? d.pk : '';
+    const units = (await orgUnits()) || ORG_SEED, id = /^M-[A-Za-z0-9]{1,12}$/.test(String((d && d.id) || '')) ? d.id : '', pk = PR_PK.includes(d && d.pk) ? d.pk : '';
     const m = { unitId: tidy(d && d.unitId, 20), name: tidy(d && d.name, 40), title: tidy(d && d.title, 30), phone: tidy(d && d.phone, 30), companyEmail: lower(tidy(d && d.companyEmail, 160)), gmail: lower(tidy(d && d.gmail, 160)), scopes: cleanScopes(d && d.scopes) };  // F2.6 담당
     const bad = []; if (!units.some((u) => u.id === m.unitId)) bad.push('소속 조직'); if (!m.name) bad.push('이름'); if (!m.title) bad.push('직책');
     if (m.companyEmail && !isInternalEmail(m.companyEmail)) bad.push('회사 이메일 (@' + CFG.APPROVER_DOMAINS.join(', @') + ' 주소만)');
@@ -684,7 +694,7 @@
     const mid = id || 'M-' + rand8();
     await db.collection('ORG_MEMBERS').doc(mid).set({ id: mid, ...m, createdAt: (old && old.createdAt) || now(), createdBy: (old && old.createdBy) || a.email, updatedAt: now(), updatedBy: a.email });
     await staffSync(a, { id: mid, ...m }, units, old && old.gmail);
-    const P = await principal(true), was = P.ceo.memberId === mid ? 'ceo' : P.delegate.memberId === mid ? 'delegate' : '';
+    const P = await principal(true), was = PR_PK.find((k) => P[k] && P[k].memberId === mid) || '';
     if (pk || was) await orgPrincipalSet(a, units, { id: mid, ...m }, pk);  // 지정했거나, 지정돼 있던 사람(이름·직책이 바뀌면 문서에도 반영)
     audit(a, '', id ? 'MEMBER_EDIT' : 'MEMBER_ADD', m.name + ' ' + m.role + ' ' + m.gmail + (pk ? ' ' + pk : ''));
     return API.orgGet(a);
@@ -694,7 +704,7 @@
     const ref = db.collection('ORG_MEMBERS').doc(tidy(id, 20)), s = await ref.get(); if (!s.exists) fail('구성원을 찾을 수 없습니다.');
     const m = s.data(), P = await principal(true);
     if (m.gmail === a.email || MASTER_EMAILS.includes(m.gmail)) fail('마스터 계정은 삭제할 수 없습니다.');
-    if (['ceo', 'delegate', 'manager'].some((k) => (P[k] || {}).memberId === m.id)) fail('도급인 책임자로 지정된 사람입니다. ③ 도급인 책임자에서 다른 사람으로 바꾼 뒤 삭제해 주세요.');
+    if (PR_KEYS.some((k) => (P[k] || {}).memberId === m.id)) fail('도급인 책임자로 지정된 사람입니다. ③ 도급인 책임자에서 다른 사람으로 바꾼 뒤 삭제해 주세요.');
     await ref.delete(); if (m.gmail) await db.collection('STAFF').doc(m.gmail).delete().catch(() => {});
     audit(a, '', 'MEMBER_DELETE', m.name + ' ' + (m.gmail || ''));
     return API.orgGet(a);
@@ -1863,7 +1873,7 @@
     const vs = await Promise.all((vs0 || []).map((v) => db.collection('COMPANIES').doc(v.companyId).get().then((x) => ({ ...v, contact: x.exists ? x.data().contact || '' : '' })).catch(() => v)));
     return { id: m.id, title: m.title, date: m.date, time: m.time, place: m.place, kinds: (m.kinds || []).map((k) => MEET_KINDS[k]), kindCodes: m.kinds || [], open: m.open === 'Y', link: meetLink(m.token),
       joint: m.joint || null, minutes: m.minutes || null, done: !!m.doneAt, doneAt: m.doneAt || '', doneBy: m.doneBy || '', jointItems: JOINT_ITEMS, agenda: COUNCIL_AGENDA,
-      job: { id: j.id, title: j.title, storeName: j.storeName }, vendors: vs,
+      job: { id: j.id, title: j.title, storeName: j.storeName, kind: j.kind || '' }, vendors: vs,  // F2.9 kind = 오픈지원 현장대리인 고르기
       attendees: at.filter((x) => x.status !== 'REJECTED').sort((x, y) => String(x.checkedAt).localeCompare(String(y.checkedAt)))
         .map((x) => ({ id: x.id, name: x.name, side: x.side, companyId: x.companyId, company: x.company, role: x.role, status: x.status, email: x.email, checkedAt: x.checkedAt })) };
   };
