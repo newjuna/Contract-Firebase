@@ -17,7 +17,9 @@ function inspCardHtml(v){const I=v.insp||{open:[],recent:[]};
   +(I.todayDone?'':'<button class="button" type="button" id="btnInsp" style="width:100%;padding:10px;margin-top:8px" onclick="openInspForm()">오늘 순회점검 작성</button>')
   +(I.open.length?'<div class="stage">미조치 지적사항 <span class="cnt">'+I.open.length+'</span></div>'+I.open.map(f=>findRow(f,'vendor')).join(''):'')
   +(I.recent.length?'<details class="hist" style="margin-top:12px"><summary>순회점검일지 '+I.recent.length+'건</summary>'+I.recent.map(x=>'<div class="item"><div class="row" style="justify-content:space-between"><span>'+escapeText(x.date)+(x.bad?' · <b class="req">지적 '+x.bad+'</b>':' · 이상 없음')+((x.drills||[]).length?' · '+x.drills.map(d=>escapeText(d.label)).join(' · '):'')+' '+(x.checkedAt?'<span class="pill ok">도급인 확인</span>':'<span class="pill todo">확인 대기</span>')+'</span><button class="button ghost" type="button" onclick="openInspSheet(\''+escapeText(x.id)+'\',\'vendor\')">일지 보기</button></div></div>').join('')+'</details>':'')+'</div>'}
-function findRow(f,who){return '<div class="item"><div class="row" style="justify-content:space-between"><div><b>'+f.no+'. '+escapeText(f.item)+'</b>'+(who==='staff'?' <span class="muted">'+escapeText(f.company)+'</span>':'')+'<div class="muted">지적 '+escapeText(f.foundDate)+' · '+escapeText(f.memo)+'</div></div><button class="button" type="button" onclick="openResolve(\''+escapeText(f.id)+'\',\''+who+'\')">조치 등록</button></div></div>'}
+/** F2.8 도급인 [📢 조치 요청] 표시 (업체 · 현장관리자 · 현장대리인 화면) */
+const reqPill=f=>f&&Number(f.reqN)>0?' <span class="pill bad">📢 조치 요청'+(Number(f.reqN)>1?' '+Number(f.reqN)+'회':'')+'</span>':'';
+function findRow(f,who){return '<div class="item"><div class="row" style="justify-content:space-between"><div><b>'+f.no+'. '+escapeText(f.item)+'</b>'+reqPill(f)+(who==='staff'?' <span class="muted">'+escapeText(f.company)+'</span>':'')+'<div class="muted">지적 '+escapeText(f.foundDate)+' · '+escapeText(f.memo)+'</div></div><button class="button" type="button" onclick="openResolve(\''+escapeText(f.id)+'\',\''+who+'\')">조치 등록</button></div></div>'}
 /* ---------- F1.9w 업체 공사 화면: 비상대응훈련 현황 (계획서에서 필요한 훈련 = 했음 / 아직) · 결과보고서는 종료 평가 때 ---------- */
 function drillStatusHtml(v){const D=v.drill;if(!D||!Array.isArray(D.need))return '';const LV={G:['완료','ok'],N:['일부','todo'],P:['아직','bad']}[D.lv]||['','todo'];
  return '<div class="card" id="drillStat"><div class="vh-top"><h2 style="margin:0;font-size:16px">비상대응훈련</h2><span class="pill '+LV[1]+'">'+LV[0]+'</span></div>'
@@ -125,7 +127,8 @@ function principalName(k,withTitle){const P=(typeof jobData!=='undefined'&&jobDa
 let rs=null;
 /* F1.8f from='dash': 메인 화면 [조치하기]에서 열었으면 돌아가기·등록 후 메인으로 */
 function openResolve(id,who,from){const list=who==='staff'?inspJob.findings:vjob.insp.open,f=list.find(x=>x.id===id);if(!f)return;rs={f,who,photos:[],from:from||''};renderResolve()}
-const rsBack=()=>rs&&rs.from==='dash'?(rs.who==='staff'?'rs=null;sgo(\'dash\')':'rs=null;vgo(\'dash\')'):rs&&rs.who==='staff'?'renderInspList()':'renderVJob()';
+/* F2.8 from='open': 오픈 매장 상세(도급인)에서 연 조치 → 그 매장 [오늘 할 일]로 */
+const rsBack=()=>rs&&rs.from==='open'?'rs=null;openOpen(\''+escapeText(rs.f.jobId||(inspJob&&inspJob.job.id)||'')+'\',\'today\')':rs&&rs.from==='dash'?(rs.who==='staff'?'rs=null;sgo(\'dash\')':'rs=null;vgo(\'dash\')'):rs&&rs.who==='staff'?'renderInspList()':'renderVJob()';
 function renderResolve(){const f=rs.f,staff=rs.who==='staff',t=new Date(Date.now()+9*3600e3).toISOString().slice(0,10),area=staff?$('jobs'):$('execArea');
  area.innerHTML='<div class="card"><button class="button ghost" type="button" onclick="'+rsBack()+'">← 돌아가기</button><h2 style="margin-top:12px">지적사항 조치 등록</h2><table class="rtable"><tr><th>항목</th><td>'+f.no+'. '+escapeText(f.item)+'</td></tr><tr><th>업체</th><td>'+escapeText(f.company)+'</td></tr><tr><th>지적일</th><td>'+escapeText(f.foundDate)+'</td></tr><tr><th>지적 내용</th><td>'+escapeText(f.memo)+'</td></tr><tr><th>조치 전</th><td>'+(thumbs(f.before,'')||'<span class="muted">사진 없음</span>')+'</td></tr></table></div>'
   +'<div class="card"><div class="field"><label for="f_rsMemo">조치 내용 <span class="req">*</span></label><input id="f_rsMemo" placeholder="예) 통로 자재 정리 완료, 적치구역 지정"></div>'
@@ -141,7 +144,8 @@ async function resolveNow(){const d={memo:value('rsMemo'),date:value('rsDate'),n
  /* F1.8p 조치 후 사진 올리기 → 조치 저장 (체크리스트 한 번) */
  const np=pendCount([rs.photos]);let res=null;
  try{await subRun('조치 완료 등록',[np&&['조치 후 사진 '+np+'장 올리기',set=>pendUpload([rs.photos],set,inspPhoto)],['조치 결과 저장',async()=>{d.photos=rs.photos;res=await api('resolveFinding',[fid,d])}]]);
-  if(rs.who==='staff'){inspJob=res;rs=null;
+  if(rs.who==='staff'){const fromOpen=rs.from==='open';inspJob=res;rs=null;
+   if(fromOpen){jobAt=0;await openOpen(res.job.id,'today');msg('조치 완료로 등록했습니다.');return}
    if(dash){/* F1.8g 도급인 메인에서 연 조치 → 메인 목록 바로 '조치 완료' */((jobData&&jobData.jobs)||[]).forEach(j=>{(j.findings||[]).forEach(f=>{if(f.id===fid){f.status='DONE';f.actionDate=d.date}});if(j.findings)j.findOpen=j.findings.filter(f=>f.status!=='DONE').length});jobAt=0;sgo('dash')}
    else renderInspList()}
   else{vjob=res;rs=null;

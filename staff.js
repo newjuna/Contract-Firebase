@@ -5,7 +5,7 @@
  *  서버: Code.gs jobBoard(vstats) · vendorList */
 let smenu='dash',svData=null,svFilter='all';
 /* F1.8g 작업허가서 승인 · 순회점검 확인 메뉴 → '현장 확인' 하나로 (예전 이름으로 부르면 현장 확인으로) */
-const SMENU={flyer:'업체 안내문',dash:'대시보드',jobs:'공사 관리',meet:'협의체·합동점검',check:'현장 확인',data:'데이터 관리',principal:'도급인 책임자',permit:'작업허가서 승인',insp:'순회점검 확인',eval:'종료 평가',vendors:'업체 현황',notice:'참조 알림',tpl:'표준양식 관리',staff:'조직도',half:'반기 평가 (오픈지원)'};  // F2.5 half
+const SMENU={flyer:'업체 안내문',dash:'대시보드',jobs:'공사 관리',meet:'협의체·합동점검',check:'현장 확인',data:'데이터 관리',principal:'도급인 책임자',permit:'작업허가서 승인',insp:'순회점검 확인',eval:'종료 평가',vendors:'업체 현황',notice:'참조 알림',tpl:'표준양식 관리',staff:'조직도',half:'반기 평가 (오픈지원)',drills:'비상훈련 기록'};  // F2.5 half · F2.8 drills
 const isStaffUI=()=>!!(state&&state.staff);
 /* ---------- F2.6 담당 화면 (인테리어 · 오픈지원) ----------
  *  마스터 · 안전보건팀 · 담당 2개 = 들어갈 때 고름 (위쪽 [바꾸기]) · 담당 1개 = 바로 · 비어 있으면 인테리어 (지금 화면 그대로)
@@ -46,7 +46,7 @@ function setupSMenu(){const on=isStaffUI(),safety=on&&state.staff.role==='SAFETY
  markSMenu();if(tab==='my'&&!/^MEET-/.test(LINK_REVIEW))setTimeout(()=>sgo(smenu),0)}
 function markSMenu(){if(!isStaffUI())return;document.querySelectorAll('.smb').forEach(b=>b.classList.toggle('active',b.id==='sm_'+smenu));$('pageTitle').textContent=SMENU[smenu]||''}
 /** 메뉴 이동 */
-function sgo(m){if(m==='permit'||m==='insp')m='check';if(m==='eval')m='jobs';/* F1.8h 종료 평가는 공사 관리 안에서 */if(['tpl','staff','data','principal'].includes(m)&&!state.isMaster)m='dash';if(m==='notice')m='dash';smenu=m;if(m==='dash'&&typeof dashJob!=='undefined')dashJob='';toggleMenu(false);stopScan();
+function sgo(m){if(typeof setTopGuide==='function')setTopGuide('');if(m==='permit'||m==='insp')m='check';if(m==='eval')m='jobs';/* F1.8h 종료 평가는 공사 관리 안에서 */if(['tpl','staff','data','principal'].includes(m)&&!state.isMaster)m='dash';if(m==='notice')m='dash';smenu=m;if(m==='dash'&&typeof dashJob!=='undefined')dashJob='';toggleMenu(false);stopScan();
  if(['notice','tpl','staff','vendors'].includes(m)){switchTab(m);markSMenu();return}
  if(tab!=='jobs')switchTab('jobs');else loadJobs();markSMenu();window.scrollTo(0,0)}
 /** 알림 숫자 (showBadges에서 호출) */
@@ -58,7 +58,8 @@ function sBadges(b){if(!isStaffUI())return;b=b||{};const vd=(b.admin||0)+(b.revi
 function renderJobs(){jobsMode='list';roomId='';clearInterval(roomTimer);const d0=jobData;if(!d0)return;
  /* F2.6 화면을 아직 안 골랐으면 고르기 · 고른 담당의 공사 · 업체만 */
  sScopeInit();if(!sScope){$('jobs').innerHTML=sPickHtml(d0);$('pageTitle').textContent='화면 고르기';return}const d=sView(d0);
- const H={flyer:sFlyer,dash:sDash,jobs:sJobs,meet:sMeet,check:sCheck,data:sData,principal:sPrincipal,permit:sCheck,insp:sCheck,eval:sEval,half:typeof sHalf==='function'?sHalf:sJobs}[smenu]||sJobs;$('jobs').innerHTML=H(d)}
+ if(smenu==='drills'&&!sIsOpen())smenu='dash';if(typeof setTopGuide==='function')setTopGuide('');/* F2.8 위쪽 [❔ 가이드]는 그 화면이 다시 켬 */
+ const H={flyer:sFlyer,dash:sDash,jobs:sJobs,meet:sMeet,check:sCheck,data:sData,principal:sPrincipal,permit:sCheck,insp:sCheck,eval:sEval,half:typeof sHalf==='function'?sHalf:sJobs,drills:typeof sDrillsView==='function'?sDrillsView:sJobs}[smenu]||sJobs;$('jobs').innerHTML=H(d)}
 const sAct=d=>d.jobs.filter(j=>j.status!=='ENDED'),sEnded=d=>d.jobs.filter(j=>j.status==='ENDED');
 const sum=(l,f)=>l.reduce((s,x)=>s+(Number(f(x))||0),0);
 function sMeta(j){return escapeText(j.storeName)+' · '+escapeText(j.startDate)+(j.endDate?' ~ '+escapeText(j.endDate):'')+' · 주관 '+escapeText(j.hostName)}

@@ -80,10 +80,12 @@ const fxShift=(t,n)=>new Date(Date.parse(t+'T00:00:00Z')-n*86400000).toISOString
 const fxStaff=()=>typeof isStaffUI==='function'&&isStaffUI();
 const fxSrc=()=>fxStaff()?{today:kstToday(),jobs:(typeof sJobsOf==='function'?sJobsOf(jobData):(jobData&&jobData.jobs))||[]/* F2.6 담당 화면의 공사만 */}:{today:(vjobs&&vjobs.today)||'',jobs:(vjobs&&vjobs.jobs)||[]};
 function fxList(){const d=fxSrc(),st=fxStaff(),multi=st||d.jobs.length>1,all=[];d.jobs.forEach(j=>(j.findings||[]).forEach(f=>all.push(Object.assign({jobId:j.id,job:j.title,store:j.storeName},f))));
- const L=all.filter(f=>(!fx.from||f.foundDate>=fx.from)&&(!fx.to||f.foundDate<=fx.to)).sort((a,b)=>((a.status==='DONE')-(b.status==='DONE'))||(a.foundDate<b.foundDate?1:a.foundDate>b.foundDate?-1:0));return {all,L,multi,st,today:d.today}}
+ const L=all.filter(f=>(!fx.from||f.foundDate>=fx.from)&&(!fx.to||f.foundDate<=fx.to)).sort((a,b)=>((a.status==='DONE')-(b.status==='DONE'))||((b.status!=='DONE'&&b.reqN?1:0)-(a.status!=='DONE'&&a.reqN?1:0))/* F2.8 조치 요청 먼저 */||(a.foundDate<b.foundDate?1:a.foundDate>b.foundDate?-1:0));return {all,L,multi,st,today:d.today}}
 function fxRow(f,multi,st,t){const open=f.status!=='DONE',age=open&&t?dayDiff(f.foundDate,t):0,lab=escapeText(mdw(f.foundDate)+' '+(f.memo||f.item));
  const sub=[st?f.company+(f.store?' · '+f.store:''):multi?f.job:''].filter(Boolean).map(escapeText).join('');
- return '<div class="fxrow'+(open?'':' done')+'"><div class="fxt"><div><b>'+mdw(f.foundDate)+'</b> · '+escapeText(f.memo||f.item)+'</div>'+(sub||age>=3?'<div class="muted">'+sub+(age>=3?(sub?' · ':'')+'<span class="req">'+age+'일째 미조치</span>':'')+'</div>':'')+'</div>'
+ const rq=open&&typeof reqPill==='function'?reqPill(f):'',oq=open&&st&&typeof sIsOpen==='function'&&sIsOpen();  // F2.8 오픈지원 도급인 = [📢 요청]도
+ return '<div class="fxrow'+(open?'':' done')+'"><div class="fxt"><div><b>'+mdw(f.foundDate)+'</b> · '+escapeText(f.memo||f.item)+rq+'</div>'+(sub||age>=3?'<div class="muted">'+sub+(age>=3?(sub?' · ':'')+'<span class="req">'+age+'일째 미조치</span>':'')+'</div>':'')+'</div>'
+  +(oq?'<button class="button ghost" type="button" style="padding:8px 8px;font-size:12.5px" onclick="dashReq(\''+escapeText(f.jobId)+'\',\''+escapeText(f.id)+'\')" aria-label="'+lab+' 조치 요청">📢 요청</button>':'')
   +(open?'<button class="button" type="button" onclick="'+(st?'dashFixS':'dashFix')+'(\''+escapeText(f.jobId)+'\',\''+escapeText(f.id)+'\')" aria-label="'+lab+' 조치하기">조치하기</button>'
    :st&&f.inspId?'<button class="button ghost" type="button" onclick="dashViewS(\''+escapeText(f.jobId)+'\',\''+escapeText(f.inspId)+'\')" aria-label="'+lab+' 조치 전·후 보기">✔ 보기</button>':'<span class="fxdone">✔ 조치 완료</span>')+'</div>'}
 function fixBodyHtml(){const {L,multi,st,today}=fxList(),pages=[];for(let i=0;i<L.length;i+=FX_PER)pages.push(L.slice(i,i+FX_PER));
@@ -105,11 +107,15 @@ async function dashFix(jobId,fid){let v=cacheGet('vendorJob',[jobId]);
  if(!((v.insp&&v.insp.open)||[]).some(f=>f.id===fid)){vjobsAt=0;msg('이미 조치된 지적사항입니다.');loadMyJobs();return}
  vSel=jobId;vjob=v;openResolve(fid,'vendor','dash');window.scrollTo(0,0)}
 /** F1.8g 도급인 [조치하기] → 같은 조치 등록 화면 (조치 내용 · 조치일 · 조치 후 사진) → 끝나면 메인으로 */
-async function dashFixS(jobId,fid){try{inspJob=await call('inspList',jobId)}catch(e){return}
+async function dashFixS(jobId,fid){if(typeof setTopGuide==='function')setTopGuide('');try{inspJob=await call('inspList',jobId)}catch(e){return}
  if(!(inspJob.findings||[]).some(f=>f.id===fid&&f.status!=='DONE')){jobAt=0;msg('이미 조치된 지적사항입니다.');sgo('dash');return}
  jobsMode='insp';openResolve(fid,'staff','dash');window.scrollTo(0,0)}
+/** F2.8 오픈지원 도급인 [📢 요청] → 업체 화면에 "📢 조치 요청" 표시 (누를 때마다 횟수 +1) */
+async function dashReq(jobId,fid){const f=(((jobData&&jobData.jobs)||[]).find(j=>j.id===jobId)||{findings:[]}).findings.find(x=>x.id===fid);
+ if(!await askOk('조치 요청','업체(현장관리자 · 현장대리인 · 계약담당자) 화면에 「📢 조치 요청」을 표시합니다.'+(f&&f.reqN?'\n(지금까지 '+f.reqN+'회 요청)':'')+'\n요청할까요?','요청'))return;
+ try{const r=await call('findReq',jobId,fid);if(f){f.reqN=(Number(f.reqN)||0)+1}if(typeof opData!=='undefined'&&opData&&opData.job&&opData.job.id===jobId&&jobsMode==='open'){opData=r;opDraw()}else fxRedraw();jobAt=0;msg('조치 요청을 보냈습니다.')}catch(e){}}
 /** 도급인 [✔ 보기] → 그날 순회점검일지 (지적 내용 · 조치 전·후 사진) */
-async function dashViewS(jobId,inspId){try{inspJob=await call('inspList',jobId)}catch(e){return}jobsMode='insp';openInspSheet(inspId,'staff')}
+async function dashViewS(jobId,inspId){if(typeof setTopGuide==='function')setTopGuide('');try{inspJob=await call('inspList',jobId)}catch(e){return}jobsMode='insp';openInspSheet(inspId,'staff')}
 /* F1.8j 업체 메인 자동 새로고침: 도급인이 미팅을 만들거나 조치·허가서가 바뀌면 새로고침 없이 반영
  *  메인을 보고 있을 때만 30초마다 + 앱으로 돌아왔을 때 바로 · 바뀐 게 있을 때만 다시 그림 */
 let vDashTimer=null;

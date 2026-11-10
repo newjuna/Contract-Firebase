@@ -321,3 +321,6 @@ img,svg,video,iframe,canvas,table,select,input,textarea{max-width:100%}
 .mgstep .row{justify-content:space-between}
 .mgn{display:inline-block;width:20px;height:20px;border-radius:50%;border:1.5px solid var(--main);text-align:center;font-size:12px;line-height:18px;font-weight:bold;margin-right:6px}
 .mgstep .button{width:100%;margin-top:8px}
+/* F2.8 오픈지원 도급인 대시보드 (매장 안 업체 줄) */
+.odvr{display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:12.5px;padding:5px 0 0;margin-top:5px;border-top:1px solid #f3f4f6}
+.fxrow .button+.button{margin-left:6px}

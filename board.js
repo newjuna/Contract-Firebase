@@ -63,7 +63,7 @@ function sCheck(d){return sJobList(d,'현장 확인','작업허가서 승인 · 
 function jWatch(j,t){const rows=[];if(j.status!=='ENDED'&&j.end&&j.end.state==='OVER')rows.push(['공사 전체','종료일 경과 · 연장 또는 종료 필요']);
  (j.vstats||[]).forEach(v=>{const r=[];if(v.inspNeed&&v.insp/v.inspNeed<0.6)r.push('순회점검 '+Math.round(v.insp/v.inspNeed*100)+'%');if(v.openFindings>=2)r.push('미조치 지적 '+v.openFindings+'건');if(!v.noPermit&&v.workDays&&v.permitDays/v.workDays<0.6)r.push('허가서 '+Math.round(v.permitDays/v.workDays*100)+'%');if(v.lastInsp&&!v.inspToday&&dd(v.lastInsp,t)>=4)r.push('순회점검 '+dd(v.lastInsp,t)+'일 없음');if(r.length)rows.push([v.company,r.join(' · ')])});return rows}
 /* ---------- ① 대시보드: 공사 목록 ---------- */
-function sDash(d){if(dashJob){const j=d.jobs.find(x=>x.id===dashJob);if(j)return sDashJob(d,j);dashJob=''}
+function sDash(d){if(typeof sIsOpen==='function'&&sIsOpen()&&typeof sDashOpen==='function'){dashJob='';return sDashOpen(d)}/* F2.8 오픈지원 담당 대시보드 */if(dashJob){const j=d.jobs.find(x=>x.id===dashJob);if(j)return sDashJob(d,j);dashJob=''}
  const t=kstToday(),safety=d.me.role==='SAFETY',act=sAct(d),ended=sEnded(d);
  const score=j=>sum(jTodo(j),x=>x[2])+jWatch(j,t).length*2;
  const card=j=>{const R=sRates(j),w=jWatch(j,t).length,s=j.startDate,e=j.endDate||j.startDate,tot=Math.max(1,dd(s,e)+1),pct=j.status==='ENDED'?100:Math.max(0,Math.min(100,Math.round((dd(s,t)+1)/tot*100)));

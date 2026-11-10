@@ -71,7 +71,7 @@ function mgrJobCard(j,multi){const S=j.siteMgrs||[],cur=S.find(x=>x.status==='AC
    +(cur?'':'<button class="button mgQr" type="button" onclick="smQrOpen(\''+id+'\')">📱 지정 QR</button>')+'</div>'
   +'<div class="mgstep mgStep2"><div class="row"><span><span class="mgn">2</span><b>협의체 · 합동점검</b></span>'+(went?'<span class="pill ok">✔ 참석</span>':'<span class="pill lock">참석 전</span>')+'</div>'
    +(went?'':'<button class="button ghost mgMeet" type="button" onclick="mgrGo(\'meet\')">📷 참석 QR 찍기</button>')+'</div>'
-  +'<div class="mgstep mgStep3"><div class="row"><span><span class="mgn">3</span><b>지적사항 조치</b></span>'+(n==null?'<span class="pill lock">-</span>':'<span class="pill '+(n?'bad':'lock')+'">'+n+'건</span>')+'</div>'
+  +'<div class="mgstep mgStep3"><div class="row"><span><span class="mgn">3</span><b>지적사항 조치</b></span>'+(n==null?'<span class="pill lock">-</span>':'<span>'+((j.open||[]).some(f=>f.reqN)?'<span class="pill bad">📢 조치 요청</span> ':'')+'<span class="pill '+(n?'bad':'lock')+'">'+n+'건</span></span>')+'</div>'
    +(n?'<button class="button mgFix" type="button" onclick="mgrGo(\'fix\',\''+id+'\')">조치하기</button>':'')+'</div></div>'}
 /** F2.7 [현장대리인] 지적사항 조치 목록 (only = 그 매장만) → 조치 등록 화면은 현장관리자와 같음 (sm.js smResolveDraw) */
 async function mgrFixDraw(only){const el=$('my');$('pageTitle').textContent='지적사항 조치';rmSetup('mgr','fix');
@@ -80,7 +80,7 @@ async function mgrFixDraw(only){const el=$('my');$('pageTitle').textContent='지
  const L=mgrHomeData.jobs.filter(j=>!only||j.id===only);
  el.innerHTML=(only?'<div class="card"><button class="button ghost" type="button" onclick="mgrGo(\'home\')">← 돌아가기</button></div>':'')
   +'<div class="card" id="mfList"><h2>지적사항 조치</h2>'+(L.length?L.map(j=>'<div class="stage">'+escapeText(j.storeName)+' <span class="muted">'+omd(j.startDate)+' ~ '+omd(j.endDate)+'</span></div>'
-   +(j.open==null?'<p class="muted">지적사항을 불러오지 못했습니다.</p>':j.open.length?j.open.map(f=>'<div class="item"><div class="row" style="justify-content:space-between"><div><b>'+escapeText(f.item)+'</b><div class="muted">'+escapeText(omd(f.foundDate))+' · '+escapeText(f.memo)+'</div></div><button class="button" type="button" onclick="mgrRsOpen(\''+escapeText(j.id)+'\',\''+escapeText(f.id)+'\')">조치 등록</button></div></div>').join(''):'<p class="muted">미조치 없음</p>')
+   +(j.open==null?'<p class="muted">지적사항을 불러오지 못했습니다.</p>':j.open.length?j.open.map(f=>'<div class="item"><div class="row" style="justify-content:space-between"><div><b>'+escapeText(f.item)+'</b>'+reqPill(f)+'<div class="muted">'+escapeText(omd(f.foundDate))+' · '+escapeText(f.memo)+'</div></div><button class="button" type="button" onclick="mgrRsOpen(\''+escapeText(j.id)+'\',\''+escapeText(f.id)+'\')">조치 등록</button></div></div>').join(''):'<p class="muted">미조치 없음</p>')
    +((j.done||[]).length?'<details class="hist" style="margin-top:6px"><summary>조치 완료 '+j.done.length+'건</summary>'+j.done.map(f=>'<div class="muted" style="padding:4px 0;border-top:1px solid var(--line)">'+escapeText(f.actionDate)+' · '+escapeText(f.item)+' · '+escapeText(f.actionBy)+'</div>').join('')+'</details>':'')).join('')
    :'<p class="muted">배정된 오픈 매장이 없습니다.</p>')+'</div>';setTopGuide('mgrfix')}
 function mgrRsOpen(jobId,fid){const j=mgrPick().find(x=>x.id===jobId),f=j&&(j.open||[]).find(x=>x.id===fid);if(!f)return;window.__wkCo=j.company||'';smRs={f,jobId,photos:[],who:'mgr'};setTopGuide('');smResolveDraw();window.scrollTo(0,0)}
