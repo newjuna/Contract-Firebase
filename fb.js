@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.29 F2.5';
+  const VERSION = '26.10.30 F2.6';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   /* F2.1 업종 '오픈지원' 추가 (매장 오픈 인력 · 인력사무소형) · 인테리어(마감) = 지금까지의 공사 흐름 그대로 */
   const CFG = {
@@ -502,7 +502,9 @@
     }
     return {
       email: a.email, isApprover, correctionNote: b && b.submissionStatus === 'CORRECTION' ? b.correctionNote || '' : '', openJobs: V ? V.openJobs : null,
-      staff: st ? { name: st.name, role: st.role, roleLabel: (st.master ? '마스터 · ' : '') + (STAFF_ROLES[st.role] || st.role), master: !!st.master } : null,
+      staff: st ? { name: st.name, role: st.role, roleLabel: (st.master ? '마스터 · ' : '') + (STAFF_ROLES[st.role] || st.role), master: !!st.master,
+        /* F2.6 볼 수 있는 화면: 마스터 · 안전보건팀 = 둘 다 (들어갈 때 고름) · 그 외 = 조직도 담당 (비어 있으면 인테리어) */
+        scopes: st.master || st.role === 'SAFETY' ? Object.keys(SCOPES) : (cleanScopes(st.scopes).length ? cleanScopes(st.scopes) : ['INT']), scopeLabels: SCOPES } : null,
       isMaster: isMaster(a), testSkipFiles: CFG.TEST_SKIP_FILES,
       company: publicCompany(b),
       role: st ? st.role : 'VENDOR', industries: CFG.INDUSTRIES, fields: FIELDS, stepNames: STEP_NAMES, industryFields: (b && INDUSTRY_FIELDS[b.industry]) || [],
@@ -608,7 +610,10 @@
   const ORG_KINDS = ['경영진', '본부', '부문', '부', '팀'], ORG_ROLE_OK = { SAFETY: 1, CLIENT: 1, NONE: 1 };
   const orgGate = (a) => { if (!isMaster(a)) fail('마스터 계정만 조직·구성원을 관리할 수 있습니다.'); };
   async function orgUnits() { const d = await db.collection('SETTINGS').doc('org').get().catch(() => null); return d && d.exists && Array.isArray(d.data().units) ? d.data().units : null; }
-  const memView = (m) => ({ id: m.id, unitId: m.unitId || '', name: m.name || '', title: m.title || '', phone: m.phone || '', companyEmail: m.companyEmail || '', gmail: m.gmail || '', role: ORG_ROLE_OK[m.role] ? m.role : 'NONE' });
+  /* F2.6 담당 (화면 구분) · 비어 있으면 인테리어 · 마스터 · 안전보건팀은 모두 (들어갈 때 고름) */
+  const SCOPES = { INT: '인테리어 (공사)', OPEN: '오픈지원' };
+  const cleanScopes = (v) => [...new Set((Array.isArray(v) ? v : []).map(String))].filter((k) => SCOPES[k]);
+  const memView = (m) => ({ id: m.id, unitId: m.unitId || '', name: m.name || '', title: m.title || '', phone: m.phone || '', companyEmail: m.companyEmail || '', gmail: m.gmail || '', role: ORG_ROLE_OK[m.role] ? m.role : 'NONE', scopes: cleanScopes(m.scopes) });
   API.orgGet = async (a) => {
     orgGate(a);
     let units = await orgUnits(); if (!units) { units = ORG_SEED; await db.collection('SETTINGS').doc('org').set({ units, updatedAt: now(), updatedBy: a.email }); }
@@ -631,7 +636,7 @@
     if (!m.gmail) return;
     const ref = db.collection('STAFF').doc(m.gmail), cur = await ref.get().catch(() => null), base = cur && cur.exists ? cur.data() : null;
     if (m.role === 'NONE') { if (base && !keep(m.gmail)) await ref.delete(); return; }
-    await ref.set({ name: m.name, dept, role: m.role, companyEmail: m.companyEmail, loginEmail: m.gmail, active: 'Y', title: m.title, phone: m.phone, unitId: m.unitId, memberId: m.id,
+    await ref.set({ name: m.name, dept, role: m.role, companyEmail: m.companyEmail, loginEmail: m.gmail, active: 'Y', title: m.title, phone: m.phone, unitId: m.unitId, memberId: m.id, scopes: cleanScopes(m.scopes),  // F2.6 담당
       createdBy: (base && base.createdBy) || a.email, createdAt: (base && base.createdAt) || now(), updatedBy: a.email, updatedAt: now() });
   }
   /** F1.9t 권한은 소속으로 자동: 안전보건팀(이름)과 그 아래 조직 = 안전보건팀 · 그 외 = 도급인 담당자 · 로그인 Gmail이 없으면 로그인 명단에 안 넣음 */
@@ -667,7 +672,7 @@
   API.orgSaveMember = async (a, d) => {
     orgGate(a);
     const units = (await orgUnits()) || ORG_SEED, id = /^M-[A-Za-z0-9]{1,12}$/.test(String((d && d.id) || '')) ? d.id : '', pk = ['ceo', 'delegate'].includes(d && d.pk) ? d.pk : '';
-    const m = { unitId: tidy(d && d.unitId, 20), name: tidy(d && d.name, 40), title: tidy(d && d.title, 30), phone: tidy(d && d.phone, 30), companyEmail: lower(tidy(d && d.companyEmail, 160)), gmail: lower(tidy(d && d.gmail, 160)) };
+    const m = { unitId: tidy(d && d.unitId, 20), name: tidy(d && d.name, 40), title: tidy(d && d.title, 30), phone: tidy(d && d.phone, 30), companyEmail: lower(tidy(d && d.companyEmail, 160)), gmail: lower(tidy(d && d.gmail, 160)), scopes: cleanScopes(d && d.scopes) };  // F2.6 담당
     const bad = []; if (!units.some((u) => u.id === m.unitId)) bad.push('소속 조직'); if (!m.name) bad.push('이름'); if (!m.title) bad.push('직책');
     if (m.companyEmail && !isInternalEmail(m.companyEmail)) bad.push('회사 이메일 (@' + CFG.APPROVER_DOMAINS.join(', @') + ' 주소만)');
     if (m.gmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(m.gmail)) bad.push('로그인 Gmail 형식');
