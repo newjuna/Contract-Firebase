@@ -28,7 +28,11 @@ function hlDraw(){const h=hlCur,el=$('jobs');if(!el||!h)return;const done=h.stat
   +'<div class="card"><h2>끝난 오픈 매장 집계 <span class="cnt">'+h.jobs.length+'</span></h2>'+(h.jobs.length?hlJobTable(h.jobs):'<p class="muted">이 반기에 끝난 오픈 매장이 없습니다.</p>')
   +(h.going.length?'<p class="muted" style="margin-top:8px">진행 중 (반영 안 됨): '+h.going.map(g=>escapeText(g.store+' '+String(g.start).slice(5)+'~'+String(g.end||'').slice(5))).join(', ')+'</p>':'')+'</div>'
   +'<div class="card roomfoot"><div class="row" style="gap:6px">'+(done?'<button class="button ghost" type="button" style="flex:1" onclick="hlReopen()">다시 수정</button>':'<button class="button ghost" type="button" style="flex:1" onclick="hlSave(false)">임시 저장</button><button class="button" type="button" style="flex:1" onclick="hlSave(true)">평가 확정</button>')
-  +'<button class="button ghost" type="button" style="flex:1" onclick="hlSheet()">🖨 결과표</button></div></div>'}
+  +'<button class="button ghost" type="button" style="flex:1" onclick="hlSheet()">🖨 결과표</button></div>'
+  +(done?'<button class="button" type="button" style="width:100%;margin-top:8px" onclick="hlZip()">⬇ 반기 ZIP (평가서 · 집계 · 매장별 수행 기록)</button><p class="muted" style="margin:6px 0 0;font-size:12px">처음 한 번은 매장 수에 따라 몇 분 걸립니다. 다 만든 뒤에는 바로 받아집니다.</p>':'')+'</div>'}  /* F3.0 */
+/** F3.0 반기 ZIP (확정된 평가만 · 확정을 풀었다 다시 확정하면 새로 만듦) */
+async function hlZip(){if(hlBusy)return;const h=hlCur;hlBusy=true;try{const r=await call('halfZip',h.company.id,h.period);zipPanel('H:'+h.company.id+'_'+h.period,r)}
+ catch(e){if(/응답을 받지 못했|만드는 중/.test(e&&e.message||''))alert('반기 ZIP을 만드는 중입니다.\n처음 한 번은 몇 분 걸립니다. 잠시 뒤 [반기 ZIP]을 다시 눌러 주세요.')}finally{hlBusy=false}}
 /** 오픈 매장별 집계표 (반기 평가 · 공사 ③ 집계 공용) */
 function hlJobTable(L){const p=r=>r==null?'-':Math.round(r*100)+'%';
  return '<div style="overflow-x:auto"><table class="rtable" style="min-width:460px"><tr><th>오픈 매장</th><th>TBM</th><th>근로자</th><th>조치</th><th>참석</th><th>현장관리자</th><th>양호율</th></tr>'

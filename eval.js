@@ -19,13 +19,18 @@ function jobEndPage(id){const j=jobData.jobs.find(x=>x.id===id);if(!j)return;job
  $('jobs').innerHTML='<div class="card"><button class="button ghost" type="button" onclick="renderJobs()">← 공사 목록</button> '+gdBtn('jobend')+'<h2 style="margin-top:12px">'+escapeText(j.title)+'</h2><div class="muted">'+escapeText(j.storeName)+' · '+escapeText(j.startDate)+' ~ '+escapeText(j.endDate||'(종료일 미정)')+'</div>'
   +(e.state==='OVER'?'<div class="note" style="margin-top:12px">종료 예정일이 지났습니다. 공사가 계속되면 <b>연장</b>, 끝났으면 <b>공사 종료</b>를 눌러 주세요.</div>':e.state==='SOON'?'<div class="note" style="margin-top:12px">종료 예정일까지 '+(e.left?e.left+'일':'오늘')+' 남았습니다.</div>':'')+'</div>'
   +'<div class="card"><h2>공사 연장</h2><p class="desc">종료일이 바뀌면 새 종료일과 사유를 남깁니다. 연장 이력은 계속 보관됩니다.</p><div class="split">'+input('exEnd','새 종료일',min,'date')+input('exWhy','연장 사유','','text',false,'예: 자재 입고 지연')+'</div><button class="button ghost" type="button" style="width:100%" onclick="extendNow(\''+escapeText(id)+'\',\''+min+'\')">연장 저장</button></div>'
-  +'<div class="card"><h2>공사 종료</h2><p class="desc">공사를 종료하면 참여 업체 <b>'+j.vendors.length+'곳</b>마다 종료 평가서가 만들어집니다. 순회점검·작업허가서·일일 인원 기록이 자동으로 반영되고, 담당자가 확인·수정한 뒤 확정합니다.</p><button class="button" type="button" style="width:100%" onclick="endJobNow(\''+escapeText(id)+'\')">공사 종료하고 평가 시작</button></div>';
+  +(j.kind==='OPEN'?'<div class="card"><h2>오픈 매장 종료</h2><p class="desc">종료하면 참여 업체 <b>'+j.vendors.length+'곳</b>마다 <b>매장 ZIP</b>(전체 활동내역)을 받을 수 있습니다. 평가는 6월 · 12월 반기 평가로 합니다.</p><button class="button" type="button" style="width:100%" onclick="endJobNow(\''+escapeText(id)+'\')">오픈 매장 종료</button></div>'  /* F3.0 오픈지원 */
+  :'<div class="card"><h2>공사 종료</h2><p class="desc">공사를 종료하면 참여 업체 <b>'+j.vendors.length+'곳</b>마다 종료 평가서가 만들어집니다. 순회점검·작업허가서·일일 인원 기록이 자동으로 반영되고, 담당자가 확인·수정한 뒤 확정합니다.</p><button class="button" type="button" style="width:100%" onclick="endJobNow(\''+escapeText(id)+'\')">공사 종료하고 평가 시작</button></div>');
  $('f_exEnd').min=min;window.scrollTo(0,0)}
 async function extendNow(id,min){const ne=value('exEnd'),why=value('exWhy'),miss=[];if(!ne||ne<min)miss.push({key:'exEnd'});if(!why)miss.push({key:'exWhy'});
  if(miss.length){markMissing(miss);msg(miss[0].key==='exEnd'?'새 종료일은 '+min+' 이후로 골라 주세요':'연장 사유를 적어 주세요');return}
  if(!confirm('종료일을 '+ne+'(으)로 연장할까요?\n사유: '+why))return;
  try{jobData=await call('extendJob',id,ne,why);renderJobs();msg('공사를 '+ne+'까지 연장했습니다.');refreshBadges()}catch(e){}}
-async function endJobNow(id){const j=jobData.jobs.find(x=>x.id===id);if(!confirm('"'+j.title+'" 공사를 종료할까요?\n\n· 참여 업체 '+j.vendors.length+'곳의 종료 평가가 시작됩니다.\n· 종료 후에는 연장할 수 없습니다.\n· 지금까지의 기록은 지워지지 않습니다.'))return;
+async function endJobNow(id){const j=jobData.jobs.find(x=>x.id===id);
+ /* F3.0 오픈 매장: 평가 없음 → 종료 후 그 매장 [업체별 기록] (매장 ZIP 내려받기) */
+ if(j.kind==='OPEN'){if(!confirm('"'+(j.storeName||j.title)+'" 오픈 매장을 종료할까요?\n\n· 업체마다 매장 ZIP을 받을 수 있습니다.\n· 종료 후에는 연장할 수 없습니다.\n· 기록은 지워지지 않습니다.'))return;
+  try{await call('endJob',id)}catch(e){if(!/응답을 받지 못했/.test(e.message||''))return}jobAt=0;smenu='jobs';markSMenu();await openOpen(id,'rec');msg('오픈 매장을 종료했습니다. 업체별 [⬇ 매장 ZIP]으로 받을 수 있습니다.');refreshBadges();return}
+ if(!confirm('"'+j.title+'" 공사를 종료할까요?\n\n· 참여 업체 '+j.vendors.length+'곳의 종료 평가가 시작됩니다.\n· 종료 후에는 연장할 수 없습니다.\n· 지금까지의 기록은 지워지지 않습니다.'))return;
  /* F1.8h 종료하면 바로 평가 화면 (메뉴는 공사 관리 그대로 · 종료 평가 메뉴 없앰) */
  const go=()=>{j.end={state:'ENDED'};j.status='ENDED';smenu='jobs';markSMenu();const dr=evData.list.filter(x=>x.status==='DRAFT');if(dr.length===1)openEval(dr[0].id);else renderEvalList();msg('공사를 종료했습니다. '+(dr.length===1?'바로 평가해 주세요.':'업체별로 평가해 주세요.'));refreshBadges()};
  try{evData=await call('endJob',id);go()}catch(e){if(/응답을 받지 못했/.test(e.message||'')){try{evData=await call('jobEvalList',id);if(evData.list.length||evData.job.endedAt){go();return}}catch(z){}}}}
