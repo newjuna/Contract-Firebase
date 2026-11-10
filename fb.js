@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.30 F2.7';
+  const VERSION = '26.10.30 F2.8';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   /* F2.1 업종 '오픈지원' 추가 (매장 오픈 인력 · 인력사무소형) · 인테리어(마감) = 지금까지의 공사 흐름 그대로 */
   const CFG = {
@@ -960,7 +960,7 @@
       workerCount: wks.filter((w) => w.jobId === j.id).length, permitWaiting: pm.filter((p) => p.status === 'ISSUED').length, permitTotal: pm.length,
       inspTotal: ins.length, inspUnchecked: ins.filter((x) => !x.checkedAt).length, findOpen: fd.filter((f) => f.status !== 'DONE').length,
       // F1.8g 도급인 메인 '지적사항 · 시정조치' 목록
-      findings: fd.map((f) => ({ id: f.id, inspId: f.inspId, company: f.company, companyId: f.companyId, no: Number(f.no), item: f.item, memo: f.memo, foundDate: f.foundDate, status: f.status, actionDate: f.actionDate || '' })),
+      findings: fd.map((f) => ({ id: f.id, inspId: f.inspId, company: f.company, companyId: f.companyId, no: Number(f.no), item: f.item, memo: f.memo, foundDate: f.foundDate, status: f.status, actionDate: f.actionDate || '', reqN: Number(f.reqN) || 0 })),
       vstats: vs.map((v) => Object.assign({ company: v.company, companyId: v.companyId, noPermit: j.kind === 'OPEN' /* F2.1 오픈지원은 작업허가서 없음 */ }, vjStats(by(cr, v), by(pm, v), by(ins, v), by(fd, v)))),
       end: jobEndInfo(j), evalDone: of(evs).filter((e) => e.status === 'DONE').length, evalTotal: of(evs).length, crewDays: cr.length,
       meetings: of(mts).sort((x, y) => String(x.createdAt).localeCompare(String(y.createdAt))).map((m) => meetSummary(m, of(ats))) };
@@ -982,7 +982,13 @@
     jvAll.forEach((v) => { const j = jm[v.jobId]; if (j && j.status !== 'ENDED') (openJ[v.companyId] = openJ[v.companyId] || []).push({ id: j.id, title: j.title, storeName: j.storeName, startDate: j.startDate, endDate: j.endDate }); });
     const cm = {}; choices.forEach((c) => { cm[c.id] = { contact: c.contact, phone: c.phone }; });
     const jv2 = (x) => ({ ...x, vendors: x.vendors.map((v) => ({ ...v, contact: (cm[v.companyId] || {}).contact || '' })) });
-    return { me: { name: s.name, role: s.role }, principal: await principal().catch(() => null), kinds: JOB_KINDS, meetKinds: MEET_KINDS, vendors: choices.map(({ uid, ...v }) => ({ ...v, lastEval: le[v.id] || null, openJobs: openJ[v.id] || [] })), testMode: CFG.TEST_SKIP_FILES, jobs: jobs.map((j) => jv2(jobView(j, ...L))) };
+    /* F2.8 오픈지원 대시보드: 업체별 관리감독자 · 오늘 TBM · 비상훈련 (오픈 매장만 더 읽음) */
+    const oIds = jobs.filter((j) => j.kind === 'OPEN').map((j) => j.id), O = oIds.length ? await Promise.all(['SITE_MGRS', 'TBMS', 'OPEN_DRILLS'].map((n) => byJobs(n, oIds).catch(() => []))) : [[], [], []];
+    const openOf = (j) => { const t = today(), dr = O[2].filter((d) => d.jobId === j.id).sort((p, q) => String(p.date).localeCompare(String(q.date))), dn = dr.filter((d) => d.doneAt);
+      return { tbm: O[1].filter((x) => x.jobId === j.id && x.date === t).map((x) => x.companyId), sm: O[0].filter((x) => x.jobId === j.id && x.status === 'ACTIVE').map((x) => ({ companyId: x.companyId, name: x.name })),
+        drill: { n: dr.length, done: dn.length > 0, doneDate: dn.length ? dn[0].date : '', open: dr.some((d) => d.open === 'Y') } }; };
+    return { me: { name: s.name, role: s.role }, principal: await principal().catch(() => null), kinds: JOB_KINDS, meetKinds: MEET_KINDS, vendors: choices.map(({ uid, ...v }) => ({ ...v, lastEval: le[v.id] || null, openJobs: openJ[v.id] || [] })), testMode: CFG.TEST_SKIP_FILES,
+      jobs: jobs.map((j) => jv2(Object.assign(jobView(j, ...L), j.kind === 'OPEN' ? { open: openOf(j) } : {}))) };
   };
   /** [직원] 공사 만들기·수정 (참여 업체·위임장 정보 포함) */
   API.saveJob = async (a, d) => {
@@ -1102,7 +1108,7 @@
         workers: wks.filter((w) => w.jobId === j.id && w.companyId === b.id && w.active !== 'N').length, todayCount: c ? Number(c.count) : 0, todayDone: !!c, end: jobEndInfo(j),
         stats: vjStats(cr, ...[pms, inss, fds].map((l) => l.filter((x) => x.jobId === j.id && x.companyId === b.id))),
         // F1.8f 메인 화면 '지적사항 조치' 목록 (미조치 + 조치 완료)
-        findings: fds.filter((f) => f.jobId === j.id && f.companyId === b.id).map((f) => ({ id: f.id, no: Number(f.no), item: f.item, memo: f.memo, foundDate: f.foundDate, status: f.status, actionDate: f.actionDate || '' })) };
+        findings: fds.filter((f) => f.jobId === j.id && f.companyId === b.id).map((f) => ({ id: f.id, no: Number(f.no), item: f.item, memo: f.memo, foundDate: f.foundDate, status: f.status, actionDate: f.actionDate || '', reqN: Number(f.reqN) || 0 })) };
     }).filter(Boolean) };
   };
   async function jobPack(a, b, j, jv) {
@@ -1315,9 +1321,10 @@
       const tb = tbs.filter((x) => x.companyId === v.companyId), sm = sms.find((x) => x.companyId === v.companyId && x.status === 'ACTIVE');
       return { companyId: v.companyId, company: v.company, items: INSP_BASE.concat(qs),
         todayInsp: ti ? { id: ti.id, bad: badN(ti.items), by: ti.submittedName || '' } : null,
-        recent: mine.slice(0, 10).map((x) => ({ id: x.id, date: x.date, bad: badN(x.items), by: x.submittedName || '', byStaff: x.byStaff === 'Y' })),
-        tbm: ((tb.find((x) => x.date === t) || {}).photos) || [], tbmDays: tb.length, siteMgr: sm ? sm.name : '',
-        open: fds.filter((f) => f.companyId === v.companyId && f.status !== 'DONE').sort((p, q) => String(q.foundDate).localeCompare(String(p.foundDate))).map((f) => ({ id: f.id, no: Number(f.no), item: f.item, memo: f.memo, foundDate: f.foundDate, before: f.before || [] })) };
+        recent: mine.slice(0, 30).map((x) => ({ id: x.id, date: x.date, bad: badN(x.items), by: x.submittedName || '', byStaff: x.byStaff === 'Y' })),
+        tbm: ((tb.find((x) => x.date === t) || {}).photos) || [], tbmDays: tb.length, tbmDates: tb.map((x) => x.date), siteMgr: sm ? sm.name : '',  // F2.8 업체별 기록 (날짜별 TBM)
+        open: fds.filter((f) => f.companyId === v.companyId && f.status !== 'DONE').sort((p, q) => String(q.foundDate).localeCompare(String(p.foundDate))).map((f) => ({ id: f.id, inspId: f.inspId || '', no: Number(f.no), item: f.item, memo: f.memo, foundDate: f.foundDate, before: f.before || [], reqN: Number(f.reqN) || 0, reqAt: f.reqAt || '', reqBy: f.reqBy || '' })).sort(reqFirst),
+        done: fds.filter((f) => f.companyId === v.companyId && f.status === 'DONE').sort((p, q) => String(q.actionDate).localeCompare(String(p.actionDate))).slice(0, 30).map((f) => ({ id: f.id, inspId: f.inspId || '', item: f.item, foundDate: f.foundDate, actionDate: f.actionDate || '', actionBy: f.actionBy || '', reqN: Number(f.reqN) || 0 })) };
     }));
     return { today: t, me: s.name, job: { id: j.id, title: j.title, storeName: j.storeName, startDate: j.startDate, endDate: j.endDate, status: j.status, kind: j.kind }, vendors, types: OPEN_DRILL_TYPES,
       drills: drs.sort((p, q) => String(q.createdAt).localeCompare(String(p.createdAt))).map((d) => ({ id: d.id, type: d.type, label: d.label, date: d.date, open: d.open === 'Y', done: !!d.doneAt, doneAt: d.doneAt || '', photos: d.photos || [], memo: d.memo || '', hostName: d.hostName || '', link: drlLink(d.token),
@@ -1379,6 +1386,20 @@
       await db.collection('OPEN_DRILLS').doc(d.id).update({ open: 'N', doneAt: now(), doneBy: s.name }); audit(a, '', 'DRILL_DONE', d.id + ' ' + n + '명');
     } else await db.collection('OPEN_DRILLS').doc(d.id).update({ open: 'Y', doneAt: '', doneBy: '' });
     return API.openStaffPack(a, j.id);
+  };
+  /** F2.8 [도급인] 지적사항 조치 요청 (업체 화면에 📢 표시 · 누를 때마다 횟수 +1 · 기록은 중계 서버) */
+  API.findReq = async (a, jobId, findingId) => {
+    const s = await staffOnly(a), j = await staffJob(a, s, jobId);
+    await relay('findReq', { findingId: tidy(findingId, 40) });
+    return API.openStaffPack(a, j.id);
+  };
+  /** F2.8 [도급인] ☰ 비상훈련 기록: 내가 볼 수 있는 오픈 매장의 훈련 전체 */
+  API.staffDrills = async (a) => {
+    const s = await staffOnly(a), js = docs(await db.collection('JOBS').where('kind', '==', 'OPEN').get()).filter((j) => canSeeJob(a, s, j)), ids = js.map((j) => j.id);
+    if (!ids.length) return { list: [] };
+    const [drs, ats] = await Promise.all([byJobs('OPEN_DRILLS', ids).catch(() => []), byJobs('DRILL_ATTEND', ids).catch(() => [])]);
+    return { list: drs.sort((p, q) => String(q.date).localeCompare(String(p.date))).map((d) => { const j = js.find((x) => x.id === d.jobId) || {};
+      return { id: d.id, jobId: d.jobId, store: j.storeName || d.store || '', jobStatus: j.status || '', label: d.label, date: d.date, done: !!d.doneAt, open: d.open === 'Y', photos: (d.photos || []).length, n: ats.filter((x) => x.drillId === d.id).length, hostName: d.hostName || '' }; }) };
   };
   /* ---------- F2.5 오픈 매장 자동 집계 · 반기 평가 (6월 · 12월) ----------
    *  집계 = 기록에서 바로 계산 (도급인이 할 일 없음) · 반기 평가 = 그 반기에 끝난 오픈 매장 집계를 모아 자동 계산 · 도급인은 재해만 고르고 확정
@@ -1681,12 +1702,13 @@
     works: Array.isArray(x.works) ? x.works.map((w) => String((w && (w.tl || w.t)) || '')).filter(Boolean) : null, worksNone: !!x.worksNone,  // F1.9w 오늘 공정 (예전 기록 = null)
     checkedBy: x.checkedBy || '', checkedAt: x.checkedAt || '', bad: Object.values(x.items || {}).filter((v) => v === 'BAD').length });
   const findView = (f) => ({ id: f.id, inspId: f.inspId, company: f.company, companyId: f.companyId, no: Number(f.no), item: f.item, memo: f.memo, before: photoIds(f.before), foundDate: f.foundDate, status: f.status,
-    actionMemo: f.actionMemo || '', after: photoIds(f.after), actionDate: f.actionDate || '', actionBy: f.actionBy || '', actionAt: f.actionAt || '' });
+    actionMemo: f.actionMemo || '', after: photoIds(f.after), actionDate: f.actionDate || '', actionBy: f.actionBy || '', actionAt: f.actionAt || '', reqN: Number(f.reqN) || 0, reqAt: f.reqAt || '' });  // F2.8 도급인 조치 요청
+  const reqFirst = (p, q) => (q.reqN ? 1 : 0) - (p.reqN ? 1 : 0);
   /** 업체 화면용 요약: 마지막 점검일 · 2일 경과 여부 · 미조치 지적사항 · 최근 기록 */
   function inspPack(ins, fs, items, works) {
     const t = today(); ins = ins.slice().sort((p, q) => (p.date < q.date ? 1 : -1)); const last = ins[0] ? ins[0].date : '';
     return { items: items || INSP_ITEMS, base: INSP_BASE, works: works || [], type: '순회점검일지', last, todayDone: last === t, due: !last || daysBetween(last, t) >= 2, since: last ? daysBetween(last, t) : null,
-      open: fs.filter((f) => f.status !== 'DONE').map(findView), recent: ins.slice(0, 30).map(inspView) };
+      open: fs.filter((f) => f.status !== 'DONE').map(findView).sort(reqFirst), recent: ins.slice(0, 30).map(inspView) };
   }
   const isPhoto = (f) => /^image\/(jpeg|png)$/.test(String(f && f.mime || ''));
   /** [업체] 사진 올리기 (TBM·불량·조치 후 공용) → 문서ID */
