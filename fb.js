@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.30 F2.9';
+  const VERSION = '26.11.02 F3.0';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   /* F2.1 업종 '오픈지원' 추가 (매장 오픈 인력 · 인력사무소형) · 인테리어(마감) = 지금까지의 공사 흐름 그대로 */
   const CFG = {
@@ -586,7 +586,11 @@
   API.getInternalFile = async (a, companyId, docId) => relay('file', { companyId: String(companyId || ''), docId: String(docId || '') }, true);
   API.getMyFile = async (a, docId) => relay('file', { docId: String(docId || ''), raw: true }, true);  // F1.8j 드라이브 화면 대신 내용 (화면 안에서 보기)
   /** F1.8j ZIP 바로 내려받기 (8MB씩) */
-  API.jobEvalFilePart = async (a, id, fid, i) => { await staffOnly(a); return relay('evalZipPart', { evalId: tidy(id, 40), fid: tidy(fid, 80), i: Number(i) || 0 }, true, 180000); };
+  API.jobEvalFilePart = async (a, id, fid, i) => { await staffOnly(a);
+    if (/^H:/.test(String(id || ''))) return relay('halfZipPart', { key: tidy(String(id).slice(2), 60), fid: tidy(fid, 80), i: Number(i) || 0 }, true, 180000);  // F3.0 반기 ZIP (H:업체ID_2026H2)
+    return relay('evalZipPart', { evalId: tidy(id, 40), fid: tidy(fid, 80), i: Number(i) || 0 }, true, 180000); };
+  /** F3.0 [도급인] 반기 ZIP (확정된 반기 평가 · 평가서 · 집계 · 매장별 수행 기록) */
+  API.halfZip = async (a, cid, period) => { await staffOnly(a); return relay('halfZip', { companyId: tidy(cid, 40), period: tidy(period, 8) }, false, 330000); };
   /** F1.8g 이수증 보기: 파일 내용만 받아 화면 안 창에 띄움 (구글 드라이브 화면 안 열림) */
   API.viewCert = async (a, docId) => relay('certView', { docId: tidy(docId, 60) }, true);
   /* ---------- F1.8k 도급인 책임자 (SETTINGS/principal · 중계 서버 PRINCIPAL_DEF_와 같은 기본값) ---------- */
@@ -1125,7 +1129,7 @@
     const t = today(), [wks, crews, sm0, pms, inss, fds, evs, LB] = await Promise.all([mineOf('WORKERS', a, j.id), mineOf('CREW', a, j.id), siteManagerOf(a, b), mineOf('PERMITS', a, j.id), mineOf('INSPECTIONS', a, j.id), mineOf('FINDINGS', a, j.id),
       j.status === 'ENDED' ? mineOf('JOB_EVALS', a, j.id).catch(() => []) : [], planOf(a, b)]);
     const PL = LB, LBI = inspItemsFor(PL);  // F1.8s 계획서 하나로 점검 항목 + 작업자 등록 공종 목록
-    const ev = evs.find((e) => e.companyId === b.id && e.status === 'DONE');
+    const ev = evs.find((e) => e.companyId === b.id && e.status === 'DONE' && e.open !== 'Y');  // F3.0 오픈 매장 종료 기록(ZIP용)은 평가 결과가 아님
     const ws = wks.filter((w) => w.companyId === b.id && w.active !== 'N'), cr = crews.filter((c) => c.companyId === b.id).sort((x, y) => (x.date < y.date ? 1 : -1));
     const day = (c) => ({ date: c.date, count: Number(c.count) || (c.workers || []).length, siteManager: c.siteManager, savedAt: c.savedAt, workers: c.workers || [] }), tc = cr.find((x) => x.date === t);
     return { today: t, job: { id: j.id, title: j.title, storeName: j.storeName, address: j.address, startDate: j.startDate, endDate: j.endDate, hostName: j.hostName },
@@ -2146,13 +2150,17 @@
     B.update(db.collection('JOBS').doc(j.id), { status: 'ENDED', endedAt: at, endedBy: jj.endedBy });
     for (const v of vs) {
       if (had.some((e) => e.companyId === v.companyId)) continue;
+      /* F3.0 오픈 매장: 종료 평가 없음 (반기 평가) → 매장 ZIP을 받기 위한 기록만 (바로 확정 상태) */
+      if (j.kind === 'OPEN') { const oid = 'JE-' + rand8();
+        B.set(db.collection('JOB_EVALS').doc(oid), { id: oid, jobId: j.id, companyId: v.companyId, company: v.company, vendorUid: v.vendorUid || '', status: 'DONE', open: 'Y', items: '{}', auto: '{}',
+          total: '', grade: '', comment: '', evaluator: '오픈지원 (반기 평가)', evaluatedAt: at, pdfId: '', zipId: '', createdAt: at }); continue; }
       const au = await jobEvalAuto(jj, v.companyId), items = {}, id = 'JE-' + rand8(); pre[v.companyId] = au;
       Object.entries(au.items).forEach(([n, x]) => { items[n] = { lv: x.lv, memo: '' }; });
       B.set(db.collection('JOB_EVALS').doc(id), { id, jobId: j.id, companyId: v.companyId, company: v.company, vendorUid: v.vendorUid || '', status: 'DRAFT', items: JSON.stringify(items), auto: JSON.stringify(au),
         total: '', grade: '', comment: '', evaluator: '', evaluatedAt: '', pdfId: '', zipId: '', createdAt: at });
     }
     await B.commit(); audit(a, '', 'JOB_END', j.id + ' 업체 ' + vs.length);
-    notice('JOB_ENDED', j.title + ' (' + j.storeName + ') 공사 종료 · 참여 업체 ' + vs.length + '곳 종료 평가 시작 · ' + s.name, j.id, '');
+    notice('JOB_ENDED', j.title + ' (' + j.storeName + ') ' + (j.kind === 'OPEN' ? '오픈 매장 종료 · 참여 업체 ' + vs.length + '곳 (반기 평가에 반영)' : '공사 종료 · 참여 업체 ' + vs.length + '곳 종료 평가 시작') + ' · ' + s.name, j.id, '');
     return jobEvalListOf(jj, pre);
   };
   /** [직원] 공사의 종료 평가 목록 (작성 중인 평가는 근거를 최신 기록으로 다시 계산) */
@@ -2191,10 +2199,22 @@
   };
   /** [직원] 전체 활동내역 ZIP (결과지 PDF 포함) — 중계 서버가 만들고 드라이브 보기 권한 + 주소를 돌려줌 */
   API.jobEvalFile = async (a, id) => { const s = await staffOnly(a), { e } = await jobEvalOf(a, s, id); if (e.status !== 'DONE') fail('평가를 확정한 뒤 받을 수 있습니다.'); return relay('evalZip', { evalId: e.id }, false, 330000); };
+  /** F3.0 [도급인] 끝난 오픈 매장 · 업체 1곳의 매장 ZIP 기록 id (종료 때 만든 기록 · F3.0 전에 끝난 매장이면 지금 만듦) */
+  API.openZipId = async (a, jobId, cid) => {
+    const s = await staffOnly(a), j = await staffJob(a, s, jobId); if (j.kind !== 'OPEN') fail('오픈 매장이 아닙니다.'); if (j.status !== 'ENDED') fail('오픈 매장을 종료한 뒤 받을 수 있습니다.');
+    const v = docs(await db.collection('JOB_VENDORS').where('jobId', '==', j.id).get()).find((x) => x.companyId === cid); if (!v) fail('이 오픈 매장에 배정된 업체가 아닙니다.');
+    const e = docs(await db.collection('JOB_EVALS').where('jobId', '==', j.id).get()).find((x) => x.companyId === cid);
+    if (e && e.status === 'DONE') return e.id;
+    if (e) { await db.collection('JOB_EVALS').doc(e.id).update({ status: 'DONE', open: 'Y', evaluator: '오픈지원 (반기 평가)', evaluatedAt: e.evaluatedAt || now(), pdfId: '', zipId: '' }); return e.id; }
+    const id = 'JE-' + rand8(), at = now();
+    await db.collection('JOB_EVALS').doc(id).set({ id, jobId: j.id, companyId: cid, company: v.company, vendorUid: v.vendorUid || '', status: 'DONE', open: 'Y', items: '{}', auto: '{}',
+      total: '', grade: '', comment: '', evaluator: '오픈지원 (반기 평가)', evaluatedAt: at, pdfId: '', zipId: '', createdAt: at });
+    return id;
+  };
   /** 업체별 최근 확정 종료 평가 (공사 배정 때 경고용) */
   function lastEvals(evals, jobs) {
     const m = {};
-    evals.filter((e) => e.status === 'DONE').sort((p, q) => String(p.evaluatedAt).localeCompare(String(q.evaluatedAt))).forEach((l) => {
+    evals.filter((e) => e.status === 'DONE' && e.open !== 'Y').sort((p, q) => String(p.evaluatedAt).localeCompare(String(q.evaluatedAt))).forEach((l) => {
       const j = jobs.find((x) => x.id === l.jobId) || {}; m[l.companyId] = { grade: l.grade, total: Number(l.total), comment: l.comment, job: j.title || '', date: l.evaluatedAt ? kst(l.evaluatedAt) : '' };
     });
     return m;
