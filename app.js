@@ -61,7 +61,7 @@ function switchTab(which){tab=which;toggleMenu(false);stopScan();if($(which+'Tab
 /* F1.9t 홈 화면 앱(PWA): 서비스 워커 등록 (저장 안 함 · 홈 화면에 추가할 수 있게만) */
 if('serviceWorker' in navigator&&location.protocol==='https:')window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 // ★ 화면 버전: 여기 한 줄만 고침 (GitHub만 올리면 로그인 화면·앱 화면·메뉴에 모두 반영, Code.gs 수정 불필요)
-const UI_VERSION='26.10.30 F2.8';
+const UI_VERSION='26.10.30 F2.8a';
 /* F1.8o 전화번호 · 사업자번호: 숫자만 쳐도 '-' 자동 (서버는 원래 숫자만 골라 씀) */
 function fmtTel(v){const d=String(v||'').replace(/\D/g,'').slice(0,11);if(d.startsWith('02'))return d.length<3?d:d.length<6?d.slice(0,2)+'-'+d.slice(2):d.length<10?d.slice(0,2)+'-'+d.slice(2,5)+'-'+d.slice(5):d.slice(0,2)+'-'+d.slice(2,6)+'-'+d.slice(6,10);
  return d.length<4?d:d.length<8?d.slice(0,3)+'-'+d.slice(3):d.length<11?d.slice(0,3)+'-'+d.slice(3,6)+'-'+d.slice(6):d.slice(0,3)+'-'+d.slice(3,7)+'-'+d.slice(7)}
@@ -550,7 +550,7 @@ function setVTab(t){vtab=t;renderVJob()}
 function renderVJob(){const el=$('execArea');if(!el||!vjob)return;const v=vjob;clearInterval(wkTimer);
  const head=vJobHead(v);
  el.innerHTML=head+vEndHtml(v)+todayHtml(v);
- if(!(typeof tour!=='undefined'&&tour))setTimeout(()=>dayGuide(false),600);  // F1.8a 하루 한 번 사용 가이드 (가이드가 화면을 바꿀 때는 다시 시작하지 않음)
+ if(!(typeof tour!=='undefined'&&tour)&&!v.open)setTimeout(()=>dayGuide(false),600);  /* F2.8a 오픈지원은 위쪽 [❔ 가이드] */  // F1.8a 하루 한 번 사용 가이드 (가이드가 화면을 바꿀 때는 다시 시작하지 않음)
  /* F1.8a 대시보드 '오늘 할 일'에서 누른 칸으로 바로 이동 */if(window.__vjump){const id=window.__vjump;window.__vjump='';setTimeout(()=>$(id)?.scrollIntoView({block:'start'}),60)}
  if(showQr)wkTimer=setInterval(async()=>{if(!vjob||vjob.job.id!==v.job.id||!showQr){clearInterval(wkTimer);return}try{const x=await callQuiet('vendorJob',v.job.id);if(x.workers.length!==vjob.workers.length){vjob=x;renderVJob();msg('새 작업자가 등록되었습니다.')}}catch(e){}},8000)}
 function todayHtml(v){
@@ -569,7 +569,8 @@ function todayHtml(v){
   +'<div id="regToday" style="margin-top:10px">'+(todayW.length?'<table class="rtable"><tr><th>이름</th><th>구분·공정</th><th style="width:72px">이수증</th><th style="width:44px"></th></tr>'+todayW.map(w=>'<tr><td><b>'+escapeText(w.name)+'</b></td><td>'+escapeText(w.role)+(w.trade?' · '+escapeText(w.trade):'')+eduH(w)+'</td><td>'+certCell(w)+'</td><td><button class="linkbtn" type="button" style="font-size:12px" onclick="undoWorker(\''+escapeText(w.id)+'\')" aria-label="'+escapeText(w.name)+' 등록 취소">취소</button></td></tr>').join('')+'</table>'
    :'<div class="row" style="justify-content:space-between"><span class="muted">오늘 등록한 사람 없음'+(noNew?' · [오늘 신규자 없음] 표시함':'')+'</span>'+(noNew?'<button class="button ghost" type="button" style="padding:4px 8px;font-size:12px" onclick="clearNoNew()">취소</button>':'')+(v.jobStatus!=='ENDED'&&!noNew?'<button class="button ghost" type="button" id="btnNoNew" style="padding:4px 8px;font-size:12px" onclick="setNoNew()">오늘 신규자 없음</button>':'')+'</div>')+'</div></div>';
  /* F2.1 오픈지원: 작업허가서·업체 순회점검 작성·비상훈련 등록 없음 (순회점검·비상훈련은 도급인이 함) → 도급인 지적사항 조치만 */
- if(v.open)return (v.jobStatus!=='ENDED'?accCertCardHtml(true):'')+reg+openFixCardHtml(v);
+ /* F2.8a 오픈지원 계약담당자: 신규자 등록 칸 없음 (등록은 현장관리자) → 근로자 명단 · 교육일지로 현황만 */
+ if(v.open){setTimeout(()=>typeof setTopGuide==='function'&&setTopGuide('oday'),0);return (v.jobStatus!=='ENDED'?accCertCardHtml(true):'')+openFixCardHtml(v)}
  return (v.jobStatus!=='ENDED'?accCertCardHtml(true):'')+reg+permitCardHtml(v)+inspCardHtml(v)+(typeof drillStatusHtml==='function'?drillStatusHtml(v):'');
 }
 /** F2.1 오픈지원 ② 지적사항 조치 (도급인 순회점검·합동점검에서 나온 것 · 조치 등록 화면은 공사와 같음) */
