@@ -93,8 +93,8 @@ function sJobs(d){const nv=((state&&state.badges&&state.badges.newVendors)||[]).
   +(nv.length?'<div class="card alertcard"><div class="vh-top"><h2 style="margin:0">공사 배정 대기 업체 <span class="cnt">'+nv.length+'</span></h2><button class="button" type="button" onclick="goNewJob('+escapeText(JSON.stringify(nv.map(v=>v.id)))+')">이 업체로 공사 만들기</button></div>'+nv.map(v=>'<div class="muted">· '+escapeText(v.company)+' ('+escapeText(v.industry)+')</div>').join('')+'</div>':'')
   +(d.jobs.map(j=>'<div class="card"><div class="vh-top"><div><h2 style="margin:0">'+escapeText(j.title)+(j.status==='ENDED'?' <span class="pill todo">종료</span>':'')+'</h2><div class="muted">'+escapeText(j.kindLabel)+' · '+sMeta(j)+'</div></div><div class="row"><button class="button ghost" type="button" onclick="jobForm(\''+escapeText(j.id)+'\')">수정</button><button class="button ghost danger" type="button" onclick="delJob(\''+escapeText(j.id)+'\')">삭제</button></div></div>'
    +'<div class="desc" style="margin-top:8px"><b>참여 업체 '+j.vendors.length+'곳</b> · '+(j.vendors.map(v=>escapeText(v.company)+(v.contact?'(<b>'+escapeText(v.contact)+'</b>)':'')+' <span class="muted">('+escapeText(v.trade)+')</span>').join(', ')||'없음')+'</div>'
-   /* F2.4 오픈지원 = 도급인이 순회점검 · 비상훈련 */
-   +(j.kind==='OPEN'&&typeof openOpen==='function'?'<div class="row" style="gap:6px;margin-top:8px"><button class="button" type="button" style="flex:1" onclick="openOpen(\''+escapeText(j.id)+'\',\'insp\')">📝 순회점검 작성</button><button class="button ghost" type="button" style="flex:1" onclick="openOpen(\''+escapeText(j.id)+'\',\'drill\')">🚨 비상훈련</button></div>':'')
+   /* F2.4 오픈지원 = 도급인이 순회점검 · 비상훈련 · F2.9 같은 화면이므로 버튼 하나 */
+   +(j.kind==='OPEN'&&typeof openOpen==='function'?'<button class="button" type="button" style="width:100%;margin-top:8px" onclick="openOpen(\''+escapeText(j.id)+'\',\'today\')">🏪 매장 업무 열기 (순회점검 · 비상훈련) ›</button>':'')
    /* F1.8l 자동으로 만들어진 미팅 (실시 전 · 진행 중) — 날짜만 고치고 현장에서 [▶ 미팅 시작] */
    +((j.meetings||[]).filter(m=>!m.done).map(sMeetRow).join(''))
    /* F1.8k 공사 서류 (자동): 도급인 위임장 2장 · 업체별 현장대리인계 */

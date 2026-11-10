@@ -12,10 +12,12 @@ function ruleCardHtml(r,opt){const latest=r.uploads[0],ok=!!latest;
   +(r.uploads.length>1?'<details class="hist"><summary>이전 작성본 '+(r.uploads.length-1)+'건</summary>'+r.uploads.slice(1).map(u=>'<div><a onclick="viewFile(\''+escapeText(u.id)+'\')">v'+escapeText(u.version)+' · '+escapeText(u.name)+'</a> <span class="muted">'+escapeText(fmtTime(u.uploadedAt))+'</span></div>').join('')+'</details>':'')+'</div>'}
 /* ---------- 작성 화면 (전체 화면) ---------- */
 /** F1.8o 협력업체 현장대리인 이름 (계획서 저장본 → 등록 때 넣은 값) */
+/** F2.9 오픈지원 업체: 다이소 오픈지원 현장대리인이 아직 없으면 규정을 만들 수 없음 → 안전보건팀 문의 안내 */
+function vendorDelegWarn(){popup('다이소 현장대리인 미지정','안전보건관리규정의 "갑"(다이소 오픈지원 현장대리인)이 아직 등록되지 않았습니다.\n\n다이소 안전보건팀에 문의하여 현장대리인을 등록해 달라고 요청해 주세요.\n등록되면 이 화면을 새로 고친 뒤 다시 작성하면 됩니다.','확인')}
 function ruleAgent(){const P=(state.forms&&state.forms.plan)||{},s=(P.C02&&P.C02.data&&(P.C02.data.org||[])[0])||{},d=((P.defaults&&P.defaults.org)||[])[0]||{};return s.name||d.name||''}
 /* F1.8o 규정은 입력 없이 자동 (갑 = 다이소 위임 현장대리인 고정 · 을 = 등록 때 대표이사) · 현장대리인 서명만 */
 function openRule(){const F=state.forms,b=state.company;
- rd={hqRep:F.hqRep||'곽동민',vendorRep:b.representative||'',agent:ruleAgent(),date:F.today};sigDirty=false;
+ rd={hqRep:F.hqRepMissing?'':(F.hqRep||'곽동민'),vendorRep:b.representative||'',agent:ruleAgent(),date:F.today};sigDirty=false;if(F.hqRepMissing)setTimeout(vendorDelegWarn,300);
  let el=$('csheet');if(!el){el=document.createElement('div');el.id='csheet';el.setAttribute('role','dialog');el.setAttribute('aria-modal','true');document.body.appendChild(el)}
  el.setAttribute('aria-label','안전보건관리규정 작성');  // F1.8e 합친 화면에서 쓰던 창을 다시 쓸 때도 이름을 바꿔야 뒤로가기가 규정 닫기로 감
  el.innerHTML='<div class="pbar"><button class="button ghost" type="button" onclick="closeRule()">‹ 이전으로</button><b class="pbt">안전보건관리규정 작성</b><span style="width:64px"></span></div><div class="cwrap">'
@@ -47,7 +49,7 @@ function sigBad(){const c=$('sigPad');if(!c)return true;const r=c.getBoundingCli
  if(c.width>=20&&c.height>=20)return false;if(r.width<20)return true;sigDirty=false;initSig();msg('서명 칸을 다시 준비했습니다. 한 번 더 서명해 주세요.');return true}
 /** 서명 이미지 (가로 최대 600px PNG) · 서명 칸이 비정상이면 '' */
 function sigData(){const c=$('sigPad');if(!c||c.width<20||c.height<20)return '';const w=Math.min(600,c.width),h=Math.round(c.height*w/c.width),t=document.createElement('canvas');t.width=w;t.height=h;t.getContext('2d').drawImage(c,0,0,w,h);return t.toDataURL('image/png')}
-async function saveRuleNow(){if(!sigDirty){inspFlag(['sigBox'],'현장대리인 서명을 해 주세요');return}
+async function saveRuleNow(){if(!rd.hqRep){vendorDelegWarn();return}if(!sigDirty){inspFlag(['sigBox'],'현장대리인 서명을 해 주세요');return}
  const sg=sigData();if(!sg){sigBad();inspFlag(['sigBox'],'서명 칸을 다시 준비했습니다. 한 번 더 서명해 주세요');return}
  if(!await askOk('안전보건관리규정 작성 완료','"갑" '+state.forms.hq+' 현장대리인 '+rd.hqRep+'\n"을" '+state.company.company+' 대표이사 '+rd.vendorRep+' (현장대리인 '+(rd.agent||'-')+' 서명)\n시행일 '+rd.date+'\n\n서명이 들어간 PDF가 만들어져 제출 서류로 등록됩니다.','작성 완료'))return;
  const before=((((state.docBoard||{}).rows||[]).find(x=>x.code==='C01')||{}).uploads||[]).length;const btn=$('ruleSave');if(btn){btn.disabled=true;btn.textContent='문서를 만드는 중… (10초 정도)'}

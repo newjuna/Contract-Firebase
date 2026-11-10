@@ -22,6 +22,8 @@ function plTabsHtml(){const n=plStep,first=plFirst();return '<div id="plTabs"><d
 function plJump(i){if(i===plStep||i<plFirst())return;plCollect();plLeave();plStep=i;renderPlan();const m=plMiss(i).filter(x=>x!=='sigBox');if(m.length&&plSeen.has(i))setTimeout(()=>inspFlag(m,'빨간 칸을 채워 주세요'),50)}
 /** 지금 단계를 떠날 때: 본 단계로 표시 · 다 채웠으면 제출 때 돌려받은 표시도 지움 */
 function plLeave(){plSeen.add(plStep);if(plSrv[plStep]&&!plMiss(plStep).filter(x=>x!=='sigBox').length)delete plSrv[plStep]}
+/** F2.9 오픈지원 업체 = "공사 중" → "오픈 기간 중" */
+const drillLbl=(k,l)=>k==='EVAC'&&state&&state.forms&&state.forms.open?'오픈 기간 중 비상대피 훈련 1회 이상':l;
 const DRILL_PLAN=[['NEW','신규자 투입 시 대피 경로·집결 장소 안내'],['EVAC','공사 중 비상대피 훈련 1회 이상'],['CPR','심폐소생술(CPR) 교육'],['FIRE','소화기 사용 훈련'],['SHOCK','감전 사고 대응 훈련 (전원 차단 · 구조 · 신고)']];  // F1.9z2 감전 별도
 const plKey=()=>'planDraft:'+(state.company&&state.company.id);
 const plRow=c=>(((state.docBoard||{}).rows||[]).find(x=>x.code===c))||{uploads:[]};
@@ -52,7 +54,8 @@ function openPlan(){const can=plCan();if(!can.C02&&can.C01){openRule();return}  
   pl.risks=pl.risks.filter(id=>all.includes(id))}
  pl.drill=Object.assign({},D.drill||{},pl.drill||{});if(!Array.isArray(pl.drill.items))pl.drill.items=(D.drill&&D.drill.items||[]).slice();
  /* F1.8o 규정 = 자동 (갑 = 도급인 위임 현장대리인 고정 · 을 = 등록 때 대표이사 · 시행일 = 오늘) */
- pl.rule={hqRep:R.hqRep||'곽동민',vendorRep:b.representative||prev.vendorRep||'',date:R.today};
+ pl.rule={hqRep:R.hqRepMissing?'':(R.hqRep||'곽동민'),vendorRep:b.representative||prev.vendorRep||'',date:R.today};if(R.hqRepMissing&&typeof vendorDelegWarn==='function')setTimeout(vendorDelegWarn,400);  /* F2.9 오픈지원 현장대리인 미지정 */
+ /* F2.9 예전에 저장한 목표 문구: 오픈지원이면 주 1회 */if(R.open&&Array.isArray(pl.kpis))pl.kpis=pl.kpis.map(k=>k&&k.name==='순회점검 실시율 (2일 1회)'?Object.assign({},k,{name:'순회점검 실시율 (주 1회)'}):k);
  pl.years=D.years;pl.evidenceFiles=(pl.evidenceFiles||(saved&&saved.evidenceFiles)||[]).filter(f=>!isPend(f.id)||PEND[f.id]);pl.practiceFiles=(pl.practiceFiles||(saved&&saved.practiceFiles)||[]).filter(f=>!isPend(f.id)||PEND[f.id]);pl.practice=pl.practice||'';/* F1.8p 새로 고침으로 사라진 (아직 안 올린) 증빙은 뺌 */pl.ruleDone=!!(draft&&draft.ruleDone&&plRow('C01').uploads.length);plStep=plFirst();plSeen=new Set();plSrv={};  // 규정만 먼저 등록된 경우 계획서부터
  let el=$('csheet');if(!el){el=document.createElement('div');el.id='csheet';el.setAttribute('role','dialog');el.setAttribute('aria-modal','true');document.body.appendChild(el)}
  el.setAttribute('aria-label','안전보건관리규정 · 계획서 작성');el.style.display='block';document.body.style.overflow='hidden';renderPlan()}
@@ -90,7 +93,7 @@ function renderPlan(){const F=state.forms.plan,el=$('csheet'),n=plStep,can=plCan
   +'<div class="field"><label for="f_plDm">훈련 담당자 <span class="req">*</span></label><input id="f_plDm" value="'+escapeText(d.manager||plMgr().name||'')+'" placeholder="예: 현장대리인 이름"></div>'
   +(()=>{const N=plNeedDrill(pl.scen),SN={FIRE:'화재',SHOCK:'감전',FALL:'추락',SICK:'응급환자'},miss=[...N].filter(k=>!d.items.includes(k)),from=k=>k==='NEW'||k==='EVAC'?'모든 시나리오':pl.scen.filter(s=>(PL_SCEN_DRILL[s]||[]).includes(k)).map(s=>SN[s]||s).join('·');
    return '<div class="stage" id="plDrill">훈련 방법 <span class="req">*</span></div><p class="muted" style="margin:0 0 6px">[비상대책]에서 고른 시나리오에 필요한 훈련이 자동으로 체크됩니다. <span class="req">빨간 테두리 = 필요한데 빠진 훈련</span> (빼면 평가 11번 점수가 내려갑니다)</p><div class="pchips">'
-   +DRILL_PLAN.map(([k,l])=>{const nd=N.has(k),ms=nd&&!d.items.includes(k);return '<label class="pchip"'+(ms?' style="outline:2px solid var(--accent);outline-offset:2px"':'')+'><input type="checkbox" '+(d.items.includes(k)?'checked':'')+' onchange="plDrillItem(\''+k+'\',this.checked)"><span>'+escapeText(l)+(nd?' <span class="muted" style="color:var(--ok)">← '+escapeText(from(k))+'</span>':'')+'</span></label>'}).join('')+'</div>'
+   +DRILL_PLAN.map(([k,l0])=>{const l=drillLbl(k,l0),nd=N.has(k),ms=nd&&!d.items.includes(k);return '<label class="pchip"'+(ms?' style="outline:2px solid var(--accent);outline-offset:2px"':'')+'><input type="checkbox" '+(d.items.includes(k)?'checked':'')+' onchange="plDrillItem(\''+k+'\',this.checked)"><span>'+escapeText(l)+(nd?' <span class="muted" style="color:var(--ok)">← '+escapeText(from(k))+'</span>':'')+'</span></label>'}).join('')+'</div>'
    +(pl.scen.length?'<p class="muted" style="margin:6px 0 0">평가 11번: 필요한 훈련 '+N.size+'개 중 '+(N.size-miss.length)+'개'+(miss.length?' · <b class="req">빠짐 '+miss.length+'개 → 보통</b>':pl.scen.length>=2?' · 우수 조건 충족':' · 시나리오를 2개 이상 고르면 우수')+'</p>':'<p class="muted req" style="margin:6px 0 0">[비상대책]에서 시나리오를 먼저 골라 주세요.</p>')+'</div>'})()}
  if(n===7){sigDirty=false;body='<div class="card" id="plAcc"><h2>최근 3년 산업재해 <span class="req">*</span></h2><div class="placc">'+pl.years.map((y,i)=>'<label for="f_plA'+i+'">'+y+'년</label><input id="f_plA'+i+'" type="number" inputmode="numeric" min="0" value="'+escapeText(pl.accidents[i])+'" placeholder="0"><span class="muted">건</span>').join('')+'</div>'
   +'<div class="stage">증빙 (사진 촬영 · 이미지 · PDF)</div><p class="muted">산재 0건이어도 근로복지공단 확인서 등 증빙이 있으면 올려 주세요.</p><div id="plEv">'+plEvHtml()+'</div></div>'
@@ -152,7 +155,7 @@ async function savePlanNow(){plCollect();const m=plMiss(PL_LAST);if(m.length){in
  for(let i=plFirst();i<=PL_LAST;i++)plSeen.add(i);
  for(let i=plFirst();i<PL_LAST;i++)if(plMiss(i).length){plStep=i;renderPlan();setTimeout(()=>inspFlag(plMiss(i),PL_STEPS[i-1]+' 단계에 빈 칸이 있습니다'),50);return}
  const sg=sigData();if(!sg){sigBad();inspFlag(['sigBox'],'서명 칸을 다시 준비했습니다. 한 번 더 서명해 주세요');return}
- const can=plCan(),doRule=can.C01&&!pl.ruleDone;
+ const can=plCan(),doRule=can.C01&&!pl.ruleDone;if(doRule&&!pl.rule.hqRep&&typeof vendorDelegWarn==='function'){vendorDelegWarn();return}  /* F2.9 오픈지원 현장대리인 미지정 → 규정을 만들 수 없음 */
  /* F1.9b 비우면 미흡(1점)이 되는 칸: 경고 → [돌아가서 채우기]면 그 칸으로 */
  const weak=[];if((pl.practice||'').trim().length<20)weak.push(['plPrCard','· 이행 사례가 '+((pl.practice||'').trim()?'20자보다 짧습니다':'비어 있습니다')+' → 평가 6번 미흡 (1점)']);else if(!pl.practiceFiles.length)weak.push(['plPrCard','· 이행 사례 증빙 사진이 없습니다 → 평가 6번 보통 (5점) · 사진을 올리면 우수 (10점)']);
  if(!pl.evidenceFiles.length)weak.push(['plEv','· 산재 증빙이 없습니다 → 미제출로 평가 12번 미흡 (1점)']);

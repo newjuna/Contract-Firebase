@@ -9,7 +9,7 @@
 let orgD=null,orgSel='',orgOpen=new Set(),orgF=null,orgUF=null;
 /* 예전 화면에서 쓰던 이름 (메뉴·다른 화면이 불러도 오류 없게) */
 let orgTab=1,orgEdit=null,orgMem=null;
-const ORG_PK={ceo:'총괄책임자',delegate:'현장대리인'};
+const ORG_PK={ceo:'총괄책임자',delegate:'인테리어 현장대리인',delegateOpen:'오픈지원 현장대리인'};  // F2.9 담당별 현장대리인
 function orgCss(){if($('orgCss'))return;const s=document.createElement('style');s.id='orgCss';s.textContent=
  '.ogw{display:flex;background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;min-height:62vh}'
  +'.ogs{width:36%;max-width:250px;flex:none;background:#f8f9fb;border-right:1px solid var(--line);padding:6px 3px;overflow-y:auto;max-height:78vh}'
@@ -74,7 +74,8 @@ function orgMemForm(m){return '<div class="ogfm"><b style="font-size:13px">'+(m.
   +input('omPhone','연락처',m.phone||'','tel',false,'숫자만 (- 자동)')+input('omMail','회사 이메일',m.companyEmail||'','email',false,'name@daiso.co.kr')+input('omGmail','로그인 Gmail (앱 쓸 사람만)',m.gmail||'','email',false,'name@gmail.com')
   +(m.id?'<div class="field"><label for="f_omUnit">소속 조직</label><select id="f_omUnit">'+orgFlat().map(([u,d])=>'<option value="'+u.id+'" '+(m.unitId===u.id?'selected':'')+'>'+'　'.repeat(d)+escapeText(u.name)+'</option>').join('')+'</select></div>':'')
   +orgScField(m)
-  +'<div class="field"><label for="f_omPk">위임장·규정에 들어가는 사람</label><select id="f_omPk"><option value="">해당 없음</option><option value="delegate" '+(m.pk==='delegate'?'selected':'')+'>현장대리인 (위임받는 책임자)</option><option value="ceo" '+(m.pk==='ceo'?'selected':'')+'>안전보건총괄책임자</option></select></div>'
+  /* F2.9 현장대리인은 담당별로 따로 (인테리어 문서 · 오픈지원 문서) */
+  +'<div class="field"><label for="f_omPk">위임장·규정에 들어가는 사람</label><select id="f_omPk"><option value="">해당 없음</option><option value="delegate" '+(m.pk==='delegate'?'selected':'')+'>현장대리인 · 인테리어 (위임받는 책임자)</option><option value="delegateOpen" '+(m.pk==='delegateOpen'?'selected':'')+'>현장대리인 · 오픈지원 (위임받는 책임자)</option><option value="ceo" '+(m.pk==='ceo'?'selected':'')+'>안전보건총괄책임자</option></select></div>'
   +'<div class="row" style="gap:6px"><button class="button" type="button" style="flex:1" onclick="orgMemSave(\''+(m.id||'')+'\',\''+escapeText(m.unitId||orgSel)+'\')">저장</button><button class="button ghost" type="button" onclick="orgF=null;orgSc=null;orgRender()">취소</button>'+(m.id&&m.gmail!==orgD.me?'<button class="button ghost danger" type="button" onclick="orgMemDel(\''+m.id+'\')">삭제</button>':'')+'</div></div>'}
 /* ---------- F2.6 담당 칩 (인테리어 · 오픈지원) · 비어 있으면 인테리어 · 고른 화면만 보임 ---------- */
 const ORG_SC={INT:'인테리어 (공사)',OPEN:'오픈지원'};
@@ -91,7 +92,7 @@ const orgScTag=m=>m.gmail?'<span class="ogsc sm">'+escapeText((m.scopes&&m.scope
 async function orgMemSave(id,unitId){const pk=$('f_omPk').value,d={id,unitId:$('f_omUnit')?$('f_omUnit').value:unitId,name:value('omName'),title:value('omTitle'),phone:value('omPhone'),companyEmail:value('omMail'),gmail:value('omGmail'),pk,scopes:orgSc?orgSc.L.slice():[]},miss=[];
  if(!d.name)miss.push('f_omName');if(!d.title)miss.push('f_omTitle');if(miss.length){inspFlag(miss,'이름과 직책을 적어 주세요');return}
  const cur=pk&&orgD.members.find(x=>x.pk===pk&&x.id!==id);
- if(cur&&!await askOk(ORG_PK[pk]+' 바꾸기','지금 '+ORG_PK[pk]+'은(는) '+cur.name+' '+cur.title+'입니다.\n'+d.name+' '+d.title+'(으)로 바꿀까요?\n\n앞으로 만드는 위임장 · 규정 · 회의록에 새 이름이 들어갑니다.','바꾸기'))return;
+ if(cur&&!await askOk(ORG_PK[pk]+' 바꾸기','지금 '+ORG_PK[pk]+'은(는) '+cur.name+' '+cur.title+'입니다.\n'+d.name+' '+d.title+'(으)로 바꿀까요?\n\n앞으로 만드는 '+(pk==='delegateOpen'?'오픈지원 ':pk==='delegate'?'인테리어 ':'')+'위임장 · 규정 · 회의록에 새 이름이 들어갑니다.','바꾸기'))return;
  try{orgD=await call('orgSaveMember',d);orgSel=d.unitId;orgF=null;orgSc=null;if(pk&&typeof jobData!=='undefined'&&jobData){jobData.principal=orgD.principal;jobAt=0}orgRender();msg('저장했습니다.')}catch(e){}}
 async function orgMemDel(id){const m=orgD.members.find(x=>x.id===id);if(!m)return;if(m.pk){popup('삭제할 수 없습니다',m.name+'은(는) '+ORG_PK[m.pk]+'로 지정되어 있습니다. 다른 사람을 '+ORG_PK[m.pk]+'로 먼저 지정해 주세요.','확인');return}
  if(!await askOk('삭제',m.name+' '+m.title+'을(를) 삭제할까요?'+(m.gmail?'\n앱 로그인도 같이 막힙니다.':''),'삭제'))return;

@@ -46,7 +46,7 @@ function opRecHtml(){const d=opData,days=opDays(d.job.startDate,d.job.endDate,d.
  const L=d.drills||[];
  return vs+'<div class="card" id="opRecDr"><h2 style="margin:0 0 4px;font-size:16px">비상훈련 기록</h2>'+(L.length?L.map(x=>'<button class="jobitem" type="button" onclick="opDrill=\''+escapeText(x.id)+'\';opDraw()"><div><b>'+escapeText(x.label)+'</b> '+(x.done?'<span class="pill ok">✔ 완료</span>':'<span class="pill bad">진행 중</span>')+'<div class="muted">'+escapeText(mdw(x.date))+' · 참석 '+x.attendees.length+'명 · 사진 '+x.photos.length+'장 · '+escapeText(x.hostName)+'</div></div><span aria-hidden="true">›</span></button>').join(''):'<p class="muted" style="margin:6px 0 0">아직 진행한 비상훈련이 없습니다.</p>')+'</div>'}
 /* ---------- F2.8 오픈지원 담당 대시보드 ---------- */
-function sDashOpen(d){const t=kstToday(),act=sAct(d),ended=sEnded(d),B=(state&&state.badges)||{};setTimeout(()=>{sBadges(state&&state.badges);setTopGuide('sodash')},0);
+function sDashOpen(d){const t=kstToday(),act=sAct(d),ended=sEnded(d),B=(state&&state.badges)||{};setTimeout(()=>{sBadges(state&&state.badges);setTopGuide('sodash');if(typeof openDelegWarn==='function')openDelegWarn()},0);  /* F2.9 오픈지원 현장대리인 미지정 안내 */
  const O=j=>j.open||{tbm:[],sm:[],drill:{}},smOf=(j,cid)=>(O(j).sm.find(x=>x.companyId===cid)||{}).name||'',vsOf=j=>j.vstats||[];
  const started=j=>j.startDate<=t,noIns=act.filter(j=>started(j)&&vsOf(j).some(v=>!v.inspToday)),noDr=act.filter(j=>started(j)&&!O(j).drill.done&&!O(j).drill.open),nF=sum(act,j=>j.findOpen);
  const st=(v,l,c)=>'<div class="'+(c||'')+'"><b>'+v+'</b>'+l+'</div>';
