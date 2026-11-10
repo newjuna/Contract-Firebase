@@ -1,1138 +1,2217 @@
-/* 도급 안전관리 화면 (GitHub). 서버 기능은 Apps Script Code.gs */
-// v4.0 세션 값: 로그인 후 브라우저 탭 저장소(sessionStorage)에 보관 · 링크값: 주소창 ?review= (영문·숫자·- 만)
-(function(){const q=new URLSearchParams(location.search),u=(window.APP_CONFIG||{}).APPS_SCRIPT_URL||'';for(const k of ['eval','approve']){const t=(q.get(k)||'').toLowerCase();if(/^[a-f0-9]{64}$/.test(t)&&/^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(u)){document.documentElement.innerHTML='<p style="font:16px sans-serif;margin:40px">검토 화면을 여는 중입니다…</p>';location.replace(u+'?'+k+'='+t);throw Error('redirect')}}})();
-/* v5.18 휴대폰: 탭 저장소(sessionStorage)는 카메라·사진 선택으로 앱을 오가거나 QR로 새 탭이 열리면 사라짐
- *  → 이 기기에 저장(localStorage). 12시간 안 쓰면 버림 · 서버는 마지막 사용 후 6시간까지 유지 */
-const SESS_KEY='dsk2',SESS_MAX=12*3600e3;
-let SESSION='';try{const s=JSON.parse(localStorage.getItem(SESS_KEY)||'null');if(s&&s.k&&Date.now()-Number(s.t||0)<SESS_MAX)SESSION=s.k;else localStorage.removeItem(SESS_KEY)}catch(e){}
-if(!SESSION)try{SESSION=sessionStorage.getItem('dsk')||''}catch(e){}
-function sessSave(k){try{localStorage.setItem(SESS_KEY,JSON.stringify({k,t:Date.now()}))}catch(e){}try{sessionStorage.setItem('dsk',k)}catch(e){}}
-function sessTouch(){try{const s=JSON.parse(localStorage.getItem(SESS_KEY)||'null');if(s&&s.k===SESSION&&Date.now()-Number(s.t||0)>600000){s.t=Date.now();localStorage.setItem(SESS_KEY,JSON.stringify(s))}}catch(e){}}
-function sessClear(){try{localStorage.removeItem(SESS_KEY)}catch(e){}try{sessionStorage.removeItem('dsk')}catch(e){}}
-/* F1.9e 메일의 [자세히 보기·가이드·평가 기준] 버튼 (?evres=CE|CE_업체|JE_평가&go=gd|crit) → 로그인 뒤 평가 결과 화면 */
-(function(){try{const q=new URLSearchParams(location.search),r=(q.get('evres')||'').replace(/[^A-Za-z0-9_-]/g,'').slice(0,60);if(r){localStorage.setItem('evresGo',JSON.stringify({r,g:(q.get('go')||'').replace(/[^a-z]/g,'').slice(0,5),f:(q.get('for')||'').replace(/[^a-z]/g,'').slice(0,6),t:Date.now()}));history.replaceState(null,'',location.pathname)}}catch(e){}})();
-const LINK_REVIEW=(new URLSearchParams(location.search).get('review')||'').replace(/[^A-Za-z0-9-]/g,'').slice(0,40);
-let state=null,activeStep=1,saveTimer=null,dirty=false,tab='my',reviewing=null;
-const $=id=>document.getElementById(id),escapeText=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-function msg(t){$('toast').textContent=t;$('toast').style.display='block';setTimeout(()=>$('toast').style.display='none',4500)}
-/* 로딩 창 문구 (서버는 실제 진행률을 알려주지 않음) */
-const LOAD_MSG={portalData:'화면을 불러오는 중',registerBusiness:'신청서를 접수하는 중',reRegisterBusiness:'고친 신청서를 다시 보내는 중',uploadContractDoc:'파일을 올리는 중',uploadEvidence:'파일을 올리는 중',getTemplate:'샘플 양식을 내려받는 중',getMyFile:'파일을 내려받는 중',saveStep:'저장하는 중',submitProfile:'최종 제출하는 중',checkSubmission:'누락 항목을 확인하는 중',uploadTemplate:'양식을 등록하는 중',refreshTemplateFolders:'Drive 폴더를 확인하는 중',saveJob:'공사를 저장하는 중',jobBoard:'공사 목록을 불러오는 중',createMeeting:'미팅 방을 만드는 중',deleteJob:'공사를 삭제하는 중',deleteMeeting:'미팅 방을 삭제하는 중',meetingDetail:'미팅 방을 여는 중',vendorJob:'공사 화면을 여는 중',saveCrew:'오늘 인원을 저장하는 중',addWorker:'작업자를 등록하는 중',workerCheckIn:'등록하는 중',meetCheckIn:'참석을 확인하는 중',saveMeetingDocs:'점검표·회의록을 저장하는 중',completeMeeting:'미팅 실시 완료를 확정하는 중',reopenMeetingDocs:'완료를 취소하는 중',uploadMeetingPhoto:'사진을 올리는 중',getMeetingPhoto:'사진을 불러오는 중',getPermit:'작업허가서를 여는 중',issuePermit:'작업허가서를 발행하는 중',updatePermitProgress:'진행 기록을 저장하는 중',permitList:'작업허가서 목록을 불러오는 중',permitDetail:'작업허가서를 여는 중',approvePermit:'승인하는 중',editPermit:'수정 제출하는 중',withdrawPermit:'제출을 취소하는 중',uploadInspPhoto:'사진을 올리는 중',uploadInspPhotoStaff:'사진을 올리는 중',submitInspection:'순회점검을 제출하는 중',resolveFinding:'조치 결과를 등록하는 중',inspList:'순회점검일지를 불러오는 중',checkInspections:'확인 처리하는 중',inspMine:'일지를 불러오는 중',approvePermits:'허가서를 승인하는 중',vendorList:'업체 현황을 불러오는 중',saveRuleDoc:'서명이 들어간 규정 문서를 만드는 중',savePlanDoc:'안전보건관리계획서를 만드는 중',uploadPlanFile:'증빙을 올리는 중',extendJob:'공사를 연장하는 중',endJob:'공사를 종료하고 평가서를 만드는 중',jobEvalList:'종료 평가를 불러오는 중',saveJobEval:'평가를 저장하는 중',reopenJobEval:'확정을 푸는 중',uploadWorkerCert:'이수증을 올리는 중',viewCert:'이수증을 불러오는 중',jobPaper:'서류를 만드는 중',setMeetingDate:'날짜를 바꾸는 중',principalSave:'저장하는 중',adminStats:'데이터 현황을 세는 중',adminPreview:'지울 기록을 세는 중',adminDelete:'지우는 중 (많으면 몇 분 걸림)',undoWorker:'등록을 취소하는 중',cancelInspection:'제출을 취소하는 중',cancelRenewal:'신규 작성을 취소하는 중',jobEvalFile:'활동내역 ZIP + 원본파일 ZIP을 만드는 중 (처음 한 번은 1~3분)',noticeList:'참조 알림을 불러오는 중',readNotices:'읽음 처리하는 중',adminRowsDelete:'고른 줄을 지우는 중',adminFix:'처리하는 중 (메일·Teams 보내는 중)'};
-/* v5.20 가짜 %(92%에서 멈춰 보이던 것) 대신 '움직이는 막대 + 지난 초' — 멈춘 게 아니라 기다리는 중이라는 것을 그대로 보여 줌 */
-let loadTimer=null,loadCount=0,coverTimer=null;
-function loadStart(name){loadCount++;if(loadCount>1)return;const rd=READS.has(name);$('loadMsg').textContent=(LOAD_MSG[name]||'처리하는 중')+'입니다';$('loadHint').textContent='잠시만 기다려 주세요';$('loadSec').textContent='';$('loadReload')&&($('loadReload').hidden=true);/* v4.2 0.4초 안에 끝나면 로딩 화면 안 띄움 */clearTimeout(coverTimer);coverTimer=setTimeout(()=>{if(loadCount)$('cover').style.display='flex'},400);const t0=Date.now();clearInterval(loadTimer);
- loadTimer=setInterval(()=>{const s=Math.floor((Date.now()-t0)/1000);$('loadSec').textContent=s?s+'초':'';if(s>=12&&$('loadReload'))$('loadReload').hidden=false;/* F1.9i 오래 걸리면 새로 고침 */$('loadHint').textContent=s<3?'잠시만 기다려 주세요':s<10?(rd?'구글 시트에서 자료를 모으고 있습니다 · 정상 진행 중':'입력한 내용을 구글 시트에 기록하고 있습니다 · 정상 진행 중'):s<25?'보통 5~15초 걸립니다 · 오류가 아니니 그대로 기다려 주세요':'서버가 평소보다 느립니다 · 창을 닫지 말고 조금만 더 기다려 주세요'},500)}
-function loadEnd(){loadCount=Math.max(0,loadCount-1);if(loadCount)return;clearInterval(loadTimer);clearTimeout(coverTimer);setTimeout(()=>{if(!loadCount)$('cover').style.display='none'},120)}
-/* v5.8 빠른 화면: 조회는 화면을 가리지 않고 위쪽 얇은 선만 표시 · 저장·제출·파일 만들기만 로딩 창 */
-const READS=new Set(['portalData','myStatus','myJobs','vendorJob','jobBoard','meetingDetail','permitList','permitDetail','getPermit','inspList','inspMine','jobEvalList','noticeList','vendorList','staffList','templateAdminList','reviewList','applications','getReviewData','getMeetingPhoto','getInspPhoto','myBadges','evalResult','orgGet','adminTree','adminRows','adminPreview','masterList','flyerInfo']);
-let barN=0,barT=null;
-function barStart(){barN++;$('topLoad')?.classList.add('on');clearTimeout(barT);barT=setTimeout(()=>{if(barN)$('topNote')?.classList.add('on')},700)}
-function barEnd(){barN=Math.max(0,barN-1);if(!barN){clearTimeout(barT);$('topLoad')?.classList.remove('on');$('topNote')?.classList.remove('on')}}
-/* 한 번 본 화면은 이 기기에 저장해 두고 다음에 바로 보여 줌 (뒤에서 최신으로 바꿈). 로그아웃하면 지움 */
-const CACHE_FN=new Set(['adminTree','portalData','myJobs','jobBoard','vendorJob','noticeList','vendorList','getPermit']);
-let CUSER='';try{CUSER=localStorage.getItem('fcUser')||''}catch(e){}
-const ck_=(n,a)=>'fc:'+CUSER+':'+n+':'+JSON.stringify(a||[]);
-function cacheGet(n,a){if(!CUSER||!CACHE_FN.has(n))return null;try{const v=localStorage.getItem(ck_(n,a));return v?JSON.parse(v):null}catch(e){return null}}
-function cacheSet(n,a,v){if(!CUSER||!CACHE_FN.has(n))return;try{localStorage.setItem(ck_(n,a),JSON.stringify(v))}catch(e){cacheClear()}}
-function cacheClear(){try{const ks=[];for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith('fc:'))ks.push(k)}ks.forEach(k=>localStorage.removeItem(k))}catch(e){}}
-function setCUser(u){u=String(u||'');if(u===CUSER)return;cacheClear();CUSER=u;try{localStorage.setItem('fcUser',u)}catch(e){}}
-/* 로딩 창 규칙 (v5.9)
- *  - call      : 로딩 창 (0.4초 안에 끝나면 안 뜸) → 처음 여는 화면 · 저장 · 제출 · 발행 · 승인 · 파일 만들기
- *  - callQuiet : 로딩 창 없음 → 저장해 둔 화면을 먼저 보여 준 뒤 뒤에서 최신으로 바꿀 때 · 자동저장 · 알림 숫자 */
+/* 도급 안전관리 · Firebase 연결부 (F1.7: 로그인 · 직원 · 사업자 등록/승인 · 계약 전 서류 · 공사/작업자 · 작업허가서 · 순회점검 · 협의체/합동점검 · 공사 종료/평가)
+ * - 화면(app.js)은 예전처럼 api('기능이름', 인자) 로 부르고, 이 파일이 Firestore에서 바로 처리함
+ *   (예전: 버튼마다 Apps Script 서버 왕복 → 느림 / 지금: 휴대폰이 Firestore를 직접 읽고 씀)
+ * - 권한(업체는 자기 것만, 직원 관리는 안전보건팀만 등)은 Firebase 보안 규칙(firestore.rules)이 최종 확인
+ *   → 이 파일의 권한 확인은 화면 안내용, 진짜 막는 것은 규칙
+ * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
+ */
+(function () {
+  const VERSION = '26.10.30 F2.7';
+  /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
+  /* F2.1 업종 '오픈지원' 추가 (매장 오픈 인력 · 인력사무소형) · 인테리어(마감) = 지금까지의 공사 흐름 그대로 */
+  const CFG = {
+    INDUSTRIES: ['입고도우미', '재고조사', '인테리어(마감)', '오픈지원', '사인', '냉난방기', '집기', '본사 식당'],
+    TEST_SKIP_FILES: false,         // F1.8z 운영 (테스트 모드 끔): 계약 전 검토 승인된 업체만 공사 업무·배정 · 규정·계획서 작성 필수
+    APPROVER_DOMAINS: ['daiso.co.kr'],
+  };
+  const MASTER_EMAILS = ['zxcv6309@gmail.com'];  // firestore.rules의 isMaster()와 같게 유지
+  const STAFF_ROLES = { SAFETY: '안전보건팀', CLIENT: '도급인 담당자' };
+  const STAFF_SEED = [['박OO', 'gerrard08@daiso.co.kr', 'gerrardbak08@gmail.com'], ['강OO', 'sky5224122@daiso.co.kr', 'sky5224122@gmail.com'], ['유OO', 'junha.yoo@daiso.co.kr', 'zxcv6309@gmail.com'], ['서OO', 'ymoo09@daiso.co.kr', 'sds4436@gmail.com'], ['박OO', 'younha.park@daiso.co.kr', 'kong6866@gmail.com'], ['윤OO', 'jeongin.yoon@daiso.co.kr', 'dndjekrl@gmail.com']];
+  const STEP_NAMES = ['기본정보', '안전보건 조직', '안전관리계획', '증빙자료', '최종확인'];
+  const FIELDS = {
+    // F1.8a 사업장 정보는 3칸만 (현장대리인 성명 · 연락처 · 사업장 소재지) — 중계 서버 FIELDS1_과 같게
+    1: [['siteManager', '현장대리인 성명'], ['siteManagerPhone', '현장대리인 연락처'], ['siteAddress', '사업장 소재지 (주소)']],
+    2: [['safetyManager', '안전보건 담당자'], ['safetyPhone', '담당자 연락처'], ['orgPolicy', '안전보건 조직 및 역할']],
+    3: [['riskFactors', '주요 위험요인'], ['prevention', '안전조치 및 예방대책'], ['emergency', '사고보고·비상대응 절차']],
+    4: [['training', '안전보건교육 현황'], ['protective', '보호구 및 장비 관리'], ['otherDocuments', '추가 증빙자료 설명']],
+    5: [['finalConfirm', '제출 내용 확인(확인 완료 입력)']],
+  };
+  const INDUSTRY_FIELDS = {
+    '입고도우미': ['롤테이너·L카 이동 안전조치', '하차 중 차량 및 작업자 동선 분리'], '재고조사': ['사다리 및 창고작업 안전조치', '고객 동선과 조사구역 분리'],
+    '인테리어(마감)': ['전기·고소·화기작업 안전조치', '분진·소음 및 작업구역 통제'], '사인': ['고소·낙하물 방지대책', '외부 보행자 보호 및 전기 작업'],
+    '냉난방기': ['전원 차단·전기 작업관리', '냉매·중량물·고소작업 관리'], '집기': ['집기 전도 및 낙하 방지', '전동공구 및 고객 동선 관리'], '오픈지원': ['집기 운반·조립 중 끼임·근골격계 예방', '사다리·박스 정리 및 고객 동선 관리'], '본사 식당': ['미끄러짐·화상·절단 방지', 'MSDS·근골격계 예방'],
+  };
+  const NOTICE_LABEL = { VENDOR_APPROVED: '계약 전 평가 확정', JOB_EXTENDED: '공사 연장', JOB_ENDED: '공사 종료', JOB_EVAL_DONE: '공사 종료 평가 확정', ACC_CERT: '산재 확인서 추가 제출' };
+  /* @@v527-start (v5.27 Code.gs에서 그대로 복사한 상수 · 중계 Relay.gs와 같은 값) */
+  const DOC_STAGE={CONTRACT:'계약',EXECUTION:'수행',CLOSE:'종료'};
+  const DOC_STAGE_ORDER={CONTRACT:1,EXECUTION:2,CLOSE:3};
+  const DOC_OWNER={VENDOR:'수급사(협력업체)',PRINCIPAL:'원청',JOINT:'원청·협력업체'};
+  const DOC_TYPE_SEED=[
+   ['C01','CONTRACT',1,'안전보건관리규정','용역·도급 계약시','VENDOR','TEMPLATE','Y'],
+   ['C02','CONTRACT',2,'안전보건관리계획서','용역·도급 계약시','VENDOR','TEMPLATE','Y'],
+   ['C03','CONTRACT',3,'수급업체 안전보건수준평가','용역·도급 계약시','PRINCIPAL','EVALUATION','N'],
+   ['E01','EXECUTION',1,'안전보건협의체','월1회','JOINT','TEMPLATE','N'],
+   ['E02','EXECUTION',2,'위험성평가','정기/수시','VENDOR','TEMPLATE','N'],
+   ['E03','EXECUTION',3,'작업장 순회점검','2일1회','PRINCIPAL','TEMPLATE','N'],
+   ['E04','EXECUTION',4,'작업장 합동 안전보건점검','2달1회','JOINT','TEMPLATE','N'],
+   ['E05','EXECUTION',5,'안전보건교육 지원 및 확인','정기/수시','PRINCIPAL','TEMPLATE','N'],
+   ['E06','EXECUTION',6,'안전작업계획서(안전작업허가 운영)','수시','VENDOR','TEMPLATE','N'],
+   ['E07','EXECUTION',7,'수급인에 대한 시정조치','수시','PRINCIPAL','TEMPLATE','N'],
+   ['E08','EXECUTION',8,'작업환경측정','정기','PRINCIPAL','TEMPLATE','N'],
+   ['E09','EXECUTION',9,'비상시 대비 및 대응 훈련','정기','PRINCIPAL','TEMPLATE','N'],
+   ['E10','EXECUTION',10,'위생시설 설치 또는 이용','정기/수시','PRINCIPAL','TEMPLATE','N'],
+   ['E11','EXECUTION',11,'안전보건에 관한 정보제공','수시','PRINCIPAL','NONE','N'],
+   ['X01','CLOSE',1,'안전보건수준 재평가','수시','PRINCIPAL','EVALUATION','N']
+  ];
+  const RULE_TITLE='도급사업에 있어서의 협의체 운영지침';
+  const RULE_TEXT=[
+   ['제1조 (목적)','도급사업에 있어서 발생될 수 있는 재해를 미연에 방지하며 수급업체와 함께 안전활동을 전개하여 무재해 사업장을 이룩하기 위함.'],
+   ['제2조 (적용범위)','"을" 및 "을"의 근로자를 대상으로 한다.'],
+   ['제3조 (협의체 구성)','"갑"과 "을" 전원으로 구성한다.\n【단, "갑"의 업무를 위임받은 안전보건총괄책임자 및 안전관리자 1인, 보건관리자 1인, 주관부서의 책임자 1인으로 하며 "을"의 경우 "을" 또는 "을"의 업무를 위임받은 (현장소장 등) 1인으로 할 수 있다.】'],
+   ['제4조 (협의내용)','작업의 시작시간, 작업장 간의 연락방법, 재해위험 시의 대피방법 기타 재해예방을 위하여 필요한 사항'],
+   ['제5조 (운영방법)','매월 1회 이상 정기회의 개최'],
+   ['제6조 (회의결과)','기록, 보존하여야 함 (안전관리자 기록유지)'],
+   ['제7조 (작업장의 순회점검)','2일에 1회 이상 안전보건총괄책임자를 제외한 협의체 위원 전원이 당해 작업장을 순회 점검한다.\n분기에 1회 이상 협의체 위원 전원이 당해 작업장을 순회점검한다.\n"을"은 순회점검을 기피해서는 안 된다.\n순회점검 결과 지적사항에 대해서는 "을"은 즉시 시정하여야 한다.'],
+   ['제8조 (작업중지)','안전사고의 급박한 위험이 예상되어 안전보건총괄책임자로부터 작업중지를 요구받은 경우에는 즉시 작업을 중지하고 근로자를 안전한 장소로 대피시켜야 하며 작업중지로 인하여 발생되는 손실은 "을"이 부담한다.'],
+   ['제9조 (안전보건교육)','"을"은 당해 "을"의 근로자에 대하여 노동부령이 정하는 바에 의하여 정기적으로 안전보건에 관한 교육을 실시하여야 하며 교육결과를 기록 보전하여야 한다. "갑"은 "을"이 당해 근로자 안전보건교육에 관한 협조 요청 시 특별한 사유가 없는 한 지도와 지원을 할 수 있다.'],
+   ['제10조 (유해·위험기계·기구 안전방호장치)','"을"은 노동부령이 정하는 유해·위험기계·기구에 대하여 안전방호장치를 설치 후 작업하여야 한다.']];
+  const HQ_NAME='(주)아성다이소';
+  /* F1.8r 위험성평가 기본 자료 (업체 제출 위험성평가표 공종별 내용 + 다이소 업종) · 상중하 판단법
+   *  [공종키, 공종명, 주요 재해, 주요 대책, 작업허가 대상, 사용 설비, [[위험ID, 세부작업, 유해·위험요인, 감소대책, 위험성(상·중·하), 순회점검 질문], …]]
+   *  개선 후 위험성 = 상→중 · 중→하 · 하→하 (감소대책 이행 기준) · fb.js · Relay.gs 같은 값 */
+  const RISK_TRADES=[
+   ['DEMO','해체·철거','떨어짐·붕괴·비산','개구부 방호, 방진막·가설울타리, 보호구 착용',false,'해체공구·비계',[
+    ['DEMO1','가설·비산 방지','가설구조물 설치 불량으로 해체 잔재물 비산·분진·소음 발생','가설울타리·비산차단벽·방진막·살수설비 설치','중','해체 구역에 가설울타리·방진막 등 비산 방지시설이 설치되어 있는가?'],
+    ['DEMO2','폐기물 반출','해체물·폐기물 반출 시 적재불량, 수직동선 미확보로 떨어짐','작업발판 적재하중 초과 금지, 양중 와이어로프·체인은 허용하중 표시 제품 사용','상','해체·폐기물 반출 시 적재불량·동선 미확보로 떨어질 위험은 없는가?'],
+    ['DEMO3','잔재물 정리','통로·작업발판 잔재물 방치로 넘어짐','잔재물 발생 즉시 처리','중','통로·작업발판에 잔재물이 방치되어 넘어질 위험은 없는가?'],
+    ['DEMO4','잔재물 적치','발코니 등 슬래브 단부에 잔재물 적치로 변형·붕괴','슬래브 단부·발코니에 잔재물 적치 금지','상','슬래브 단부·발코니에 잔재물을 쌓아 무너질 위험은 없는가?'],
+    ['DEMO5','안전시설','해체로 생긴 개구부에서 떨어짐','개구부 덮개·안전난간·추락방호망 설치','상','해체로 생긴 개구부에 덮개·안전난간이 설치되어 있는가?'],
+    ['DEMO6','보호구','보호구 미착용으로 안구·호흡기·머리 손상','안전모·안전화·방진마스크·보안경 지급 및 착용','중','안전모·방진마스크·보안경 등 보호구를 착용하고 있는가?']]],
+   ['SCAF','가설·비계 (고소작업)','떨어짐·무너짐·맞음','안전난간·승강계단, 안전대 착용, 아웃트리거·스토퍼',true,'강관비계·이동식 비계·말비계·사다리',[
+    ['SCAF1','강관비계 이동','비계 위 이동 시 떨어짐','안전난간·승강계단 설치, 안전대 착용, 발판 고정','상','비계에 안전난간·승강계단이 있고 발판이 고정되어 있는가?'],
+    ['SCAF2','강관비계','비계가 무너짐','발판 적재 400kg 이하, 기둥 간격(세로 1.5m·가로 1.8m) 준수, 전용철물로 연결','상','비계 기둥 간격·연결 상태가 양호하고 과적재는 없는가?'],
+    ['SCAF3','낙하 방지','자재가 떨어져 맞음','이동통로 위 자재 적재 금지, 상부 작업 시 하부 통행금지, 안전모 착용','중','상부 작업 중 하부 통행 통제·자재 낙하 방지가 되어 있는가?'],
+    ['SCAF4','이동식 비계 승강','오르내릴 때 떨어짐','승강사다리 설치, 안전대 착용','상','이동식 비계에 승강사다리가 있고 안전대를 착용하는가?'],
+    ['SCAF5','이동식 비계 상부','재료·공구가 떨어짐','재료·공구는 달기로프·포대로 운반','중','재료·공구를 달기로프·포대로 올리고 내리는가?'],
+    ['SCAF6','이동식 비계','작업 중 비계가 움직여 떨어짐','아웃트리거 설치, 바퀴 스토퍼 장착','상','이동식 비계에 아웃트리거·바퀴 스토퍼가 설치되어 있는가?'],
+    ['SCAF7','사다리·말비계','사다리·말비계에서 떨어짐','사다리 2인 1조·전도방지, 최상단 사용 금지, 말비계 발판 폭 40cm 이상','상','사다리·말비계 사용 시 2인 1조·전도방지가 지켜지는가?']]],
+   ['TILE','타일','근골격계·미끄러짐·베임','바른 자세 운반, 바닥 정리, 절단기 방호덮개·집진',false,'타일 절단기·믹서·해머드릴',[
+    ['TILE1','자재 반입·운반','인력 운반 시 근골격계질환·넘어짐·끼임','무릎 굽혀 들기, 바닥 돌출물 제거, 받침목 사용','중','타일 박스 운반 시 바른 자세·통로 정리가 되어 있는가?'],
+    ['TILE2','붙임재료 배합','배합 시 화재·폭발, 회전날 접촉','정해진 배합용기 사용(폐드럼 절단 사용 금지), 믹서 사용 시 안전장갑·회전날 접근 금지','중','배합 믹서 회전날 접촉·폐드럼 용기 사용 위험은 없는가?'],
+    ['TILE3','바탕처리','물고임으로 미끄러짐, 고정못 탈락으로 눈 손상','적정 기울기 유지, 고정못 견고히 고정, 보안경 착용','하','바탕처리 중 물고임으로 미끄러질 위험은 없는가?'],
+    ['TILE4','타일 가공','절단 시 신체 손상·분진','연삭숫돌 방호덮개, 평탄한 곳에서 1장씩 절단, 집진·환기설비','중','타일 절단기에 방호덮개가 있고 분진 집진이 되는가?'],
+    ['TILE5','타일 붙이기','타일 탈락, 바닥 미끄러짐, 발판에서 떨어짐','작업 전 잔여자재 청소, 페인트통·박스를 발판으로 사용 금지','중','페인트통·박스를 발판으로 쓰거나 바닥이 미끄러운 곳은 없는가?'],
+    ['TILE6','타일 철거','해머드릴 접촉, 타일 탈락으로 낙하','철거 부위 사전조사, 드릴은 확실히 잡기, 벽체는 아래 방향으로 철거','중','타일 철거 시 하부 통제·낙하 방지가 되어 있는가?']]],
+   ['LGW','경량 벽체','화재·감전·베임','가연물 제거·소화기, 보안경·장갑, 타정총 안전관리',true,'타정총·교반기·절단기·말비계',[
+    ['LGW1','작업 전 준비','소운반 장비 부적정, 개구부 방호 불량','형상에 맞는 운반장비, 개구부 안전난간·덮개 확인, 화재·질식 위험 교육','중','작업장·통로 주변 개구부 방호와 운반 장비가 적정한가?'],
+    ['LGW2','석고보드·단열재','비산물로 눈 손상, 교반기 감전, 칼 베임','보안경·안전장갑 착용, 교반기 접지·절연 점검','중','보안경·장갑을 착용하고 교반기 접지가 되어 있는가?'],
+    ['LGW3','경량벽체 설치','용접·절단 시 화재, 공구 베임','가연물 제거·불티비산방지·소화기 비치, 말비계 폭 40cm 이상','상','용접·절단 시 불티 비산 방지·소화기 비치가 되어 있는가?'],
+    ['LGW4','타정총 사용','타정총 화재·폭발·오작동','사전신고, 별도 보관, 사람을 향하지 않기, 안전장치 작업 전 점검','상','타정총 안전장치·보관 상태가 양호하고 사람을 향해 쓰지 않는가?']]],
+   ['LGC','경량 천장','떨어짐·낙하·안구 손상','빈틈없는 작업발판, 사다리 대신 비계, 보안경·안전모',true,'이동식 비계·전동드릴·타카건',[
+    ['LGC1','부재 운반·적재','양중 시 부딪힘, 부재 떨어짐·전도','적정 양중장비 선정, 공정 순서에 맞게 반입, 벽에 기대 세우지 않기','중','천장 부재를 기대어 세워 두거나 과다 적재한 곳은 없는가?'],
+    ['LGC2','천장용 발판','불연속 발판·사다리 사용으로 떨어짐','바닥 전체에 빈틈없이 발판 설치, 2개소 이상 고정','상','천장 작업 발판이 빈틈없이 설치·고정되어 있는가?'],
+    ['LGC3','천장틀 설치','상향 작업 시 안구 손상, 발판에서 떨어짐','보안경·안전모 착용, 사다리 대신 이동식 비계 사용','상','천장 작업 때 사다리 대신 비계를 쓰고 보안경을 착용하는가?'],
+    ['LGC4','천장재 부착','발판에서 떨어짐, 부재 낙하, 타카건 신체 손상','2인 1조 고정, 타카건은 사람을 향하지 않기·이동 시 잠금','중','천장재 고정 시 2인 1조·타카건 안전 사용을 지키는가?']]],
+   ['METAL','금속 (절단·용접)','화재·감전·안구 손상','불티 비산방지·소화기, 절단기 덮개, 자동전격방지기',true,'고속절단기·용접기·연삭기',[
+    ['METAL1','자재 절단·가공','보안경 미착용으로 안구 손상','보안경 등 보호구 착용','중','절단·가공 시 보안경을 착용하는가?'],
+    ['METAL2','고속절단기','회전부 덮개 미설치로 베임','연삭숫돌 덮개 설치','중','고속절단기 회전부에 덮개가 설치되어 있는가?'],
+    ['METAL3','절단 불티','불티 비산으로 화재','불티 비산방지 커버 설치, 소화기 비치','상','절단 불티 비산방지 커버·소화기가 준비되어 있는가?'],
+    ['METAL4','인화물질 주변','도료·시너 주변 화기 사용으로 화재','인화물질 주변 화기 사용 금지','상','도료·시너 등 인화물질 주변에서 화기를 쓰지 않는가?'],
+    ['METAL5','아크용접','자동전격방지기 미부착으로 감전','자동전격방지기 부착, 입출력 단자부 절연','상','교류아크용접기에 자동전격방지기가 부착되어 있는가?']]],
+   ['GLASS','창호·유리','낙하·떨어짐','인양 시 주변 통제, 안전대 착용, 2인 1조',true,'지게차·윈치·흡착기',[
+    ['GLASS1','자재 인양','지게차로 인양 중 돌출물에 걸려 낙하','바닥 돌출물 제거, 주변 통제','상','유리 인양 시 주변 통제·돌출물 제거가 되어 있는가?'],
+    ['GLASS2','윈치 인양','윈치 지지대가 꺾여 유리 낙하','안정장치·상부 와이어 고정 확인, 반경 내 접근금지','상','윈치 고정 상태를 확인하고 반경 내 접근을 막았는가?'],
+    ['GLASS3','창호·유리 설치','안전대 미착용으로 떨어짐','안전대 등 개인보호구 착용','상','창호·유리 설치 시 안전대를 착용하는가?'],
+    ['GLASS4','대형유리','흡착기 단독 작업 중 유리 낙하','2인 1조, 흡착기 허용 중량 확인','중','대형유리는 2인 1조로 흡착기 허용 중량 안에서 작업하는가?']]],
+   ['PAINT','도장','화재·질식·떨어짐','화기 금지·환기, 방독마스크, 비계 안전난간',false,'그라인더·에어콤프레셔·이동식 비계',[
+    ['PAINT1','면처리','그라인더 숫돌 파손으로 비산, 절연 파손으로 감전','적합한 숫돌 선정, 방호장치 유지, 1분 공회전, 보안경 착용','중','그라인더 방호덮개·숫돌 상태를 확인하고 보안경을 쓰는가?'],
+    ['PAINT2','초벌도장','이동식 비계 설치 불량으로 떨어짐','발판 틈 3cm 이하, 안전난간·아웃트리거 설치','상','도장용 비계에 안전난간·아웃트리거가 있는가?'],
+    ['PAINT3','도장 작업','주변 화기로 화재, 보호구 미착용으로 질식','주변 용접·용단 금지, 라이터 소지 금지, 환기','상','도장 주변에 화기·라이터가 없고 환기가 되는가?'],
+    ['PAINT4','퍼티작업','우마 발판 전도, 발코니에서 떨어짐','폭 40cm 이상 발판·일일점검, 안전고리 체결','중','우마(말비계) 발판 상태가 양호하고 안전고리를 거는가?'],
+    ['PAINT5','마감도장','환기 미실시로 화재·폭발, 밀폐공간 질식','방독마스크, 환기설비, 소화기 비치, 도료 별도 보관','상','밀폐된 곳 도장 시 환기·방독마스크·소화기가 준비되어 있는가?']]],
+   ['ELEC','전기','감전·떨어짐·화재','전원 차단·잠금(LOTO), 절연 보호구, 누전차단기',true,'분전반·전선·검전기·가설전기',[
+    ['ELEC1','배선작업','전원 미차단·보호구 미착용으로 감전','전원 차단·잠금장치(LOTO), 검전 후 작업, 절연장갑·안전모 착용','상','전원 차단·잠금(LOTO) 후 절연 보호구를 착용하고 작업하는가?'],
+    ['ELEC2','등기구 설치','사다리에서 떨어짐','이동식 비계 등 작업발판 사용','상','등기구 설치 시 사다리 대신 작업발판을 쓰는가?'],
+    ['ELEC3','계량기·분전반','전기 스파크로 폭발·화재','주변 인화성 물질 제거 후 작업','상','분전반·계량기 주변에 인화성 물질이 없는가?'],
+    ['ELEC4','가설전기','누전으로 감전','누전차단기 설치, 피복 손상 전선 사용 금지','상','가설전기에 누전차단기가 있고 피복이 손상된 전선은 없는가?']]],
+   ['MECH','기계설비 (공조·소방·냉난방기)','낙하·화재·감전·떨어짐','신호수 배치, 훅 해지장치, 용접 불티 방지, 고소작업대 점검',true,'크레인·지게차·고속절단기·용접기·고소작업대',[
+    ['MECH1','자재 반입','유도자 미배치로 부딪힘','크레인·지게차 사용 시 신호수 배치·주변 통제','상','장비 사용 시 신호수를 배치하고 주변을 통제하는가?'],
+    ['MECH2','자재 적재','불안전하게 적재해 무너짐','평탄·견고한 곳에 안정되게 적재','중','자재가 평탄한 곳에 안정되게 쌓여 있는가?'],
+    ['MECH3','크레인 인양','훅 해지장치 미설치·로프 손상으로 낙하','훅 해지장치 설치, 작업 전 줄걸이·로프 확인','상','크레인 훅 해지장치와 줄걸이 로프 상태가 양호한가?'],
+    ['MECH4','배관 절단·용접','불티로 보온재 등 화재','인화성 자재 주변 용접 금지, 불티 비산방지, 소화기 비치','상','배관 용접·절단 시 보온재 등 가연물을 치우고 소화기를 두었는가?'],
+    ['MECH5','고속절단기','누전으로 감전','사용 전 점검, 누전차단기 설치, 접지선 연결','상','고속절단기에 누전차단기·접지가 되어 있는가?'],
+    ['MECH6','가스용기','밀폐된 곳에서 LPG·산소 누출','환기되는 곳에 비치, 사용 전 누출 확인','상','LPG·산소 용기를 환기되는 곳에 두고 누출 점검을 하는가?'],
+    ['MECH7','천장 배관','배관 낙하, 균형 잃고 떨어짐','받침대·로프로 결속, 2인 1조','중','천장 배관을 결속하고 2인 1조로 작업하는가?'],
+    ['MECH8','고소작업대','과상승방지장치 미작동, 떨어짐','과상승방지장치 작동 확인(작업높이보다 50cm 이상), 안전난간 설치','상','고소작업대 과상승방지장치·안전난간이 정상인가?'],
+    ['MECH9','수압·기밀시험','시험 중 가스·물 분출','시험 계획 수립, 펌프·압력계 사전 점검','중','수압·기밀시험 전에 펌프·압력계를 점검했는가?']]],
+   ['SIGN','간판','낙하·전도·떨어짐','인양 로프 점검, 크레인 거치, 신호수, 하부 통제',true,'이동식 크레인·고소작업대·사다리',[
+    ['SIGN1','자재 인양','인양로프 파손으로 자재 낙하','중량을 충분히 지지하는 로프 사용','상','간판 인양 로프 상태가 양호한가?'],
+    ['SIGN2','이동식 크레인','아웃트리거 불안정 거치로 전도','평탄·견고한 지반에 거치','상','이동식 크레인 아웃트리거가 견고하게 거치되어 있는가?'],
+    ['SIGN3','장비 사용','유도자 미배치로 부딪힘','신호수 배치·주변 통제','중','장비 사용 시 신호수를 배치했는가?'],
+    ['SIGN4','상부 작업','공구가 떨어짐','공구 달기로프, 작업구간 하부 인원 통제','중','상부 작업 시 공구 낙하 방지·하부 통제가 되어 있는가?'],
+    ['SIGN5','시트지 부착','잔존물로 미끄러짐, 커터칼에 베임','쓰레기 즉시 수거, 커터칼은 작업 때만 꺼내기','하','바닥 쓰레기 정리·커터칼 보관이 잘 되어 있는가?']]],
+   ['HOT','화기작업 (용접·절단·그라인더)','화재·화상','화기작업 허가, 가연물 제거, 소화기·화재감시자',true,'용접기·절단기·그라인더',[
+    ['HOT1','용접·절단','불티로 화재','화기작업 허가, 가연물 제거, 불티 비산방지포, 소화기 비치, 화재감시자 배치','상','화기작업 허가 후 가연물 제거·소화기·화재감시자가 있는가?'],
+    ['HOT2','그라인더','숫돌 파손·회전부 접촉','방호덮개 부착, 보안경·보안면 착용','중','그라인더 방호덮개를 달고 보안경을 쓰는가?']]],
+   ['LOAD','입고·중량물 운반','끼임·부딪힘·근골격계','2인 1조, 대차 사용, 차량·작업자 동선 분리',false,'롤테이너·L카·대차',[
+    ['LOAD1','롤테이너·L카 이동','끼임·부딪힘·근골격계질환','2인 1조, 대차 사용, 이동 동선 확보','중','롤테이너·L카 이동 동선이 확보되고 2인 1조로 운반하는가?'],
+    ['LOAD2','하차 작업','차량과 작업자 동선이 겹쳐 부딪힘','차량·작업자 동선 분리, 유도자 배치','상','하차 중 차량과 작업자 동선이 분리되어 있는가?'],
+    ['LOAD3','박스 적재','적재물이 무너지거나 떨어짐','무거운 것은 아래로, 적재 높이 제한','중','상품 박스를 무너지지 않게 쌓았는가?']]],
+   ['STOCK','재고조사 (창고·진열대)','떨어짐·맞음·넘어짐','사다리 2인 1조, 상단 적재물 확인, 조사구역 표시',false,'사다리·발판',[
+    ['STOCK1','사다리 사용','사다리에서 떨어짐','2인 1조, 전도방지, 최상단 사용 금지','상','사다리를 2인 1조로 쓰고 최상단에 올라가지 않는가?'],
+    ['STOCK2','창고 상단','상품이 떨어져 맞음','상단 적재물 확인, 안전모 착용','중','창고 상단 적재물이 떨어질 위험은 없는가?'],
+    ['STOCK3','매장 조사','고객과 부딪힘·넘어짐','조사 구역 표시, 고객 동선 분리','하','조사 구역을 표시하고 고객 동선을 분리했는가?']]],
+   ['FORK','지게차·전동대차','충돌·깔림','면허자 운전, 유도자 배치, 작업구역 통제',false,'지게차·전동대차',[
+    ['FORK1','운전','충돌·깔림','면허자 운전, 제한속도 준수, 유도자 배치','상','지게차는 면허자가 운전하고 유도자를 배치했는가?'],
+    ['FORK2','작업구역','보행자와 충돌','작업구역 통제, 경광등·후진경보','상','지게차 작업구역에 보행자 출입을 통제하는가?']]],
+   ['CHEM','유해물질 (도료·접착제·세제)','중독·화재','MSDS 비치·교육, 보호구, 화기 엄금 보관',false,'도료·접착제·세제',[
+    ['CHEM1','취급','중독·피부 손상','MSDS 비치·교육, 보호장갑·방독마스크 착용','중','MSDS를 비치하고 보호구를 착용하는가?'],
+    ['CHEM2','보관','인화성 물질 화재','환기되는 곳에 보관, 화기 엄금','상','인화성 물질을 화기와 떨어진 곳에 보관하는가?']]],
+   ['CONF','밀폐공간','질식','산소·유해가스 측정, 환기, 감시인 배치',true,'가스측정기·송풍기',[
+    ['CONF1','출입·작업','산소결핍·유해가스로 질식','작업 전 산소·가스 측정, 환기, 감시인 배치','상','밀폐공간 작업 전 산소·가스 측정과 환기를 했는가?']]],
+   ['KITCHEN','조리·주방 (본사 식당)','화상·베임·미끄러짐','방열장갑, 안전칼집, 미끄럼방지화',false,'조리기구·튀김기·칼',[
+    ['KIT1','조리','화상','방열장갑 착용, 기름 온도 관리','중','조리 시 방열장갑을 쓰고 튀김기 주변이 정리되어 있는가?'],
+    ['KIT2','칼 사용','베임','안전칼집 사용, 지정 장소 보관','하','칼을 칼집·지정 장소에 보관하는가?'],
+    ['KIT3','바닥','미끄러짐','미끄럼방지화 착용, 물기 즉시 제거','중','주방 바닥 물기를 바로 닦고 미끄럼방지화를 신는가?']]],
+   /* F2.1 오픈지원 전용 공종 4개 (업종 '오픈지원'이면 계획서에 이 4개만 · 다른 업종에는 안 나옴) */
+   ['OPEN_MOVE','집기 운반','근골격계·끼임·부딪힘','2인 1조 운반, 대차 사용, 이동 동선 확보',false,'대차·핸드카트',[
+    ['OPM1','중량 집기 운반','무거운 집기를 혼자 들어 허리 부상(근골격계)','2인 1조, 대차 사용, 무릎 굽혀 들기','중','무거운 집기를 2인 1조·대차로 운반하는가?'],
+    ['OPM2','출입구·통로 통과','문틀·벽 사이에 손 끼임, 집기에 부딪힘','통로 확보, 안전장갑 착용, 서로 신호하며 이동','중','집기 운반 통로가 확보되고 안전장갑을 착용했는가?'],
+    ['OPM3','계단·경사로','계단에서 집기와 함께 넘어짐','계단 운반 최소화, 엘리베이터 사용, 3인 이상 운반','상','계단·경사로에서 집기를 무리하게 옮기지 않는가?']]],
+   ['OPEN_ASM','집기 조립','베임·끼임·넘어짐','전동드릴 바른 사용, 안전장갑, 조립 후 고정 확인',false,'전동드릴·드라이버·망치',[
+    ['OPA1','전동드릴 사용','드릴 날에 손 베임·장갑 말려 들어감','회전부에 손 가까이 금지, 비트 확실히 고정, 코팅장갑 착용','중','전동드릴 사용 시 회전부에 손이 가까이 가지 않게 쓰는가?'],
+    ['OPA2','선반·곤돌라 조립','선반·부재 사이에 손가락 끼임','2인 1조로 맞잡기, 안전장갑 착용','중','선반 조립 때 2인 1조·안전장갑을 지키는가?'],
+    ['OPA3','조립 후 설치','고정 안 된 집기가 넘어짐','수평 맞춤·벽체 고정 확인 후 상품 진열','상','조립한 집기가 수평이 맞고 넘어지지 않게 고정되어 있는가?'],
+    ['OPA4','공구 전선','전선에 걸려 넘어짐, 손상된 멀티탭 누전','전선 정리, 손상된 멀티탭 사용 금지','하','공구 전선이 정리되어 걸려 넘어질 위험은 없는가?']]],
+   ['OPEN_DISP','상품 진열','떨어짐·맞음·근골격계','사다리 2인 1조, 무거운 상품은 아래 칸, 적재 높이 제한',false,'사다리·발판·대차',[
+    ['OPD1','사다리 사용','사다리·발판에서 떨어짐','2인 1조, 최상단 사용 금지, 박스·의자 딛기 금지','상','사다리를 2인 1조로 쓰고 박스·의자를 밟고 올라가지 않는가?'],
+    ['OPD2','상단 진열','상단 상품이 떨어져 맞음','무거운 상품은 아래 칸, 상단 적재 높이 제한','중','무거운 상품을 아래 칸에 두고 상단에 과하게 쌓지 않았는가?'],
+    ['OPD3','반복 진열','반복 허리 굽힘·팔 들기로 근골격계 부담','교대 작업, 중간 휴식, 대차 높이 활용','하','반복 진열 때 교대·휴식을 하고 있는가?']]],
+   ['OPEN_WASTE','박스·폐기물 정리','베임·넘어짐·화재','커터칼 바른 사용, 통로 박스 즉시 정리, 폐기물 지정 장소',false,'커터칼·대차',[
+    ['OPW1','박스 개봉','커터칼에 손 베임','몸 반대 방향으로 자르기, 쓴 뒤 칼날 넣기, 안전장갑','중','커터칼을 몸 반대 방향으로 쓰고 칼날을 넣어 보관하는가?'],
+    ['OPW2','통로 정리','통로에 쌓인 박스·비닐에 걸려 넘어짐','빈 박스 즉시 정리, 통로·비상구 확보','중','통로·비상구에 빈 박스·비닐이 쌓여 있지 않은가?'],
+    ['OPW3','폐기물 적치','박스 더미 화재, 쌓은 더미 무너짐','지정 장소에 적치, 주변 화기 금지, 소화기 위치 확인','하','폐기물을 지정 장소에 쌓고 주변에 화기가 없는가?']]]];
+  /* F2.1 오픈지원 구분 (업종 · 공사 구분 · 공종) */
+  const OPEN_IND = '오픈지원', OPEN_TRADES = ['OPEN_MOVE', 'OPEN_ASM', 'OPEN_DISP', 'OPEN_WASTE'], OPEN_ROLES = ['보통인부'];
+  const isOpenInd = (x) => String(x || '') === OPEN_IND;
+  /* 예전 위험작업 표와 같은 모양 (계획서 Ⅱ-4 · Ⅲ-2 · 계약 전 자동 평가에서 씀) [키, 이름, 재해, 대책, -, -, 허가대상, 설비] */
+  const PLAN_WORKS=RISK_TRADES.map(t=>[t[0],t[1],t[2],t[3],0,0,t[4],t[5]]);
+  const RISK_ALL=[].concat(...RISK_TRADES.map(t=>t[6].map(r=>({t:t[0],tl:t[1],id:r[0],step:r[1],haz:r[2],meas:r[3],lv:r[4],q:r[5]}))));
+  const RISK_AFTER={'상':'중','중':'하','하':'하'};
+  /* F1.8s 교육일지 · 산업안전보건법 시행규칙 [별표 5] · 신규자 = 채용 시 교육(다목) 1시간 · 공종을 고르면 특별교육(라목) 추가 → 2시간 · fb.js · Relay.gs 같은 값 */
+  const EDU_HIRE=['산업안전 및 산업재해 예방에 관한 사항 (화재·폭발 사고 발생 시 대피에 관한 사항 포함)','산업보건 및 건강장해 예방에 관한 사항','위험성 평가에 관한 사항','산업안전보건법령 및 산업재해보상보험 제도에 관한 사항','직무스트레스 예방 및 관리에 관한 사항','직장 내 괴롭힘, 고객의 폭언 등으로 인한 건강장해 예방 및 관리에 관한 사항','기계·기구의 위험성과 작업의 순서 및 동선에 관한 사항','작업 개시 전 점검에 관한 사항','정리정돈 및 청소에 관한 사항','사고 발생 시 긴급조치에 관한 사항','물질안전보건자료에 관한 사항'];
+  const EDU_ETC='그 밖에 안전·보건관리에 필요한 사항';
+  EDU_SPECIAL={
+   2:['아세틸렌 용접장치 또는 가스집합 용접장치를 사용하는 금속의 용접·용단 또는 가열작업',['용접 흄, 분진 및 유해광선 등의 유해성에 관한 사항','가스용접기, 압력조정기, 호스 및 취관두 등의 기기점검에 관한 사항','작업방법·순서 및 응급처치에 관한 사항','안전기 및 보호구 취급에 관한 사항','화재예방 및 초기대응에 관한 사항'],'용접'],
+   13:['운반용 등 하역기계를 5대 이상 보유한 사업장에서의 해당 기계로 하는 작업',['운반하역 기계 및 부속설비의 점검에 관한 사항','작업순서와 방법에 관한 사항','안전운전방법에 관한 사항','화물의 취급 및 작업신호에 관한 사항'],'고소작업대·스카이 등'],
+   14:['1톤 이상의 크레인을 사용하는 작업',['방호장치의 종류, 기능 및 취급에 관한 사항','걸고리·와이어로프 및 비상정지장치 등의 기계·기구 점검에 관한 사항','화물의 취급 및 안전작업방법에 관한 사항','신호방법 및 공동작업에 관한 사항','인양 물건의 위험성 및 낙하·비래·충돌재해 예방에 관한 사항','인양물이 적재될 지반의 조건, 인양하중, 풍압 등이 인양물과 타워크레인에 미치는 영향'],'이동식크레인'],
+   17:['전압이 75볼트 이상인 정전 및 활선작업',['전기의 위험성 및 전격 방지에 관한 사항','해당 설비의 보수 및 점검에 관한 사항','정전작업·활선작업 시의 안전작업방법 및 순서에 관한 사항','절연용 보호구, 절연용 방호구 및 활선작업용 기구 등의 사용에 관한 사항'],'전기'],
+   25:['거푸집 동바리의 조립 또는 해체작업',['동바리의 조립방법 및 작업 절차에 관한 사항','조립재료의 취급방법 및 설치기준에 관한 사항','조립·해체 시의 사고 예방에 관한 사항','보호구 착용 및 점검에 관한 사항'],'거푸집동바리'],
+   26:['비계의 조립·해체 또는 변경작업',['비계의 조립순서 및 방법에 관한 사항','비계작업의 재료 취급 및 설치에 관한 사항','추락재해 방지에 관한 사항','보호구 착용에 관한 사항','비계상부 작업 시 최대 적재하중에 관한 사항'],'비계설치·해체'],
+   35:['허가 또는 관리 대상 유해물질의 제조 또는 취급작업',['취급물질의 성질 및 상태에 관한 사항','유해물질이 인체에 미치는 영향','국소배기장치 및 안전설비에 관한 사항','안전작업방법 및 보호구 사용에 관한 사항'],'유해물질취급']};
+  /* F1.8w 특별교육은 위 7가지만 (현장에서 실제로 하는 것) · [번호] = [별표 5] 라목 번호 · [작업명, 개별내용, 화면 이름]
+   *  계획서 교육계획에 쓰는 공종 → 특별교육 (해당 없는 공종 = 채용 시 교육만) */
+  const TRADE_SPECIAL={SCAF:[26],LGC:[26],METAL:[2],HOT:[2],MECH:[14,2],SIGN:[14,13],GLASS:[14],ELEC:[17],PAINT:[35],CHEM:[35],FORK:[13]};
+  /** 작업자 등록 때 고른 특별교육 → { tradeKey, tradeName, special: [번호], eduHours: 1|2 } (안 고르면 채용 시 교육 1시간) */
+  const eduOf=(k)=>{const n=Number(k),x=EDU_SPECIAL[n];return x?{tradeKey:String(n),tradeName:x[2],special:[n],eduHours:2}:{tradeKey:'',tradeName:'',special:[],eduHours:1};};
+  /** 등록 화면 목록 = 특별교육 7가지 (plan은 예전 호출 모양 그대로 받기만 함) */
+  const eduTrades=(plan)=>Object.keys(EDU_SPECIAL).map(Number).sort((p,q)=>p-q).map(n=>({key:String(n),name:EDU_SPECIAL[n][2],special:['[별표 5] '+n+'번 특별교육']}));
+  /** 계획서의 고른 위험요인 (예전 계획서는 고른 위험작업의 위험요인 전부) */
+  const planRisks=(v)=>{v=v||{};const ok=new Set(RISK_ALL.map(r=>r.id));if(Array.isArray(v.risks))return RISK_ALL.filter(r=>v.risks.includes(r.id));const w=Array.isArray(v.works)?v.works:[];return RISK_ALL.filter(r=>w.includes(r.t)&&ok.has(r.id));};
+  const PLAN_INDUSTRY_WORKS={'입고도우미':['LOAD','FORK'],'재고조사':['STOCK','LOAD'],'인테리어(마감)':['DEMO','SCAF','LGW','LGC','PAINT'],'사인':['SIGN','SCAF','ELEC'],'냉난방기':['MECH','ELEC','HOT','SCAF'],'집기':['LOAD','SCAF','METAL'],'오픈지원':['OPEN_MOVE','OPEN_ASM','OPEN_DISP','OPEN_WASTE'],'본사 식당':['KITCHEN','CHEM']};
+  const PLAN_SCEN=[
+   ['FIRE','화재',[['상황전파','최초 발견자','"불이야"를 외쳐 주변에 알리고 119에 신고'],['초기소화','최초 발견자·주변 근로자','부상자를 안전한 곳으로 옮기고 소화기로 초기 소화'],['대피','현장대리인','작업 중지, 전기·가스 차단, 비상구로 전원 대피 후 인원 확인'],['현장인계','현장대리인','출동한 소방대에 현장 상황 보고, 진입로 확보'],['보고','현장대리인','다이소 담당자에게 즉시 보고, 재발방지 대책 수립']]],
+   ['SHOCK','감전',[['상황전파','최초 발견자','"감전 사고!"를 외치고 지휘계통에 통보'],['전원차단','현장대리인','해당 선로 차단 (맨손으로 사고자 접촉 금지)'],['응급조치','안전담당자','호흡 확인, 119 신고, 필요 시 심폐소생술·AED'],['보고','현장대리인','다이소 담당자에게 즉시 보고']]],
+   ['FALL','추락',[['상황전파','최초 발견자','주변에 알리고 119 신고'],['2차사고 방지','현장대리인','주변 작업 중지, 낙하물 위험 구역 통제'],['응급조치','안전담당자','사고자를 함부로 움직이지 않고 의식·호흡 확인, 출혈 지혈'],['보고','현장대리인','다이소 담당자에게 즉시 보고']]],
+   ['SICK','응급환자 (부상·심정지)',[['상황전파','최초 발견자','119 신고, 주변에 도움 요청'],['응급조치','안전담당자','의식·호흡 확인, 심폐소생술·AED, 상처 지혈'],['인계','현장대리인','구급대 도착 시 상황 설명, 병원 이송 동행'],['보고','현장대리인','다이소 담당자에게 즉시 보고']]]];
+  const PLAN_LAWS=[['산업안전보건법 제36조','위험성평가 실시','작업 시작 전 위험성평가 실시·기록 (본 계획서 Ⅱ-1)'],['산업안전보건법 제29조','근로자 안전보건교육','신규 채용 시·작업 전 교육 실시·기록 (본 계획서 Ⅱ-3)'],['산업안전보건법 제63조·제64조','도급인의 안전조치·협의체','협의체 참여, 순회점검 협조, 지적사항 즉시 시정'],['산업안전보건기준에 관한 규칙','위험작업 안전조치','고소·전기·화기 등 위험작업 시 안전조치·작업허가 (본 계획서 Ⅱ-4)']];
+  function planPolicy_(company){return [company+'은(는) 안전보건경영이 모든 경영활동의 최우선 가치임을 표명하고, 안전보건 책임과 의무를 성실하게 실행하기 위해 다음과 같이 안전보건경영 방침을 선언한다.',
+   '산업안전보건법 등 안전보건 관련 법규 및 제반 규정을 준수하여 쾌적하고 안전한 작업환경을 조성한다.','사업장 내 모든 유해·위험요인을 지속 개선하여 협력사를 포함한 모든 임직원과 이용고객의 안전과 건강을 지킨다.',
+   '안전보건에 관한 목표를 설정하고 이를 달성하기 위한 안전보건경영시스템을 구축하여 산업재해를 예방한다.','비상상황에 적극적으로 대응할 수 있는 비상 대응체계를 구축·운영한다.','전 임직원의 자율적인 안전보건활동 참여를 보장하고 안전한 일터 조성으로 사회적 책임을 다한다.'];}
+  /* v5.27 Code.gs에서 그대로: 합동안전보건 점검표 26항목 · 협의체 법정 협의사항 */
+  const JOINT_ITEMS=[
+   ['작업장','작업장 바닥은 견고하며 미끄럽거나 탁진 곳은 없는가?'],['작업장','작업자가 미끄러지거나 추락할 위험은 없는가?'],['작업장','작업장 바닥의 개구부(배수로, 하수도, 지하 핏트의 구멍 등)은 안전하게 덮었는가?'],
+   ['작업장','상품은 저장과 적재가 안전하고 사용에 편리하게 되어 있는가?'],['작업장','위험구역에는 위험,경고 표시 및 접근방지 대책이 마련되어 있는가?'],['작업장','작업장의 통로는 충분히 확보되어 있으며, 통로나 계단에 작업자가 충돌할 위험이 있는 설비나 자재 등이 놓여 있지 않은가?'],
+   ['건강','건강진단 및 작업환경측정은 주기적으로 실시되고 있는가?'],['건강','질병유소견자에 대한 작업전환 등 사후관리는 적절한가?'],
+   ['작업','작업장의 조명은 충분한가?'],['작업','작업실의 실내온도 및 통풍은 알맞게 유지되고 있는가?'],
+   ['유해','유해작업에 대한 국소배기나 보호구착용은 양호한가?'],['유해','인화성,가연성물질의 저장, 격리 등의 관리는 양호한가?'],['유해','물질안전보건자료의 관리상태는 양호한가?'],
+   ['기계','위험기계기구의 방호장치는 안전하게 사용되고 있는가?'],['기계','벨트 등 위험점이 노출된 곳은 없는가?'],['기계','담당자 외의 근로자가 임의로 운전하고 있지는 않은가?'],['기계','자격이 필요한 기계기구의 무자격 운전자는 없는가?'],['기계','법정 검사는 주기적으로 실시되고 있는가?'],['기계','수리 등 비정상작업시 안전조치는 실시하고 있는가?'],
+   ['전기','전기설비의 절연. 접지상태 및 이의 관리상태는 양호한가?'],['전기','젖은 손으로 전기설비를 취급하고 있지는 않은가?'],['전기','정전 및 활선작업시 안전조치 및 보호구 착용상태는 양호한가?'],
+   ['기타','안전수칙을 준수하며, 해당보호구를 착용하고 작업하는가?'],['기타','안전교육은 정기적으로 실시되고 있는가?'],['기타','하역. 운반작업시 적절한 안전조치를 실시하고 있는가?'],['기타','기타 근로자에 유해위험을 미칠 수 있는 것이 있는가?']];
+  const JOINT_MARKS=['OK','BAD','NA'];
+  const COUNCIL_AGENDA=['작업의 시작 시간','작업 또는 작업장 간의 연락방법','재해발생 위험이 있는 경우 대피방법','작업장에서의 법 제36조에 따른 위험성평가의 실시에 관한 사항','사업주와 수급인 또는 수급인 상호 간의 연락 방법 및 작업공정의 조정'];
+  /* v5.27 Code.gs에서 그대로: 종료 평가 12항목 · 배점 · 등급 계산 */
+  const EVAL_ITEMS=[
+   ['1','A. 안전보건관리체제','일반원칙 (안전보건방침)','규정 · 계획서 Ⅰ 안전보건경영 방침'],
+   ['2','A. 안전보건관리체제','계획수립 (목표·성과지표·법규)','계획서 Ⅰ 안전목표 · 성과지표 · 관련법규'],
+   ['3','A. 안전보건관리체제','역할 및 책임 (조직·연락체계)','계획서 Ⅰ 조직 및 비상연락체계'],
+   ['4','B. 실행수준','위험성평가','계획서 Ⅱ-1 위험성평가 계획'],
+   ['5','B. 실행수준','안전점검 및 모니터링','계획서 Ⅱ-2 안전점검 및 모니터링 계획'],
+   ['6','B. 실행수준','이행확인 (개선조치)','계획서 Ⅴ 이행확인'],
+   ['7','B. 실행수준','교육 및 기록','계획서 Ⅱ-3 안전보건교육 계획'],
+   ['8','B. 실행수준','안전작업허가','계획서 Ⅱ-4 안전작업 허가'],
+   ['9','C. 운영관리','신호 및 연락체계','계획서 Ⅲ-1 신호 및 연락체계'],
+   ['10','C. 운영관리','위험물질 및 설비','계획서 Ⅲ-2 위험물질 및 설비'],
+   ['11','C. 운영관리','비상대책','계획서 Ⅲ-3 비상대책(시나리오)'],
+   ['12','D. 재해발생 수준','최근 3년 산업재해 현황','계획서 Ⅳ 증빙자료']
+  ];
+  const EVAL_LEVELS={G:'우수',N:'보통',P:'미흡'};
+  const EVAL_POINTS={1:[5,3,1],2:[10,5,1],3:[5,3,1],4:[5,3,1],5:[10,5,1],6:[10,5,1],7:[5,3,1],8:[10,5,1],9:[5,3,1],10:[10,5,1],11:[5,3,1],12:[20,10,1]};
+  const EVAL_SECTIONS=[['A',[1,2,3],20],['B',[4,5,6,7,8],40],['C',[9,10,11],20],['D',[12],20]];
+  const EVAL_RULE={rateGood:0.9,rateNormal:0.6,fixDaysGood:3};
+  function evalScore_(items){let total=0;const sec={};EVAL_SECTIONS.forEach(([k,nos])=>{sec[k]=nos.reduce((s,n)=>s+(items[n]?EVAL_POINTS[n]['GNP'.indexOf(items[n].lv)]||0:0),0);total+=sec[k];});
+    let grade=total>=90?'S':total>=80?'A':total>=70?'B':total>=60?'C':'D';
+    // 등급제한: A·B·C 분야 중 하나라도 배점의 50% 미만이면 D
+    const limited=EVAL_SECTIONS.slice(0,3).some(([k,,max])=>sec[k]<max/2);if(limited)grade='D';return {total,grade,sec,limited};}
+  /* @@v527-end */
 
-/* F1.8h 성능 진단(최근 요청) 기능 없앰 · 예전에 이 기기에 쌓인 기록도 지움 (부르는 곳이 남아 있어 빈 함수로 둠) */
-try{localStorage.removeItem('dsk_perf_521')}catch(e){}
-function perfRecord(){}
-function perfUI(){const b=$('perfBtn');if(b)b.remove()}
+  /* ---------- 준비 ---------- */
+  const ok = !!(window.firebase && window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.projectId);
+  if (!ok) { window.FB = { ok: false, version: VERSION }; return; }
+  firebase.initializeApp(window.FIREBASE_CONFIG);
+  const auth = firebase.auth(), db = firebase.firestore();
+  let USER = null;
+  const ready = new Promise((res) => { auth.onAuthStateChanged((u) => { USER = u; res(u); }); });
 
-/* v5.25: 단순 조회는 전체화면 차단 팝업 대신 화면 상단 진행선만 표시.
-   저장·등록·제출 등 변경 작업만 기존 차단 로딩을 유지한다. */
-function call(name,...args){
- const read=READS.has(name);
- if(read)barStart();else loadStart(name);
- const finish=()=>{if(read)barEnd();else loadEnd()};
- return api(name,args).then(r=>{finish();cacheSet(name,args,r);return r},e=>{finish();msg(e.message||'처리에 실패했습니다.');throw e});
-}
-/** 화면을 가리지 않는 조용한 호출 (자동저장용) */
-function callQuiet(name,...args){return api(name,args).then(r=>{cacheSet(name,args,r);return r})}
-function input(id,label,value='',type='text',disabled=false,ph=''){return `<div class="field"><label for="f_${id}">${escapeText(label)}</label><input id="f_${id}" type="${type}" value="${escapeText(value)}" ${ph?`placeholder="${escapeText(ph)}"`:''} ${disabled?'disabled':''}></div>`}
-function text(id,label,value='',disabled=false){return `<div class="field"><label for="f_${id}">${escapeText(label)}</label><textarea id="f_${id}" ${disabled?'disabled':''}>${escapeText(value)}</textarea></div>`}
-function value(id){return $('f_'+id)?.value?.trim()||''}
-function switchTab(which){tab=which;toggleMenu(false);stopScan();if($(which+'Tab'))$('pageTitle').textContent=$(which+'Tab').textContent;clearInterval(roomTimer);clearInterval(wkTimer);for(const n of ['my','admin','review','tpl','staff','jobs','notice','vendors']){$(n).classList.toggle('hidden',n!==which);$(n+'Tab').classList.toggle('active',n===which)}if(which==='admin')loadAdmin();if(which==='review')loadReview();if(which==='tpl')loadTemplates();if(which==='staff')loadStaff();if(which==='jobs')loadJobs();if(which==='notice')loadNotices();if(which==='vendors')loadVendors();}
-/* F1.9t 홈 화면 앱(PWA): 서비스 워커 등록 (저장 안 함 · 홈 화면에 추가할 수 있게만) */
-if('serviceWorker' in navigator&&location.protocol==='https:')window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
-// ★ 화면 버전: 여기 한 줄만 고침 (GitHub만 올리면 로그인 화면·앱 화면·메뉴에 모두 반영, Code.gs 수정 불필요)
-const UI_VERSION='26.10.30 F2.7';
-/* F1.8o 전화번호 · 사업자번호: 숫자만 쳐도 '-' 자동 (서버는 원래 숫자만 골라 씀) */
-function fmtTel(v){const d=String(v||'').replace(/\D/g,'').slice(0,11);if(d.startsWith('02'))return d.length<3?d:d.length<6?d.slice(0,2)+'-'+d.slice(2):d.length<10?d.slice(0,2)+'-'+d.slice(2,5)+'-'+d.slice(5):d.slice(0,2)+'-'+d.slice(2,6)+'-'+d.slice(6,10);
- return d.length<4?d:d.length<8?d.slice(0,3)+'-'+d.slice(3):d.length<11?d.slice(0,3)+'-'+d.slice(3,6)+'-'+d.slice(6):d.slice(0,3)+'-'+d.slice(3,7)+'-'+d.slice(7)}
-function fmtBiz(v){const d=String(v||'').replace(/\D/g,'').slice(0,10);return d.length<4?d:d.length<6?d.slice(0,3)+'-'+d.slice(3):d.slice(0,3)+'-'+d.slice(3,5)+'-'+d.slice(5)}
-document.addEventListener('input',e=>{const t=e.target;if(!t||t.tagName!=='INPUT')return;const f=t.id==='f_regNo'?fmtBiz:t.type==='tel'?fmtTel:null;if(!f)return;const n=f(t.value);if(n!==t.value)t.value=n},true);
-/* F1.8z index.html 버전 표시 (휴대폰이 예전 index.html을 기억하면 메뉴가 예전 것으로 보임 → 자동 새로 고침) */
-const HTML_VER=document.documentElement.getAttribute('data-ver')||'';
-function showVer(){document.querySelectorAll('.verTxt').forEach(x=>x.textContent=UI_VERSION+(HTML_VER===UI_VERSION?'':' · 화면 파일 확인 필요 (⟳)'))}
-/** F1.8z 위쪽 ⟳ 새로고침 (협력업체·도급인 공용) · 작성 중이면 한 번 묻고 · 화면 파일도 새로 받음 */
-async function refreshNow(){const editing=dirty||(typeof ins!=='undefined'&&!!ins)||(typeof rs!=='undefined'&&!!rs)||regEdit||!!document.querySelector('#csheet[style*="block"],#psheet:not([hidden])')||Object.values(PEND).some(p=>!p.done);
- if(editing&&!await askOk('새로고침','작성 중인 내용(고른 사진 포함)이 사라질 수 있습니다.\n그래도 새로고침할까요?','새로고침'))return;
- dirty=false;try{sessionStorage.removeItem('verReload');sessionStorage.removeItem('htmlReload')}catch(e){}location.reload()}
-/** v4.1 ⚙ 마스터 설정: 직원 관리로 바로 이동 (마스터 계정만 보임) */
-function openMaster(){if(!state||!state.isMaster)return;sgo('staff')}
-function display(s){state=s;setTimeout(()=>typeof evresPending==='function'&&evresPending(),500);setTimeout(perfUI,0);showVer(s);$('gearBtn').hidden=!s.isMaster;setTimeout(()=>{showBadges(s.badges);startBadges()},0);$('identity').textContent=(s.mode==='STAFF'?'[다이소 담당자로 접속] ':s.mode==='VENDOR'?'[협력업체로 접속] ':'')+'접속 계정: '+s.email+(s.staff?' · 아성다이소 '+s.staff.roleLabel+' '+s.staff.name:'');$('staffTab').classList.toggle('hidden',!(s.staff&&s.staff.role==='SAFETY'));$('jobsTab').classList.toggle('hidden',!s.staff);$('noticeTab').classList.toggle('hidden',!(s.staff&&s.staff.role==='SAFETY'));if(s.staff&&!s.company&&tab==='my'){$('myTab').textContent='내 업무';}$('adminTab').classList.toggle('hidden',!(['ADMIN','SAFETY'].includes(s.role)||s.isApprover));$('tplTab').classList.toggle('hidden',!['ADMIN','SAFETY'].includes(s.role));$('reviewTab').classList.toggle('hidden',!['ADMIN','SAFETY','CONTRACT'].includes(s.role));if($(tab+'Tab'))$('pageTitle').textContent=$(tab+'Tab').textContent;setupVMenu();setupSMenu();renderMy();}
-/** ☰ 메뉴 열기·닫기 */
-function toggleMenu(open){const d=$('drawer');if(!d)return;const v=open===undefined?!d.classList.contains('open'):!!open;
- /* 닫힌 메뉴 안에 포커스가 남지 않게 (aria-hidden 경고) */if(!v&&d.contains(document.activeElement))document.activeElement.blur();
- if(v)navAuto();d.classList.toggle('open',v);$('scrim').classList.toggle('open',v);d.setAttribute('aria-hidden',String(!v));$('menuBtn').setAttribute('aria-expanded',String(v));document.body.style.overflow=v?'hidden':''}
-document.addEventListener('keydown',e=>{if(e.key==='Escape')toggleMenu(false)});
-/* v5.20 ☰ 메뉴 목차 접기·펼치기: 메뉴를 열 때 지금 보고 있는 묶음만 펼치고 나머지는 접음 → 휴대폰에서도 로그아웃까지 한 화면에 보임
- *  접힌 묶음 제목 옆에는 안쪽 알림 숫자 합계를 표시 */
-function navSet(g,open){g.classList.toggle('fold',!open);const h=g.querySelector('.navh');if(h)h.setAttribute('aria-expanded',String(open));navDot(g)}
-function navDot(g){const h=g.querySelector('.navh');if(!h)return;const n=g.classList.contains('fold')?[...g.querySelectorAll('.navb button[data-n]')].filter(b=>!b.classList.contains('hidden')).reduce((s,b)=>s+(parseInt(b.dataset.n,10)||0),0):0;if(n>0)h.dataset.n=n>99?'99+':String(n);else delete h.dataset.n}
-function navFold(h){const g=h.closest('.navg');if(g)navSet(g,g.classList.contains('fold'))}
-function navAuto(){document.querySelectorAll('#navTabs .navg').forEach(g=>navSet(g,!!g.querySelector('.navb button.active')))}
-function renderMy(){const b=state.company;let html='';if(typeof setTopGuide==='function')setTopGuide('');/* F2.7 위쪽 [❔ 가이드]는 그 화면이 다시 켬 */if(state.mode==='STAFF'&&!state.staff){$('my').innerHTML='<div class="card"><h2>다이소 직원 명단에 없는 계정입니다</h2><p class="desc">로그인 계정 <b>'+escapeText(state.email)+'</b> 은(는) 회사직원명단에 등록되어 있지 않습니다.<br>협력업체라면 로그인 화면에서 <b>[협력업체]</b>를 고르고 다시 로그인해 주세요.<br>다이소 직원이라면 안전보건팀에 계정 등록을 요청해 주세요.</p><button class="button" type="button" onclick="logout()">로그인 화면으로</button></div>';return}if(typeof mgrRoute==='function'&&mgrRoute()){clearInterval(pollTimer);return}/* F2.2 인력관리자 초대 링크 · 인력관리자 화면 */if(state.staff&&!b){$('my').innerHTML='<div class="card"><h2>'+escapeText(state.staff.name)+' 님 ('+escapeText(state.staff.roleLabel)+')</h2><p class="desc">아성다이소 직원 계정으로 로그인했습니다.<br>오른쪽 위 ☰ 메뉴에서 업무를 선택해 주세요.</p><button class="button" type="button" onclick="toggleMenu(true)">메뉴 열기</button></div>';return}if(!b||b.status==='REJECTED'){html=`<div class="card"><h2>사업자 등록 신청</h2>${b?`<div class="note">기존 신청이 반려되었습니다. 사유: ${escapeText(b.reason)}<br>새 신청은 관리자에게 문의해 주세요.</div>`:''}<p class="desc">처음 방문한 업체는 기본정보와 사업자등록증을 제출해 주세요.</p>`+regFormHtml(null,false)+`</div>`}
-else if(b.status==='PENDING'&&regEdit){html='<div class="card"><h2>신청 내용 고치기</h2><div class="note">고친 내용으로 승인 요청 메일을 <b>다시 보냅니다</b>. 예전에 보낸 승인 링크는 바로 쓸 수 없게 됩니다.</div>'+regFormHtml(b,true)+'</div>'}
-else if(b.status==='PENDING'){html=`<div class="card">${gdRow('pending')}<h2>${escapeText(b.company)}</h2><div class="note">사업자 등록 승인 대기 중입니다.<br>본사 승인 담당자 <b>${escapeText(b.approverEmail||'')}</b>에게 승인 요청 메일을 보냈습니다. 담당자가 메일의 링크에서 바로 승인합니다.<br>승인되면 이 화면에 안내 창이 뜨고 바로 작성 페이지로 넘어갑니다.${b.duplicate==='Y'?'<br><b>이미 같은 사업자번호로 등록된 업체가 있습니다.</b> 현장대리인이 다른 현장 담당이면 그대로 진행하면 됩니다. (현장대리인마다 계정 따로 · 공사 · 평가도 따로)':''}</div><p class="desc">신청 계정: ${escapeText(state.email)}<br><span id="pollInfo">승인 여부를 15초마다 자동으로 확인하고 있습니다.</span></p><div class="row"><button class="button ghost" type="button" id="btnChkApv" onclick="checkApproval(true)">지금 확인하기</button><button class="button ghost" type="button" id="btnRegEdit" onclick="regEdit=true;renderMy();window.scrollTo(0,0)">✏ 신청 내용 고치기</button></div><p class="muted" style="margin-top:6px">승인 담당자 메일 주소 등을 잘못 적었으면 [신청 내용 고치기]로 고쳐서 다시 보낼 수 있습니다.</p></div>`}
-else if(b.status==='VERIFIED'){activeStep=1;html=vendorHomeHtml(b)}$('my').innerHTML=html;
- // 승인 대기 중일 때만 15초마다 승인 여부 자동 확인
- clearInterval(pollTimer);if(b&&b.status==='PENDING')pollTimer=setInterval(()=>checkApproval(false),15000);
- if(b&&b.status==='VERIFIED'&&['SUBMITTED','SAFETY_REVIEW'].includes(b.submissionStatus))pollTimer=setInterval(checkReview,30000);
- if(b&&b.status==='VERIFIED'&&(b.submissionStatus==='APPROVED'||b.renewAt)){if(b.submissionStatus==='APPROVED')showApprovedOnce(b);vStart()}}
-/* 계약 전 검토 상태 자동 확인 */
-async function checkReview(){try{const s=await callQuiet('myStatus');if(s&&s.submissionStatus!==state.company.submissionStatus){
- // v5.17 재평가 검토 중에는 공사 업무를 하고 있을 수 있음 → 작업 중이면 화면을 바꾸지 않고 알림만 (다음 확인 때 다시)
- if(state.company.renewAt&&busyView()){if(window.__rvSeen===s.submissionStatus)return;window.__rvSeen=s.submissionStatus;msg(s.submissionStatus==='APPROVED'?'계약 전 서류 재평가가 승인되었습니다.':'계약 전 서류 재평가 결과가 나왔습니다. [계약 서류] 메뉴에서 확인해 주세요.');return}
- clearInterval(pollTimer);await reload();if(state.company&&state.company.submissionStatus==='APPROVED'&&s.submissionStatus==='APPROVED')msg('계약 전 서류 승인 완료');}}catch(e){}}
-/* 승인 안내 팝업: 업체당 한 번만 */
-function showApprovedOnce(b){const key='approvedSeen:'+b.id;let seen=false;try{seen=localStorage.getItem(key)==='1'}catch(e){}if(seen||window.__approvedShown)return;window.__approvedShown=true;popup('계약 전 검토가 완료되었습니다','본사 담당자 검토를 통과했습니다.\n첫 화면의 [금일 작업 수행하기]를 눌러 신규자 등록·작업허가서·순회점검을 진행해 주세요.','시작하기',()=>{try{localStorage.setItem(key,'1')}catch(e){}window.scrollTo(0,0)})}
-/* ---------- 승인 대기 자동 확인 + 안내 팝업 ---------- */
-let pollTimer=null;
-function popup(title,body,btn,onOk,onLater,laterLabel){$('modalTitle').textContent=title;$('modalBody').textContent=body;$('modalBtn').textContent=btn;$('modal').style.zIndex='65';/* F1.7f 작성 화면(계획서·허가서, 40) 위에 뜨게 */$('modal').style.display='flex';const c=$('modalCancel');c.hidden=!onLater;c.textContent=laterLabel||'나중에';$('modalBtn').onclick=()=>{$('modal').style.display='none';onOk&&onOk()};c.onclick=()=>{$('modal').style.display='none';onLater&&onLater()};$('modalBtn').focus()}
-/* F1.7f 확인·오류 창을 브라우저 confirm/alert 대신 화면 안 창으로
- *  (일부 휴대폰·앱 안 브라우저는 confirm/alert를 말없이 막아서 "눌러도 아무 반응 없음"이 됨) */
-function askOk(title,body,okLabel){return new Promise(res=>popup(title,body,okLabel||'확인',()=>res(true),()=>res(false),'취소'))}
-/** 응답만 사라졌을 수 있는 오류 (서버는 처리했을 수 있음 → 다시 받아서 확인) */
-const LOST_RE=/응답을 받지 못했|응답이 늦습니다|연결하지 못했|응답을 읽을 수 없/;
-function showErr(title,e){popup(title,(e&&e.message)||String(e||'처리에 실패했습니다.'),'확인')}
-/* ---------- v4.3 알림: 메뉴 옆 숫자 + 새 소식 팝업 (1분마다 확인) ---------- */
-let badgeTimer=null;
-function setBadge(el,n){if(!el)return;if(n>0)el.dataset.n=n>99?'99+':String(n);else delete el.dataset.n}
-let lastBadges='';
-function showBadges(b){b=b||{};const changed=JSON.stringify(b)!==lastBadges;lastBadges=JSON.stringify(b);if(state)state.badges=b;setBadge($('adminTab'),b.admin);setBadge($('reviewTab'),b.review);setBadge($('jobsTab'),b.jobs);setBadge($('noticeTab'),b.notices);
- const vis=k=>$(k)&&!$(k).classList.contains('hidden');setBadge($('menuBtn'),(vis('adminTab')?b.admin||0:0)+(vis('reviewTab')?b.review||0:0)+(vis('jobsTab')?b.jobs||0:0)+(vis('noticeTab')?b.notices||0:0));
- sBadges(b);if(changed&&tab==='jobs'&&jobsMode==='list'&&jobData)renderJobs();newsPopup(b)}
-/** 새로 검토가 끝난 업체가 생기면 한 번만 팝업 (본 업체는 기억) */
-function newsPopup(b){const nv=(b&&b.newVendors)||[];if(!nv.length||!state||!state.staff||$('modal').style.display==='flex')return;let seen=[];try{seen=JSON.parse(localStorage.getItem('seenVendors:'+state.email)||'[]')}catch(e){}
- const fresh=nv.filter(v=>!seen.includes(v.id));if(!fresh.length)return;const mark=()=>{try{localStorage.setItem('seenVendors:'+state.email,JSON.stringify([...new Set(seen.concat(nv.map(v=>v.id)))]))}catch(e){}};
- popup('새 업체가 공사 배정을 기다립니다',fresh.slice(0,5).map(v=>'· '+v.company+' ('+v.industry+')').join('\n')+(fresh.length>5?'\n외 '+(fresh.length-5)+'곳':'')+'\n\n계약 전 검토·평가가 끝났습니다.\n공사를 만들어 업체를 배정하고 착수 전 미팅을 잡아 주세요.','공사 만들기',()=>{mark();goNewJob(fresh.map(v=>v.id))},mark)}
-async function refreshBadges(){if(!state||!state.staff)return;try{showBadges(await callQuiet('myBadges'))}catch(e){}}
-function startBadges(){clearInterval(badgeTimer);if(!state||!state.staff)return;badgeTimer=setInterval(()=>{if(!document.hidden&&!loadCount)refreshBadges()},60000)}
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshBadges()});
-/** 팝업·배정대기 카드에서 바로 '새 공사 만들기' (업체 미리 체크) */
-function goNewJob(ids){smenu='jobs';switchTab('jobs');markSMenu();const t=setInterval(()=>{if(jobData){clearInterval(t);jobForm(null,ids)}},100)}
-function waitCard(){const nv=(state&&state.badges&&state.badges.newVendors)||[],pa=(state&&state.badges&&state.badges.pendingAttend)||0,pmw=(state&&state.badges&&state.badges.permits)||0,isw=(state&&state.badges&&state.badges.insp)||0,je=(state&&state.badges&&state.badges.jobEnd)||0,ed=(state&&state.badges&&state.badges.evalDraft)||0;if(!nv.length&&!pa&&!pmw&&!isw&&!je&&!ed)return '<span id="waitCard" hidden></span>';
- return '<div class="card alertcard" id="waitCard">'+(nv.length?'<div class="vh-top"><h2 style="margin:0">공사 배정 대기 업체 <span class="cnt">'+nv.length+'</span></h2><button class="button" type="button" onclick="goNewJob('+escapeText(JSON.stringify(nv.map(v=>v.id)))+')">이 업체로 공사 만들기</button></div><p class="desc">계약 전 검토·평가가 끝난 업체입니다. 공사에 배정하면 목록에서 사라집니다.</p>'+nv.map(v=>'<div class="item"><b>'+escapeText(v.company)+'</b> <span class="muted">'+escapeText(v.industry)+'</span></div>').join(''):'')
-  +(pa?'<p class="desc" style="margin-top:8px"><b style="color:var(--accent)">미팅 참석 확인 대기 '+pa+'명</b> · 아래 공사의 [방 들어가기]에서 확인해 주세요.</p>':'')
-  +(pmw?'<p class="desc" style="margin-top:8px"><b style="color:var(--accent)">작업허가서 승인 대기 '+pmw+'건</b> · 아래 공사의 [작업허가서 보기]에서 승인해 주세요.</p>':'')
-  +(isw?'<p class="desc" style="margin-top:8px"><b style="color:var(--accent)">순회점검일지 확인 대기 '+isw+'건</b> · 아래 공사의 [순회점검 보기]에서 확인해 주세요.</p>':'')
-  +(je?'<p class="desc" style="margin-top:8px"><b style="color:var(--accent)">종료 예정·종료일 경과 공사 '+je+'건</b> · 아래 공사의 [연장·종료]에서 연장하거나 종료해 주세요.</p>':'')
-  +(ed?'<p class="desc" style="margin-top:8px"><b style="color:var(--accent)">공사 종료 평가 대기 '+ed+'건</b> · 아래 공사의 [종료 평가]에서 확정해 주세요.</p>':'')+'</div>'}
-async function checkApproval(manual){try{const s=await callQuiet('myStatus');if(!s)return;if(s.status==='VERIFIED'){clearInterval(pollTimer);popup('승인되었습니다','본사 담당자가 사업자 등록을 승인했습니다.\n이제 안전보건정보 작성을 시작할 수 있습니다.','작성 시작하기',()=>{activeStep=1;reload()})}else if(s.status==='REJECTED'){clearInterval(pollTimer);popup('신청이 반려되었습니다','반려 사유: '+(s.reason||'(사유 없음)')+'\n내용을 확인한 뒤 다시 신청해 주세요.','확인',()=>reload())}else if(manual){msg('아직 승인 대기 중입니다.')}if($('pollInfo'))$('pollInfo').textContent='마지막 확인: '+new Date().toLocaleTimeString('ko-KR')+' · 15초마다 자동 확인'}catch(e){if(manual)msg(e.message||'확인에 실패했습니다.')}}
-/* ---------- v2.1 계약 단계 제출서류 (샘플 다운로드 → 작성본 등록) ---------- */
-function fmtTime(v){const d=new Date(v);return isNaN(d)?'':d.toLocaleString('ko-KR',{dateStyle:'short',timeStyle:'short'})}
-function docSummaryHtml(){const list=state.docBoard.contract;if(!list.length)return '';const req=list.filter(t=>t.required),done=req.filter(t=>t.uploads.length).length;const todo=req.length-done;return `<div class="card"><h2>계약 단계 제출서류</h2><p class="desc">샘플 양식을 내려받아 작성한 뒤 4단계(증빙자료)에서 등록해 주세요.</p><div class="row"><span class="pill ${todo?'todo':'ok'}">필수 ${done}/${req.length} 등록</span>${activeStep!==4?'<button class="button ghost" type="button" onclick="goStep(4)">서류 등록하러 가기</button>':''}</div></div>`}
-function docBoardHtml(){const d=state.docBoard,accept='.pdf,.jpg,.jpeg,.png,.xls,.xlsx,.doc,.docx,.hwp,.hwpx';const items=d.contract.map(t=>{const latest=t.uploads[0];const status=latest?`<span class="pill ok">등록 완료 · v${latest.version}</span>`:`<span class="pill todo">미등록</span>`;const lock=t.canUpload?'':'<span class="pill lock">수정 잠김</span>';return `<div class="doc"><div class="head"><div><b>${escapeText(t.name)}</b>${t.required?'<span class="badge" style="margin-left:6px">필수</span>':''}${status}${lock}<div class="muted">관리주기 ${escapeText(t.cycle)} · 작성 ${escapeText(t.ownerLabel)}</div></div></div><div class="row" style="margin-top:10px">${t.template?`<button class="button ghost" type="button" onclick="downloadTemplate('${escapeText(t.code)}')">샘플 양식 받기 (v${escapeText(t.template.version)})</button>`:'<span class="muted">등록된 샘플 양식이 없습니다. 자체 양식으로 작성해 주세요.</span>'}</div>${t.canUpload?`<div class="row" style="margin-top:10px"><label class="muted" for="doc_${escapeText(t.code)}">작성본 선택 (최대 5MB)</label><input type="file" id="doc_${escapeText(t.code)}" accept="${accept}"><button class="button" type="button" onclick="uploadDoc('${escapeText(t.code)}')">${latest?'새 버전 등록':'작성본 등록'}</button></div>`:''}${t.uploads.length?`<div class="desc" style="margin-top:8px">등록 이력 (이전 버전도 보관됨)<br>${t.uploads.map(u=>`<a onclick="viewFile('${escapeText(u.id)}')">v${escapeText(u.version)} ${escapeText(u.name)}</a> <span class="muted">${escapeText(fmtTime(u.uploadedAt))}</span>`).join('<br>')}</div>`:''}</div>`}).join('');
- const later=d.later.length?`<div class="line"></div><h2 style="font-size:15px">계약 이후 단계 양식 (참고용 다운로드)</h2><p class="desc">수행·종료 단계에서 사용할 양식입니다. 지금은 내려받아 확인만 할 수 있습니다.</p>${['수행','종료'].map(s=>{const g=d.later.filter(t=>t.stageLabel===s);return g.length?`<div class="stage">${s} 단계</div>${g.map(t=>`<div class="item"><b>${escapeText(t.name)}</b> <span class="muted">${escapeText(t.cycle)} · ${escapeText(t.ownerLabel)}</span><br><a onclick="downloadTemplate('${escapeText(t.code)}')">샘플 받기 (v${escapeText(t.template.version)})</a></div>`).join('')}`:''}).join('')}`:'';
- return `<div class="card"><h2>4-1. 계약 단계 제출서류</h2><p class="desc">① 샘플 양식 받기 → ② 작성 → ③ 작성본 등록 순서로 진행합니다. 같은 서류를 다시 올리면 덮어쓰지 않고 새 버전으로 보관됩니다.</p>${items||'<p class="desc">등록할 서류가 아직 설정되지 않았습니다. 본사 담당자에게 문의해 주세요.</p>'}${later}</div>`}
-function saveBlob(f){const bytes=atob(f.data),buf=new Uint8Array(bytes.length);for(let i=0;i<bytes.length;i++)buf[i]=bytes.charCodeAt(i);const url=URL.createObjectURL(new Blob([buf],{type:f.mime}));const a=document.createElement('a');a.href=url;a.download=f.name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000)}
-async function downloadTemplate(code){try{const r=await call('getTemplate',code);if(r.url){const a=document.createElement('a');a.href=r.url;a.target='_blank';a.rel='noopener';document.body.appendChild(a);a.click();a.remove();msg('새 창에서 샘플 양식을 내려받습니다. 안 열리면 팝업 차단을 해제해 주세요.')}else saveBlob(r)}catch(e){}}
-async function uploadDoc(code){if(dirty&&!await save(false))return;const name=((state.docBoard.rows||state.docBoard.contract).find(t=>t.code===code)||{}).name||code;let f;try{f=await readFile($('doc_'+code).files[0])}catch(e){alert(e.message);return}if(!confirm(name+' 작성본으로 "'+f.name+'" 파일을 등록할까요?'))return;try{display(await call('uploadContractDoc',code,f));msg(name+' 등록 완료');
- // 필수 서류가 모두 올라오면 바로 제출할지 묻기 → 제출 시 본사 1차 검토 메일 자동 발송
- const rows=renewRows((state.docBoard&&state.docBoard.rows)||[]),req=rows.filter(r=>r.vendorDoc&&r.stage==='CONTRACT'&&r.required);
- if(req.length&&req.every(r=>r.uploads.length)&&['DRAFT','CORRECTION'].includes(state.company.submissionStatus)&&confirm('필수 서류가 모두 올라왔습니다.\n지금 제출하면 본사 담당자에게 1차 검토 요청이 바로 전달됩니다. 제출할까요?'))await submitAll();
-}catch(e){}}
-/* ---------- v2.1 [관리자] 표준양식 관리 ---------- */
-async function loadTemplates(){try{renderTemplates(await fetcher('tpl')('templateAdminList'))}catch(e){}}
-let templateList=[];
-function renderTemplates(list){templateList=list||[];const accept='.pdf,.xls,.xlsx,.doc,.docx,.hwp,.hwpx';const kindText={EVALUATION:'웹 평가표 (후속 개발 예정)',NONE:'샘플 양식 없음'};const body=['계약','수행','종료'].map(s=>{const g=list.filter(t=>t.stageLabel===s);return g.length?`<div class="stage">${s} 단계</div>${g.map(t=>`<div class="doc"><div class="head"><div><b>${escapeText(t.code)} · ${escapeText(t.name)}</b>${t.required?'<span class="badge" style="margin-left:6px">업체 필수</span>':''}<div class="muted">관리주기 ${escapeText(t.cycle)} · 관리주체 ${escapeText(t.ownerLabel)}</div></div><div>${t.kind!=='TEMPLATE'?`<span class="pill lock">${escapeText(kindText[t.kind]||t.kind)}</span>`:t.current?`<span class="pill ok">등록됨 · v${escapeText(t.current.version)}</span>`:'<span class="pill todo">미등록</span>'}</div></div>${t.kind==='TEMPLATE'?`${t.current?`<div class="desc" style="margin-top:6px">현재 양식: <a onclick="downloadTemplate('${escapeText(t.code)}')">${escapeText(t.current.name)}</a> · ${escapeText(fmtTime(t.current.uploadedAt))} · ${escapeText(t.current.uploadedBy)}${t.history>1?` · 이전 버전 ${t.history-1}건 보관`:''}</div>`:''}<div class="row" style="margin-top:8px"><label class="muted" for="tpl_${escapeText(t.code)}">${t.current?'교체할 파일':'등록할 파일'}</label><input type="file" id="tpl_${escapeText(t.code)}" accept="${accept}"><button class="button ghost" type="button" onclick="uploadTpl('${escapeText(t.code)}')">${t.current?'새 버전으로 교체':'양식 등록'}</button></div>`:''}</div>`).join('')}`:''}).join('');
- $('tpl').innerHTML=`<div class="card"><h2>표준양식(샘플) 관리</h2><p class="desc">여기에 등록한 양식을 승인·인증을 마친 업체가 내려받습니다. 교체하면 업체에는 새 버전만 보이고, 이전 버전 파일과 기록은 그대로 보관됩니다.<br>휴대폰에서는 Google Drive 앱 → <b>도급안전관리_Firebase_비공개증빙 › 00_표준양식</b> → 문서 이름 폴더에 파일을 넣고, 아래 버튼을 누르면 됩니다(파일명은 상관없음).</p><button class="button dark" type="button" onclick="refreshTpl()">Drive 폴더에서 다시 불러오기</button><div id="tplReport" class="desc" style="white-space:pre-line;margin-top:8px"></div>${body||'<div class="note">문서유형이 없습니다. Apps Script 편집기에서 setupDocumentSystem()을 먼저 실행하세요.</div>'}</div>`}
-async function refreshTpl(){try{const r=await call('refreshTemplateFolders');renderTemplates(r.list);$('tplReport').textContent=r.report;msg('Drive 폴더 확인 완료')}catch(e){}}
-async function uploadTpl(code){const name=(templateList.find(t=>t.code===code)||{}).name||code;let f;try{f=await readFile($('tpl_'+code).files[0])}catch(e){alert(e.message);return}if(!confirm(name+' 샘플 양식을 "'+f.name+'"(으)로 등록할까요?'))return;try{renderTemplates(await call('uploadTemplate',code,f));msg('양식 등록 완료')}catch(e){}}
-/** F1.8z 사업자 등록 신청서 (처음 신청 · 승인 대기 중 고치기 공용) · P = 미리 채울 값 */
-let regEdit=false;
-function regFormHtml(P,edit){const T=P||{};  /* F1.8z 테스트용 미리 채우기 값 없앰 (직접 작성) */
- return gdRow('regForm')+'<form onsubmit="register(event)"><div class="split">'+input('company','업체명',T.company,'text',false,'예: (주)○○인테리어')+input('regNo','사업자등록번호 (10자리)',T.regNo?fmtBiz(T.regNo):'','tel',false,'숫자 10자리 (- 자동)')+input('representative','대표자 성명',T.representative,'text',false,'예: 홍길동')+input('address','사업장 주소',T.address,'text',false,'예: 서울시 ○○구 ○○로 12')+input('contact','현장대리인 성명 (업체 소장)',T.contact,'text',false,'예: 김소장 (현장을 맡는 업체 소장)')+input('phone','현장대리인 연락처',T.phone?fmtTel(T.phone):'','tel',false,'숫자만 입력 (- 자동)')+'</div>'
-  +input('approverEmail','본사 승인 담당자 이메일 (다이소 담당자에게 받은 주소)',T.approverEmail||'','email',false,'예: hong.gildong@daiso.co.kr')
-  +'<div class="field"><label for="f_industry">도급 업종</label><select id="f_industry"><option value="">업종 선택</option>'+state.industries.map(x=>'<option '+(x===T.industry?'selected':'')+'>'+escapeText(x)+'</option>').join('')+'</select></div>'
-  +'<div class="field"><label for="cert">사업자등록증 첨부 <span class="muted">(선택 · PDF·JPG·PNG, 최대 5MB · 휴대폰 촬영 사진 가능)</span>'+(edit?' — <span class="muted">바꿀 때만 고르세요 (안 고르면 기존 파일 그대로)</span>':'')+'</label><input type="file" id="cert" accept=".pdf,.jpg,.jpeg,.png"></div>'
-  +'<label class="desc"><input type="checkbox" id="agree" '+(edit?'checked':'')+'>신청·계정 승인 및 서류 검토를 위한 담당자 정보 수집·이용에 동의합니다.</label><div class="line"></div>'
-  +(edit?'<div class="row"><button class="button ghost" type="button" style="flex:1" onclick="regEdit=false;renderMy()">취소</button><button class="button" type="submit" style="flex:2">고쳐서 다시 보내기</button></div>':'<button class="button" type="submit">사업자 등록 신청</button>')+'<p class="muted" style="font-size:12px;margin:10px 0 0;text-align:center">(현재 로그인한 계정 : '+escapeText(state.email)+')</p></form>'}  /* F1.8z 업체 이메일 칸 없앰 → 맨 아래 작게 표시 (로그인 계정이 업체 계정으로 자동 등록) */
-/* ---------- v2.4 승인 후 업체 화면: 상단 사업장 정보 + 하단 도급문서 표 ---------- */
-const SUB_LABEL={DRAFT:'작성 중',CORRECTION:'보완 요청',SUBMITTED:'제출 완료 · 본사 1차 검토 중',SAFETY_REVIEW:'안전보건팀 확인 중',APPROVED:'계약 전 검토 승인'};
-function vendorHomeHtml(b){
- const st=b.submissionStatus||'DRAFT';
- // v5.17 재평가 중(이전 승인 있음)이면 수행 화면 유지 · 계약 서류 메뉴에서 고쳐서 다시 제출
- return st==='APPROVED'||b.renewAt?executionHomeHtml(b):contractHomeHtml(b);
-}
-/** v5.17 재평가 중이면 재평가 시작 뒤에 다시 작성·등록한 서류만 '완료'로 봄 */
-function renewRows(rows,b){b=b||(state&&state.company);return b&&b.renewAt?rows.map(r=>Object.assign({},r,{uploads:(r.uploads||[]).filter(u=>String(u.uploadedAt)>=String(b.renewAt))})):rows}
-/** v5.17 계약 전 평가 유효기간 안내 (업체 화면) */
-function validNote(b){const v=b&&b.valid;if(!v)return '';const warn=v.expired||v.days<=30;
- return '<div class="note'+(warn?' warnnote':'')+'" style="margin-top:10px'+(warn?';border-left:3px solid var(--accent)':'')+'"><b>계약 전 평가 유효기간</b> · '+escapeText(v.from)+' ~ '+escapeText(v.until)+' '+(v.expired?'<b class="req">만료</b><br>새 공사에 배정되려면 [신규 작성]으로 계약 전 서류를 다시 제출해 주세요. (진행 중인 공사는 계속 진행할 수 있습니다)':v.days<=30?'<b class="req">D-'+v.days+'</b><br>기간이 끝나면 새 공사에 배정될 수 없습니다. 미리 [신규 작성]으로 다시 제출해 주세요.':'(D-'+v.days+')')+'</div>'}
-/* 공통: 상단 업체 카드 + 진행 단계 */
-function headCard(b,st,todo,pctHtml){
- const flow=['정보·서류 작성','제출','본사 1차 검토','안전보건팀 확인','수행 단계'],cur={DRAFT:0,CORRECTION:0,SUBMITTED:2,SAFETY_REVIEW:3,APPROVED:4}[st]??0;
- return '<div class="card"><div class="vh-top"><div><h2 style="margin:0">'+escapeText(b.company)+'</h2><div class="muted">'+escapeText(b.industry)+' · 사업자번호 '+escapeText(b.regNo)+'</div></div><span class="pill '+(st==='APPROVED'?'ok':st==='CORRECTION'?'todo':'lock')+'">'+escapeText(SUB_LABEL[st]||st)+'</span></div>'
-  +'<div class="note" style="margin-top:12px"><b>지금 할 일</b> · '+escapeText(todo)+'</div>'+(pctHtml||'')+'</div>';
-}
-/* 문서 카드 (계약·수행 공통, 모바일 기준) */
-function docCard(r,opt){
- const latest=r.uploads[0],ok=!!latest,accept=opt.exec?'image/*,.pdf,.jpg,.jpeg,.png,.xls,.xlsx,.doc,.docx,.hwp,.hwpx':'.pdf,.jpg,.jpeg,.png,.xls,.xlsx,.doc,.docx,.hwp,.hwpx';
- const badge='<span class="badges">'+(opt.exec?(ok?'<span class="done">최근 '+escapeText(fmtTime(latest.uploadedAt))+'</span>':'<span class="none">등록 없음</span>')
-  :((r.required?'<span class="reqtag">필수</span>':'')+(ok?'<span class="done">✔ 완료</span>':'<span class="none">미등록</span>')))+'</span>';
- const sample=r.template?'<button class="dbtn ghost" type="button" onclick="downloadTemplate(\''+escapeText(r.code)+'\')">⬇ 샘플 양식</button>':'';
- const upl=r.canUpload?'<label class="dbtn main" for="doc_'+escapeText(r.code)+'">'+(opt.exec?'📷 사진·파일 올리기':ok?'⬆ 새 버전 올리기':'⬆ 작성본 올리기')+'</label><input class="hidefile" type="file" id="doc_'+escapeText(r.code)+'" accept="'+accept+'" onchange="uploadDoc(\''+escapeText(r.code)+'\')" aria-label="'+escapeText(r.name)+' 파일 선택">'
-  :'<span class="muted">'+(opt.lockMsg||'')+'</span>';
- const hist=r.uploads.length?'<details class="hist"><summary>등록 이력 '+r.uploads.length+'건</summary>'+r.uploads.map(u=>'<div><a onclick="viewFile(\''+escapeText(u.id)+'\')">v'+escapeText(u.version)+' · '+escapeText(u.name)+'</a> <span class="muted">'+escapeText(fmtTime(u.uploadedAt))+'</span></div>').join('')+'</details>':'';
- return '<div class="dcard '+(ok&&!opt.exec?'ok':(!ok&&r.required&&!opt.exec?'mine':''))+'" id="row_doc'+escapeText(r.code)+'"><div class="dhead"><b>'+escapeText(r.name)+'</b>'+badge+'</div><div class="muted">'+escapeText(r.cycle)+' · '+escapeText(r.ownerLabel)+'</div><div class="dact">'+sample+upl+'</div>'+hist+'</div>';
-}
-/* 사업장 정보 입력 (모바일: 한 줄에 하나) */
-function infoForm(b,dis){
- const data=(state.steps.find(x=>Number(x.step)===1)||{}).data||{},fields=state.fields[1]||[];
- const fixed=[['업체명',b.company],['사업자등록번호',b.regNo],['대표자',b.representative],['도급 업종',b.industry],['업체 계정',b.email],['본사 승인 담당자',b.approverEmail||'-']];
- // 위: 신청 정보(읽기 전용, PC 4칸) / 아래: 입력 항목(한 줄에 '항목명 | 입력칸')
- const SHORT={majorWork:'주요 업무',employeeCount:'근로자 수',siteAddress:'사업장 주소',siteManager:'현장대리인',siteManagerPhone:'현장대리인 연락처',safetyManager:'안전 담당자',safetyPhone:'안전 담당자 연락처',note:'비고'};
- return '<details class="hist infobox"><summary>신청 정보 보기 · '+escapeText(b.company)+' · '+escapeText(b.representative)+'</summary><div class="infogrid">'+fixed.map(([l,v])=>'<div class="lb">'+escapeText(l)+'</div><div>'+escapeText(v)+'</div>').join('')+'</div></details>'
-  +'<div class="formgrid">'+fields.map(([k,label])=>'<div class="lb"><label for="f_'+k+'">'+escapeText(SHORT[k]||label.replace(' (선택)',''))+(k==='note'?'':'<span class="req">*</span>')+'</label></div><div class="vl"><input id="f_'+k+'" type="'+(k==='employeeCount'?'number':k.endsWith('Phone')?'tel':'text')+'" value="'+escapeText(data[k]||'')+'" '+(dis(k)?'disabled':'')+' placeholder="'+(k==='note'?'선택':k.endsWith('Phone')?'숫자만 입력 (- 자동)':k==='employeeCount'?'명':'')+'"></div>').join('')+'</div>';
-}
-/* ---------- 계약 전 화면: 사업장 정보 + 계약 단계 서류만 ---------- */
-function contractHomeHtml(b){
- const st=b.submissionStatus||'DRAFT',locked=['SUBMITTED','SAFETY_REVIEW'].includes(st),correcting=st==='CORRECTION';
- const allowed=correcting?JSON.parse(b.correctionKeys||'[]'):[],dis=k=>locked||(correcting&&!allowed.includes('1:'+k));
- const data=(state.steps.find(x=>Number(x.step)===1)||{}).data||{},need=(state.fields[1]||[]).filter(([k])=>k!=='note');
- const rows=renewRows(((state.docBoard&&state.docBoard.rows)||[]).filter(r=>r.stage==='CONTRACT'&&r.vendorDoc),b);
- const req=rows.filter(r=>r.required),infoDone=need.filter(([k])=>String(data[k]||'').trim()).length,docDone=req.filter(r=>r.uploads.length).length;
- const total=need.length+req.length,pct=total?Math.round((infoDone+docDone)/total*100):0;
- const todo=st==='SUBMITTED'?'제출이 완료되었습니다. 본사 담당자가 서류를 검토하고 있습니다.':st==='SAFETY_REVIEW'?'1차 검토가 끝나 안전보건팀이 확인하고 있습니다. 승인되면 안내 창이 뜹니다.'
-  :correcting?'본사에서 보완을 요청했습니다. 표시된 항목만 수정한 뒤 다시 제출해 주세요.'+(state.correctionNote?' · 보완 사유: '+state.correctionNote:'')
-  :b.renewAt?(pct<100?(b.renewMode==='NEW'?'신규 작성: ⓪ 사업자 정보 ① 사업장 정보를 입력하고 ② 규정·계획서를 [작성하기]로 작성(서명)해 주세요.':'이전 정보를 불러왔습니다. ⓪ 사업자 정보 ① 사업장 정보에서 바뀐 곳만 고치고 ② 규정·계획서를 [작성하기]로 다시 작성(서명)해 주세요.'):'모든 항목이 준비되었습니다. 맨 아래 [제출하기]를 눌러 주세요. 승인되면 유효기간이 1년 연장됩니다.')
-  :pct<100?(infoDone===need.length?'② 규정·계획서를 [작성하기]로 작성해 주세요.':'① 사업장 정보를 입력하고 ② 규정·계획서를 [작성하기]로 작성해 주세요.'):'모든 항목이 준비되었습니다. 맨 아래 [제출하기]를 눌러 주세요.';
- const pctHtml='<div class="row" style="justify-content:space-between;margin-top:12px"><span class="muted">준비 상태 · 사업장 정보 '+infoDone+'/'+need.length+' · 서류 '+docDone+'/'+req.length+'</span><b style="color:#1b7442">'+pct+'%</b></div><div class="prog"><span style="width:'+pct+'%"></span></div>';
- /* F1.8n 사업장 정보 3칸은 가입 때 받은 값으로 채워져 있음 → 다 차 있으면 접어서 한 줄로 (눌러서 고치기 · 보완 요청이면 펼침) */
- const infoOk=infoDone===need.length&&!(correcting&&need.some(([k])=>allowed.includes('1:'+k)));
- const infoForm1='<form id="stepForm" oninput="changed()" onsubmit="saveManual(event)">'+infoForm(b,dis)+'<div class="row" style="justify-content:space-between;margin-top:10px"><span class="statusline" id="saved">서버 저장 상태: -</span><button class="button ghost" type="submit" '+(locked?'disabled':'')+'>임시저장</button></div></form>';
- const info=infoOk?'<div class="card" id="infoCard"><details class="hist"><summary><b>① 사업장 정보</b> <span class="pill ok">✔ 가입 때 입력</span><div class="muted" style="margin-top:4px">현장대리인 '+escapeText(data.siteManager||'')+' · '+escapeText(data.siteManagerPhone||'')+' · '+escapeText(data.siteAddress||'')+' (눌러서 고치기)</div></summary>'+infoForm1+'</details></div>'
-  :'<div class="card" id="infoCard"><h2>① 사업장 정보</h2><p class="muted">입력하면 자동 저장됩니다.</p>'+infoForm1+'</div>';
- const lockMsg=locked?'제출 완료 · 검토 중':correcting?'보완 대상 아님':'';
- const docs='<div class="card" id="docsCard"><h2>② 계약 전 제출 서류</h2>'+(rows.map(r=>{const pair=state.forms&&state.forms.plan&&rows.some(x=>x.code==='C01')&&rows.some(x=>x.code==='C02');  // F1.8c 규정·계획서는 한 카드로
-  return pair&&r.code==='C01'?'':pair&&r.code==='C02'?docPairCardHtml(rows.find(x=>x.code==='C01'),r,{lockMsg}):r.code==='C01'&&state.forms?ruleCardHtml(r,{lockMsg}):r.code==='C02'&&state.forms&&state.forms.plan?planCardHtml(r,{lockMsg}):docCard(r,{exec:false,lockMsg})}).join('')||'<p class="desc">제출할 서류가 아직 설정되지 않았습니다.</p>')
-  +'</div>';
- const fin='<div class="card" id="finCard"><h2>③ 제출</h2>'+(locked?'<div class="note">'+escapeText(SUB_LABEL[st]||st)+' 상태입니다. 제출한 내용은 검토가 끝날 때까지 수정할 수 없습니다.</div>':'<p class="desc">제출하면 본사 담당자 → 안전보건팀 순서로 검토합니다.</p><button class="button" style="width:100%" type="button" id="btnSubmitAll" onclick="submitAll()">누락 확인 후 제출하기</button>')+'</div>';
- return headCard(b,st,todo,pctHtml)+gdRow('contract')+(b.renewAt?bizInfoCard(b,locked||(correcting&&!allowed.some(k=>/^1:/.test(k)))):'')+info+docs+accCertCardHtml(false)+fin;
-}
-/* ---------- F1.9x 산재요양승인 반려여부 확인증 추가 제출 (계획서 제출 뒤 · 공사 중에도) → 계약 전 평가 12번 · 종료 평가 12번 자동 반영 ---------- */
-const accCertN=()=>((((state&&state.forms&&state.forms.plan&&state.forms.plan.C02)||{}).data||{}).evidenceFiles||[]).length+((state&&state.company&&state.company.accCerts)||[]).length;
-function accCertCardHtml(brief){const b=state&&state.company;if(!b||b.status!=='VERIFIED')return '';const L=b.accCerts||[],n=accCertN();
- if(brief&&n)return '';  // 공사 화면에는 아직 안 냈을 때만
- return '<div class="card" id="accCertCard"><h2>산재요양승인 반려여부 확인증 '+(n?'<span class="pill ok">제출</span>':'<span class="pill todo">미제출</span>')+'</h2>'
-  +'<p class="desc">'+(n?'제출한 확인서가 평가에 반영되어 있습니다. 더 있으면 추가로 올려 주세요.':'계획서 낼 때 못 냈으면 여기서 올리세요. <b>공사 중에도</b> 올릴 수 있고, 올리면 <b>계약 전 평가 12번 · 종료 평가 12번</b>에 자동 반영됩니다.')+'</p>'
-  +(L.length?L.map(x=>'<div class="row" style="justify-content:space-between;padding:6px 0;border-top:1px solid var(--line)"><span>📎 '+escapeText(x.name)+'</span><span class="muted">'+escapeText(String(x.at||'').slice(5,10))+'</span></div>').join(''):'')
-  +'<div class="row" style="margin-top:8px"><label class="button" for="accCertFile">📷 촬영</label><input class="hidefile" type="file" id="accCertFile" accept="image/*" capture="environment" onchange="accCertUp(this.id)" aria-label="산재 확인서 촬영"><label class="button ghost" for="accCertFileM">🖼 사진 · PDF 고르기</label><input class="hidefile" type="file" id="accCertFileM" accept="image/*,.pdf,application/pdf" multiple onchange="accCertUp(this.id)" aria-label="산재 확인서 파일 고르기"></div></div>'}
-async function accCertUp(id){const inp=$(id),fl=[...((inp&&inp.files)||[])].slice(0,5);if(inp)inp.value='';if(!fl.length)return;let last=null;const LV={G:'우수',N:'보통',P:'미흡'};
- try{await subRun('산재 확인서 올리기',fl.map((f,i)=>['확인서 '+(i+1)+' / '+fl.length+' 올리기',async()=>{const x=await readFile(f);const r=await api('uploadAccCert',[x]);if(r)last={list:r.list,change:(r.change||(last&&last.change)||null)}}]))}
- catch(e){showErr('확인서를 올리지 못했습니다',e);return}
- if(last&&state.company)state.company.accCerts=last.list||state.company.accCerts;const ch=last&&last.change;
- const el=$('accCertCard');if(el){const h=accCertCardHtml(!document.getElementById('docsCard'));if(h)el.outerHTML=h;else el.remove()}
- popup('산재 확인서 제출 완료',fl.length+'건을 올렸습니다.'+(ch?'\n계약 전 평가 12번이 '+(LV[ch.from]||'-')+' → '+LV[ch.to]+'(으)로 자동 반영되었습니다.':'\n평가에 자동 반영됩니다.'),'확인')}
-/** v5.17 신규 작성: 업체 기본 정보(사업자 정보) 확인·수정 카드. 업체명·사업자번호는 계정 기준이라 고정 */
-function bizInfoCard(b,dis){const fresh=b.infoFresh,blank=b.renewMode==='NEW'&&!fresh,v=k=>blank?'':escapeText(b[k]||''),ph=k=>blank&&b[k]?' placeholder="이전: '+escapeText(b[k])+'"':'';
- const F=[['bRep','representative','대표자'],['bAddr','address','사업장 주소'],['bContact','contact','현장대리인 (업체 소장)'],['bPhone','phone','현장대리인 연락처']];
- return '<div class="card" id="bizCard"><h2>⓪ 사업자 정보 '+(fresh&&b.infoAt&&String(b.infoAt)>=String(b.renewAt)?'<span class="pill ok">✔ 확인 완료</span>':b.renewMode==='NEW'?'<span class="pill todo">입력 필요</span>':'<span class="pill lock">이전 정보</span>')+'</h2>'
-  +'<p class="muted">업체명 <b>'+escapeText(b.company)+'</b> · 사업자번호 <b>'+escapeText(b.regNo)+'</b> (변경 불가 · 사업자가 바뀌면 새로 가입해 주세요)</p>'
-  +'<div class="formgrid">'+F.map(([id,k,l])=>'<div class="lb"><label for="f_'+id+'">'+l+'<span class="req">*</span></label></div><div class="vl"><input id="f_'+id+'" type="'+(k==='phone'?'tel':'text')+'" value="'+v(k)+'"'+ph(k)+(dis?' disabled':'')+'></div>').join('')
-  +'<div class="lb"><label for="f_bCert">사업자등록증</label></div><div class="vl"><input id="f_bCert" type="file" accept=".pdf,.jpg,.jpeg,.png"'+(dis?' disabled':'')+'><div class="muted">바뀐 경우에만 새로 올려 주세요 (선택)</div></div></div>'
-  +(dis?'':'<button class="button ghost" type="button" style="margin-top:10px" onclick="saveBizInfo()">사업자 정보 저장</button>')+'</div>'}
-async function saveBizInfo(){const d={representative:value('bRep'),address:value('bAddr'),contact:value('bContact'),phone:value('bPhone')};
- const miss=[['bRep','representative'],['bAddr','address'],['bContact','contact'],['bPhone','phone']].filter(([,k])=>!d[k]).map(([key])=>({key}));if(miss.length){markMissing(miss);return}
- let cert=null;const fl=$('f_bCert')&&$('f_bCert').files[0];if(fl){try{cert=await readFile(fl)}catch(e){alert(e.message);return}}
- if(dirty&&!await save(false))return;try{display(await call('saveCompanyInfo',d,cert));msg('사업자 정보를 저장했습니다.')}catch(e){}}
-/* ---------- 수행 단계 화면 (승인 후, 모바일 우선) ---------- */
-function executionHomeHtml(b){
- const rows=(state.docBoard&&state.docBoard.rows)||[];
- const mine=rows.filter(r=>r.stage==='EXECUTION'&&r.vendorDoc),hq=rows.filter(r=>r.stage!=='CONTRACT'&&!r.vendorDoc),contract=rows.filter(r=>r.stage==='CONTRACT'&&r.vendorDoc);
- const todo='배정된 공사를 눌러 [오늘 할 일]을 진행해 주세요.';
- // v3.1 공사별 오늘 할 일 (목록은 화면이 뜬 뒤 loadMyJobs로 채움)
- // v3.1.1 업체는 '내 공사'만 보이게 (기타 서류·본사 문서·계약 전 내용 보기 제거)
- return '<div id="execArea"><div class="card"><p class="desc">배정된 공사를 불러오는 중입니다…</p></div></div>';
-}
-/** 누락 항목 표시: 빨간 테두리 + 흔들림, 첫 칸으로 이동 (입력하면 표시 해제) */
-function markMissing(list){document.querySelectorAll('.miss').forEach(x=>x.classList.remove('miss','shake'));let first=null;list.forEach(m=>{const el=/^doc/.test(m.key)?$('row_'+m.key):$('f_'+m.key);if(!el)return;el.classList.add('miss');void el.offsetWidth;el.classList.add('shake');if(!first)first=el;if(el.tagName==='INPUT')el.addEventListener('input',()=>el.classList.remove('miss','shake'),{once:true})});if(first){first.scrollIntoView({behavior:'smooth',block:'center'});if(first.tagName==='INPUT')setTimeout(()=>first.focus({preventScroll:true}),400)}msg('채워야 할 항목 '+list.length+'개 · 빨간 칸을 확인해 주세요')}
-/** 누락 항목으로 이동 */
-function jumpTo(key){$('missing')?.remove();if(/^doc/.test(key)){const r=$('row_'+key);if(r){r.scrollIntoView({block:'center'});r.style.outline='3px solid #ed3155';setTimeout(()=>r.style.outline='',2500)}return}const f=$('f_'+key);if(f){f.scrollIntoView({block:'center'});f.focus()}}
-async function reload(){try{display(await call('portalData'))}catch(e){}}
-const busyView=()=>dirty||!!document.querySelector('#csheet[style*="block"],#psheet:not([hidden])')||(typeof jobsMode!=='undefined'&&tab==='jobs'&&!['list'].includes(jobsMode))||(typeof vjob!=='undefined'&&!!vjob);
-const noBadge=o=>JSON.stringify(Object.assign({},o,{badges:null}));
-async function bootPortal(noPack){const c=cacheGet('portalData',[]);
- /* v5.20 저장해 둔 화면이 없으면: 체크리스트로 준비 과정을 보여 주며 내 정보 → 공사·업무 화면을 한 번에 미리 받고 시작 */
- if(!c){let s;bootUI(['저장된 로그인 확인','내 정보 불러오기'].concat(noPack?[]:['공사 목록 준비']).concat(['화면 열기']));bootSet(0,'done');bootSet(1,'run');bootSkip(()=>location.reload(),'새로 고침');
-  try{s=await api('portalData',[])}catch(e){bootEnd();msg(e.message||'불러오지 못했습니다.');throw e}bootSet(1,'done');await bootRest(s,noPack?-1:2);return}
- display(c);/* v4: 캐시 화면이 있다면 즉시 표시. 공사 목록은 해당 화면에서 독립적으로 갱신하므로 여기서 bootPack 중복 호출하지 않음. *//* 업체: 공사 화면들을 뒤에서 한 번에 새로 받음 */
- callQuiet('portalData').then(s=>{if(!c.email||s.email!==c.email){setCUser(s.email+'|'+(s.mode||''));display(s);return}
-  if(noBadge(s)===noBadge(c)){state.badges=s.badges;showBadges(s.badges);return}if(busyView()){state=s;showBadges(s.badges)}else display(s)}).catch(e=>{popup('서버와 연결되지 않았습니다','지금 화면은 이 기기에 저장해 둔 이전 화면입니다.\n저장·제출이 되지 않을 수 있습니다.\n\n'+(e&&e.message||''),'확인')})}
-/* ---------- v5.20 시작 준비 체크리스트 ----------
- *  로그인(또는 저장된 화면이 없을 때) → 단계마다 ✔ 표시 · 걸린 시간 표시
- *  '공사 목록 준비'에서 공사 목록·공사 화면·오늘 허가서까지 한 번에 받아 둠 → 이후 메뉴는 바로 열림
- *  오래 걸리면 안내 문구 + [건너뛰고 시작]/[처음부터 다시] 버튼 (사람들이 새로 고침을 반복하지 않게) */
-let BOOT=null;
-function bootUI(labels){let el=$('bootBox');if(!el){el=document.createElement('div');el.id='bootBox';document.body.appendChild(el)}
- el.innerHTML='<div class="bootcard" role="status" aria-live="polite"><div class="lbrand"><i aria-hidden="true"></i>도급 안전관리</div><h2>시작 준비 중</h2><p class="muted bootsub">로그인과 공사 목록을 확인합니다. 상세 자료는 해당 업무를 열 때 불러옵니다.</p><ol class="bootlist">'
-  +labels.map((l,i)=>'<li id="bt_'+i+'" class="wait"><i aria-hidden="true"></i><span>'+escapeText(l)+'</span><em id="bts_'+i+'"></em></li>').join('')+'</ol><p class="bootnote" id="bootNote"></p><button class="button ghost" type="button" id="bootBtn" hidden></button><div class="lver">'+escapeText(UI_VERSION)+'</div></div>';
- el.hidden=false;if(BOOT)clearInterval(BOOT.tm);BOOT={labels,st:labels.map(()=>'wait'),s0:[],fn:null,fnLabel:'',tm:setInterval(bootTick,500)};bootTick()}
-function bootSet(i,s){if(!BOOT||BOOT.labels[i]==null)return;const li=$('bt_'+i),tx=$('bts_'+i),now=Date.now();
- if(s==='run')BOOT.s0[i]=now;else if(tx)tx.textContent=s==='skip'?'나중에 받음':s==='fail'?'건너뜀':BOOT.s0[i]&&now-BOOT.s0[i]>=100?((now-BOOT.s0[i])/1000).toFixed(1)+'초':'';
- BOOT.st[i]=s;if(li)li.className=s;if(s!=='run'){BOOT.fn=null;const b=$('bootBtn');if(b)b.hidden=true}bootTick()}
-function bootSkip(fn,label){if(BOOT){BOOT.fn=fn;BOOT.fnLabel=label}}
-function bootTick(){if(!BOOT)return;const i=BOOT.st.indexOf('run'),n=$('bootNote'),b=$('bootBtn');if(i<0){if(n)n.textContent='';return}
- const e=Math.floor((Date.now()-BOOT.s0[i])/1000),tx=$('bts_'+i);if(tx)tx.textContent=e?e+'초':'';
- if(n)n.textContent=e<5?'':e<15?'구글 서버에서 자료를 모으고 있습니다 · 정상 진행 중입니다':e<30?'처음 접속이거나 사용자가 많으면 20초 정도 걸릴 수 있습니다 · 오류가 아닙니다':'평소보다 오래 걸리고 있습니다 ('+e+'초). 그대로 기다리거나 아래 버튼을 눌러 주세요.';
- if(b&&b.hidden&&BOOT.fn&&e>=(BOOT.fnLabel==='건너뛰고 시작'?8:25)){b.textContent=BOOT.fnLabel;b.onclick=()=>{const f=BOOT&&BOOT.fn;if(f)f()};b.hidden=false}}
-function bootEnd(){const el=$('bootBox');if(el)el.hidden=true;if(BOOT)clearInterval(BOOT.tm);BOOT=null;/* 로그인 준비 종료 후 조회 로딩이 남아 화면을 가리지 않게 함 */if(!loadCount){clearTimeout(coverTimer);$('cover').style.display='none'}}
-const execOk_=s=>!!(s&&!s.staff&&s.company&&s.company.status==='VERIFIED'&&(s.company.submissionStatus==='APPROVED'||s.company.renewAt));
-/** 내 정보를 받은 뒤: (pi 단계) 공사·업무 화면 미리 받기 → 화면 열기. pi<0이면 미리 받기 없이 바로 */
-/* v4: 내 정보 확인 뒤 화면부터 공개한다. 공사 목록은 독립 조회하므로 초기 화면을 막지 않는다.
- * 메뉴 진입 시 loadJobs / loadMyJobs 가 각각 서버 조회를 수행한다. */
-/* v5.26: 최초 로그인 체크리스트에서 배정 공사를 실제로 한 번만 조회한다.
- *  8초 이상 걸리면 화면 사용을 허용하되 같은 서버 요청을 다시 보내지 않는다. */
-let loginJobsPending=null;
-/* v5.27: 최초 로그인 중 작업자/허가서 화면을 열기 위한 읽기 전용 자료 선조회.
-   배정된 활성 공사 최대 2건, 작업허가서는 첫 활성 공사 1건만 조회.
-   제출·승인·서명·순회점검 저장을 선실행하지 않는다. */
-const LOGIN_PREP_MAX_JOBS=2;
-let loginPrepSeq=0;
-const loginPrepared=new Map();
-const loginPreparing=new Set();
-function prepareJobScreens(list,owner){
- if(!list||!Array.isArray(list.jobs)||!list.jobs.length||loginPreparing.has(owner)||loginPrepared.has(owner))return Promise.resolve();
- loginPreparing.add(owner);
- const jobs=list.jobs.filter(j=>j&&j.id&&j.status!=='ENDED').slice(0,LOGIN_PREP_MAX_JOBS);
- if(!jobs.length)return Promise.resolve();
- const seq=++loginPrepSeq;
- const preps=jobs.map((j,idx)=>{
-  const cached=cacheGet('vendorJob',[j.id]);
-  return (cached?Promise.resolve(cached):callQuiet('vendorJob',j.id)).then(v=>{
-   if(seq!==loginPrepSeq||!v||!state||state.email!==owner)return;
-   cacheSet('vendorJob',[j.id],v);
-   if(idx!==0||!v.today)return;
-   // 작업허가서 읽기는 화면 진입 시 필요한 경우에만. 첫 공사만 사전 준비.
-   return callQuiet('getPermit',j.id,v.today).then(r=>{
-    if(seq!==loginPrepSeq||!state||state.email!==owner)return;
-    cacheSet('getPermit',[j.id,v.today],r);
-    if(vjob&&vjob.job.id===j.id)vjob.permitToday=r;
-   }).catch(()=>{});
-  }).catch(()=>{});
- });
- const all=Promise.allSettled(preps).then(()=>{if(seq===loginPrepSeq)loginPrepared.set(owner,Date.now())}).finally(()=>loginPreparing.delete(owner));
- return all;
-}
-function prepareLoginJobs(s,pi){
- if(pi<0||!s||s.staff||!execOk_(s))return Promise.resolve();
- bootSet(pi,'run');
- const load=callQuiet('myJobs').then(r=>{
-  vjobs=r;vjobsAt=Date.now();cacheSet('myJobs',[],r);
-  // 체크리스트 단계에서 미리 공사 상세/작업자/허가서 읽기 시작 (저장 로직은 실행하지 않음).
-  prepareJobScreens(r,s.email);
-  if(state&&state.email===s.email&&tab==='my'&&$('execArea')&&!vjob){setupVMenu();renderMyJobs()}
-  bootSet(pi,'done');return r;
- }).catch(e=>{bootSet(pi,'fail');return null}).finally(()=>{if(loginJobsPending===load)loginJobsPending=null});
- loginJobsPending=load;
- return new Promise(resolve=>{
-  let done=false;
-  const finish=()=>{if(done)return;done=true;resolve()};
-  load.then(finish);
-  setTimeout(()=>{if(!done){bootSet(pi,'skip');finish()}},8000);
- });
-}
-async function bootRest(s,pi){
- setCUser(s.email+'|'+(s.mode||''));cacheSet('portalData',[],s);state=s;
- if(pi>=0)await prepareLoginJobs(s,pi);
- const li=BOOT?BOOT.labels.length-1:0;
- bootSet(li,'run');display(s);bootSet(li,'done');
- setTimeout(bootEnd,180);
-}
-/** 미리 받은 자료를 이 기기 저장본·메모리에 넣음 (늦게 도착해도 지금 보고 있는 목록 화면이면 다시 그림) */
-function applyPack(p){if(!p)return;const now=Date.now();
- if(p.jobBoard){jobData=p.jobBoard;jobAt=now;seenTab.jobs=1;cacheSet('jobBoard',[],p.jobBoard);if(state&&state.staff&&tab==='jobs'&&jobsMode==='list')renderJobs()}
- if(p.myJobs){const old=vjobs?JSON.stringify(vjobs):'';vjobs=p.myJobs;vjobsAt=now;window.__pfAt=now;cacheSet('myJobs',[],p.myJobs);
-  const typing=()=>document.activeElement&&/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
-  Object.entries(p.vendorJob||{}).forEach(([id,v])=>{if(!v)return;cacheSet('vendorJob',[id],v);if(v.permitToday)cacheSet('getPermit',[id,v.today],v.permitToday);
-   if(vjob&&vjob.job.id===id&&JSON.stringify(vjob)!==JSON.stringify(v)&&!typing()&&!document.querySelector('#psheet:not([hidden])')){vjob=v;renderVJob()}});
-  if(state&&tab==='my'&&vmenu==='dash'&&!vjob&&$('execArea')&&JSON.stringify(vjobs)!==old){setupVMenu();renderDash()}}}
-/** 작업자 등록 QR로 로그인: 로그인 응답에 등록 화면이 같이 옴 (왕복 1번) */
-function workerBoot(d){workerLinkMode=true;state={email:d.email||'',appVersion:d.appVersion};showVer(state);$('identity').textContent='접속 계정: '+state.email;
- if(d.wk)showWk(d.wk);else $('my').innerHTML='<div class="card"><h2>작업자 등록 실패</h2><p class="desc">'+escapeText(d.bootError||'')+'</p><button class="button ghost" type="button" onclick="wkCheckIn()">다시 시도</button></div>';
- $('pageTitle').textContent='작업자 등록';window.scrollTo(0,0)}
-/* ---------- v2.9 공사·현장미팅 (직원) ---------- */
-let jobData=null,roomTimer=null,roomId='';
-/* v4.2 빠른 화면 전환: 한 번 본 화면은 저장해 둔 내용을 바로 보여 주고, 최신 내용은 뒤에서 조용히 받아 바꿈 */
-const seenTab={};function fetcher(t){const f=seenTab[t]?callQuiet:call;seenTab[t]=1;return f}
-let jobsMode='list';
-let jobAt=0;  // v5.20 공사 목록 받은 시각 (15초 안이면 다시 받지 않음)
-async function loadJobs(){roomId='';jobsMode='list';if(!jobData){const c=cacheGet('jobBoard',[]);if(c)jobData=c}if(jobData)seenTab.jobs=1;const old=jobData?JSON.stringify(jobData):'';if(jobData)renderJobs();if(jobData&&Date.now()-jobAt<15000)return;try{const x=await fetcher('jobs')('jobBoard');jobData=x;jobAt=Date.now();if(tab==='jobs'&&jobsMode==='list'&&JSON.stringify(x)!==old)renderJobs()}catch(e){}}
-async function delJob(id){const j=jobData.jobs.find(x=>x.id===id);if(!j)return;const rec=(j.workerCount||j.crewDays)?'\n\n※ 이 공사에는 작업자 '+(j.workerCount||0)+'명, 작업인원 기록 '+(j.crewDays||0)+'일치가 있습니다. 함께 삭제됩니다.':'';
- if(!confirm('"'+j.title+'" 공사를 삭제할까요?\n참여 업체 배정 '+j.vendors.length+'곳, 미팅 '+j.meetings.length+'개도 함께 삭제되며 되돌릴 수 없습니다.'+rec))return;
- if(rec&&prompt('기록까지 삭제됩니다. 확인을 위해 공사명을 그대로 입력해 주세요.\n'+j.title)!==j.title){msg('공사명이 달라 삭제하지 않았습니다.');return}
- try{jobData=await call('deleteJob',id);renderJobs();msg('공사를 삭제했습니다.');refreshBadges()}catch(e){}}
-async function delMeet(id){if(!confirm('이 미팅 방과 참석 기록을 삭제할까요? 되돌릴 수 없습니다.'))return;try{jobData=await call('deleteMeeting',id);renderJobs();msg('미팅 방을 삭제했습니다.')}catch(e){}}
-function renderJobsOld(){jobsMode='list';roomId='';clearInterval(roomTimer);const d=jobData;$('jobs').innerHTML='<div class="card"><div class="vh-top"><h2 style="margin:0">공사·현장미팅</h2><button class="button" type="button" onclick="jobForm()">+ 새 공사 만들기</button></div><p class="desc">공사를 만들고 참여 업체를 배정한 뒤, 현장 미팅 방을 만들어 QR로 참석을 받습니다.</p></div>'+waitCard()+(d.jobs.map(j=>'<div class="card"><div class="vh-top"><div><h2 style="margin:0">'+escapeText(j.title)+'</h2><div class="muted">'+escapeText(j.kindLabel)+' · '+escapeText(j.storeName)+(j.storeCode?' ('+escapeText(j.storeCode)+')':'')+' · '+escapeText(j.startDate)+(j.endDate?' ~ '+escapeText(j.endDate):'')+' · 주관 '+escapeText(j.hostName)+'</div></div><div class="row"><button class="button ghost" type="button" onclick="jobForm(\''+escapeText(j.id)+'\')">수정</button><button class="button ghost danger" type="button" onclick="delJob(\''+escapeText(j.id)+'\')">삭제</button></div></div><div class="desc" style="margin-top:8px"><b>참여 업체 '+j.vendors.length+'곳</b> · '+(j.vendors.map(v=>escapeText(v.company)+' <span class="muted">('+escapeText(v.trade)+')</span>').join(', ')||'없음')+'</div>'+jobEndHtml(j)+'<div class="line"></div><div class="row" style="justify-content:space-between"><b>작업허가서 <span class="muted">'+(j.permitTotal||0)+'건</span>'+(j.permitWaiting?' <span class="cnt">'+j.permitWaiting+'</span> <span class="req" style="font-size:13px">승인 대기</span>':'')+'</b><button class="button ghost" type="button" onclick="openPermitList(\''+escapeText(j.id)+'\')">작업허가서 보기</button></div><div class="row" style="justify-content:space-between;margin-top:8px"><b>순회점검일지 <span class="muted">'+(j.inspTotal||0)+'건</span>'+(j.inspUnchecked?' <span class="cnt">'+j.inspUnchecked+'</span> <span class="req" style="font-size:13px">확인 대기</span>':'')+(j.findOpen?' <span class="req" style="font-size:13px">· 미조치 '+j.findOpen+'</span>':'')+'</b><button class="button ghost" type="button" onclick="openInspList(\''+escapeText(j.id)+'\')">순회점검 보기</button></div><div class="line"></div><div class="row" style="justify-content:space-between"><b>현장 미팅</b><button class="button ghost" type="button" onclick="meetForm(\''+escapeText(j.id)+'\')">+ 미팅 방 만들기</button></div>'+(j.meetings.map(m=>'<div class="item"><div class="row" style="justify-content:space-between"><div><b>'+escapeText(m.title)+'</b> '+(m.done?'<span class="pill ok">✔ 실시 완료</span>':m.open?'<span class="pill ok">방 열림</span>':'<span class="pill todo">닫힘 · 실시 전</span>')+'<div class="muted">'+escapeText(m.date)+' '+escapeText(m.time||'')+' · '+escapeText(m.place)+' · 참석 '+m.count+'명'+(m.pending?' · <b style="color:#ce2a4b">확인 대기 '+m.pending+'</b>':'')+'</div></div><div class="row"><button class="button" type="button" onclick="openRoom(\''+escapeText(m.id)+'\')">방 들어가기</button><button class="button ghost danger" type="button" onclick="delMeet(\''+escapeText(m.id)+'\')">삭제</button></div></div></div>').join('')||'<p class="muted">아직 미팅 방이 없습니다.</p>')+'</div>').join('')||'<div class="card"><p class="desc">등록된 공사가 없습니다. [+ 새 공사 만들기]로 시작하세요.</p></div>')}
-function jobForm(id,preIds){jobsMode='form';const d=jobData,j=id?d.jobs.find(x=>x.id===id):null,dl=(j&&j.delegations)||{},sel=new Set((j?j.vendors:[]).map(v=>v.companyId).concat(preIds||[]));const dg=k=>dl[k]||{};
- /* F2.1 구분 기본값: 새 업체가 오픈지원이면 '오픈지원' · 그 외 '매장 공사' */
- const k0=j?j.kind:(typeof sScope!=='undefined'&&sScope==='OPEN')||((preIds||[]).some(i=>(d.vendors.find(v=>v.id===i)||{}).industry==='오픈지원')&&d.kinds.OPEN)?'OPEN':'WORK';
- /* F2.6 담당 화면에 맞는 구분만 (인테리어 = 매장 공사 · 계약 단위 / 오픈지원 = 오픈지원) · 고치는 공사는 그 구분 그대로 */
- const kOk=k=>(j&&j.kind===k)||typeof sScope==='undefined'||!sScope||((k==='OPEN')===(sScope==='OPEN'));
- $('jobs').innerHTML=gdRow('jobform')+'<div class="card"><h2>'+(j?'공사 수정':'새 공사 만들기')+'</h2><form onsubmit="saveJobForm(event,\''+escapeText(id||'')+'\')"><div class="field"><label for="f_jKind">구분</label><select id="f_jKind" onchange="jvKindFilter()">'+Object.entries(d.kinds).filter(([k])=>kOk(k)).map(([k,v])=>'<option value="'+k+'" '+(k0===k?'selected':'')+'>'+escapeText(v)+'</option>').join('')+'</select><div class="muted" id="jKindHint" style="font-size:12px;margin-top:2px"></div></div><div class="split">'+input('jTitle','공사명',j?j.title:'','text',false,'예: 다이소 매봉역점 리뉴얼 공사')+input('jStore','매장명 (계약 단위면 계약명)',j?j.storeName:'','text',false,'예: 매봉역점')+input('jStart','공사 시작일',j?j.startDate:'','date')+input('jEnd','공사 종료일 (예정)',j?j.endDate:'','date')+'</div>'
- +'<div class="line"></div><h2 style="font-size:15px">참여 업체 배정</h2><p class="desc">계약 전 검토가 승인된 업체만 선택할 수 있습니다.'+(d.testMode?' <span class="req">[테스트 모드] 승인 전 업체도 표시</span>':'')+'</p>'+(d.vendors.map(v=>{const has=!!(j&&j.vendors.some(x=>x.companyId===v.id)),lock=v.expired&&!has&&!d.testMode;/* v5.17 유효기간 지난 업체는 새로 배정 불가 */
-  return '<label class="desc jvl" data-open="'+(v.industry==='오픈지원'?1:0)+'"'+(has?' data-has="1"':'')+' style="display:block;margin:6px 0'+(lock?';opacity:.6':'')+'"><input type="checkbox" class="jv" onchange="jvWarn(this)" value="'+escapeText(v.id)+'" '+(sel.has(v.id)&&!lock?'checked':'')+(lock?' disabled':'')+'> <b>'+escapeText(v.company)+'</b> · '+escapeText(v.industry)+(v.approved?'':' <span class="pill todo">승인 전</span>')+(v.dup>1?' <span class="pill lock">같은 업체 '+v.dup+'곳</span>':'')
-  /* F1.9x 현장대리인 · 진행 중 공사 (같은 업체명 구분) */+'<span style="display:block;margin:2px 0 0 22px"><b style="color:var(--main)">현장대리인 '+escapeText(v.contact||'-')+'</b>'+(v.phone?' · '+escapeText(v.phone):'')+'</span><span style="display:block;margin:0 0 0 22px" class="muted">'+((v.openJobs||[]).filter(o=>!j||o.id!==j.id).length?'진행 중: '+(v.openJobs||[]).filter(o=>!j||o.id!==j.id).map(o=>escapeText(o.title||o.storeName)+' ('+escapeText(String(o.startDate||'').slice(5))+'~'+escapeText(String(o.endDate||'').slice(5))+')').join(', '):'진행 중인 다른 공사 없음')+'</span>'
-  +(v.expired?' <span class="pill todo">계약 전 평가 만료 ('+escapeText(v.valid.until)+')</span>'+(lock?'<span class="muted"> · 업체가 서류를 다시 제출해 승인받으면 배정 가능</span>':''):v.valid&&v.valid.days<=30?' <span class="pill todo">평가 유효 D-'+v.valid.days+'</span>':'')
-  +(v.renewing?' <span class="pill lock">재평가 '+escapeText({DRAFT:'작성 중',CORRECTION:'보완 중',SUBMITTED:'검토 중',SAFETY_REVIEW:'검토 중'}[v.renewStatus]||'진행 중')+'</span>':'')+lastEvalHtml(v)+preEvalHtml(v)+(j&&j.vendors.some(x=>x.companyId===v.id)?' <span class="muted">(배정됨)</span>':(preIds||[]).includes(v.id)?' <span class="pill ok">새 업체</span>':'')+'</label>'}).join('')||'<p class="muted">배정할 수 있는 업체가 없습니다.</p>')
- /* F1.8k 위임장은 손으로 적지 않음 → 공사 기간으로 자동 (협의체 · 합동점검 2장) */
- +'<div class="line"></div><h2 style="font-size:15px">위임장 (자동)</h2><p class="desc">'+escapeText(principalName('ceo',1))+' → <b>'+escapeText(principalName('delegate'))+'</b> · 위임 기간 = 공사 시작일 ~ 종료일 (연장하면 자동으로 늘어남)<br>저장한 뒤 공사 카드의 [위임장]에서 볼 수 있습니다.</p>'
- +'<div class="row" style="margin-top:12px"><button class="button" type="submit">저장</button><button class="button ghost" type="button" onclick="renderJobs()">취소</button></div></form></div>';jvKindFilter();window.scrollTo(0,0)}
-/** F2.1 구분에 맞는 업체만 보이기: 오픈지원 = 업종 '오픈지원' 업체만 · 그 외 = 오픈지원 업체 숨김 (이미 배정된 업체는 그대로 보임) */
-function jvKindFilter(){const s=$('f_jKind');if(!s)return;const open=s.value==='OPEN';let n=0;
- document.querySelectorAll('.jvl').forEach(l=>{const show=(l.dataset.open==='1')===open||l.dataset.has==='1';l.style.display=show?'block':'none';if(show)n++;else{const c=l.querySelector('.jv');if(c)c.checked=false}});
- const h=$('jKindHint');if(h)h.textContent=open?'오픈지원 업체만 표시합니다. 작업허가서·업체 순회점검 작성은 없습니다.'+(n?'':' (배정할 수 있는 오픈지원 업체가 없습니다)'):''}
-async function saveJobForm(e,id){e.preventDefault();
- // v4.4 서버로 보내기 전에 빈 칸 먼저 확인 → 그 칸으로 이동 + 붉은 테두리·흔들림
- const miss=[['jTitle','공사명'],['jStore','매장명'],['jStart','공사 시작일']].filter(([k])=>!value(k)).map(([key])=>({key}));
- if(value('jStart')&&value('jEnd')&&value('jEnd')<value('jStart')){miss.push({key:'jEnd'});}
- if(miss.length){markMissing(miss);if(miss.some(m=>m.key==='jEnd')&&miss.length===1)msg('공사 종료일이 시작일보다 빠릅니다');return}
- const cur=id&&jobData?jobData.jobs.find(x=>x.id===id):null;
- const dl={};['COUNCIL','JOINT'].forEach(k=>dl[k]={delegator:value('d'+k+'a'),delegatee:value('d'+k+'b'),date:value('d'+k+'c')});const d={id,kind:$('f_jKind').value,title:value('jTitle'),storeName:value('jStore'),storeCode:cur?cur.storeCode:'',address:cur?cur.address:'',startDate:value('jStart'),endDate:value('jEnd'),delegations:dl,vendorIds:[...document.querySelectorAll('.jv:checked')].map(x=>x.value)};try{jobData=await call('saveJob',d);jobsMode='list';renderJobs();msg('공사를 저장했습니다.');refreshBadges()}catch(err){alert(err.message)}}
-function meetForm(jobId){jobsMode='form';const j=jobData.jobs.find(x=>x.id===jobId),today=new Date().toISOString().slice(0,10);$('jobs').innerHTML='<div class="card"><h2>미팅 방 만들기 · '+escapeText(j.title)+'</h2><form onsubmit="saveMeetForm(event,\''+escapeText(jobId)+'\')"><div class="split">'+input('mTitle','미팅명','착수 전 현장 미팅')+input('mPlace','장소',j.storeName)+input('mDate','일자',today,'date')+'</div><div class="field"><label>포함할 행사</label>'+Object.entries(jobData.meetKinds).map(([k,v])=>'<label class="desc" style="display:block;margin:6px 0"><input type="checkbox" class="mk" value="'+k+'" checked> '+escapeText(v)+'</label>').join('')+'</div><p class="desc">만들면 참여 업체 화면에 📢 미팅 알림이 나옵니다. 참석 체크는 현장에서 [방 열기]를 눌러야 시작됩니다.</p><div class="row"><button class="button" type="submit">방 만들기</button><button class="button ghost" type="button" onclick="renderJobs()">취소</button></div></form></div>'}
-async function saveMeetForm(e,jobId){e.preventDefault();const d={title:value('mTitle'),place:value('mPlace'),date:value('mDate'),time:value('mTime'),kinds:[...document.querySelectorAll('.mk:checked')].map(x=>x.value)};try{const r=await call('createMeeting',jobId,d);jobAt=0;/* 목록으로 돌아가면 새 미팅이 바로 보이게 */showRoom(r);msg('미팅 방을 만들었습니다.')}catch(err){alert(err.message)}}
-async function openRoom(id){try{showRoom(await call('meetingDetail',id))}catch(e){}}
-/* ---------- v4.6 미팅 방: 탭으로 나눔 [QR 참석] [합동점검] [협의체 회의록] + 아래 실시 완료 ---------- */
-let room=null,roomTab='att';const photoPrev={};
-const MARK={OK:'양호',BAD:'불량',NA:'해당없음'};
-const okAtt=r=>r.attendees.filter(x=>x.status==='OK');
-const staffNames=r=>okAtt(r).filter(x=>x.side==='STAFF').map(x=>x.name).join(', ')||'(참석 체크한 도급인 없음)';
-const vendorNamesHtml=r=>r.vendors.map(v=>{const n=okAtt(r).filter(x=>x.side==='VENDOR'&&x.companyId===v.companyId).map(x=>x.name);return '<div><b>'+escapeText(v.company)+'</b> <span class="muted">'+escapeText(v.trade)+'</span>'+(v.contact?' · <b>현장대리인 '+escapeText(v.contact)+'</b>':'')+' · '+(n.length?escapeText(n.join(', ')):'<span class="req">미참석</span>')+'</div>'}).join('')||'<span class="muted">배정된 업체 없음</span>';
-function showRoom(r){
- // 같은 방을 다시 그릴 때(방 열기·참석 확인 등) 작성 중인 내용 유지
- if(room&&room.id===r.id&&!r.done&&$('roomDocs')){collectDocs();r.joint=room.joint;r.minutes=room.minutes}
- if(!r.joint){const items={};(r.jointItems||[]).forEach((_,i)=>items[i+1]='OK');r.joint={items,notes:{}}}  // 처음엔 전 항목 '양호'로 미리 체크
- r.joint.notes=r.joint.notes||{};r.minutes=r.minutes||{type:'정기',start:r.time||'',end:'',etc:''};/* F1.8m 회의 구분 기본 = 정기 */
- const jm=jobData&&jobData.jobs.flatMap(j=>j.meetings).find(m=>m.id===r.id);if(jm){jm.done=!!r.done;jm.open=!!r.open}
- if(!room||room.id!==r.id)roomTab='att';
- jobsMode='room';roomId=r.id;room=r;clearInterval(roomTimer);
- const K=r.kindCodes||[],tabs=[['att','QR 참석 '+okAtt(r).length+'명']].concat(K.includes('JOINT')?[['joint','합동점검']]:[]).concat(K.includes('COUNCIL')?[['council','협의체 회의록']]:[]);
- if(!tabs.some(t=>t[0]===roomTab))roomTab='att';
- /* F1.8j 미팅 방에서 바로: ← 협의체·합동점검 목록 · + 같은 공사에 미팅 방 하나 더 */
- $('jobs').innerHTML='<div class="card"><div class="row" style="justify-content:space-between"><button class="button ghost" type="button" onclick="clearInterval(roomTimer);sgo(\'meet\')">‹ 협의체·합동점검</button>'+gdBtn('room')+'</div><h2 style="margin-top:12px">'+escapeText(r.title)+' · '+escapeText(r.job.storeName)+'</h2><div class="muted">'+escapeText(r.date)+' '+escapeText(r.time||'')+' · '+escapeText(r.place)+' · '+escapeText(r.kinds.join(', '))+'</div>'
-  +'<div class="muted">도급인 책임자: '+escapeText(principalName('ceo',1))+' → 위임 <b>'+escapeText(principalName('delegate'))+'</b></div>'  /* F1.8k 회의록·점검표에도 같은 줄 · F1.9z 「· 담당」 뺌 */
-  +(r.done?'<div class="note" style="margin-top:12px"><b style="color:var(--ok)">✔ 미팅 실시 완료</b> · '+escapeText(fmtTime(r.doneAt))+' · '+escapeText(r.doneBy||'')+'</div>':'')
-  /* F1.8l 탭 없이 한 화면에서 ①참석 → ②합동점검 → ③회의록 순서대로 (위 칩을 누르면 그 단계로 이동) */
-  +'<div class="row" style="flex-wrap:wrap;gap:6px;margin-top:10px">'+tabs.map(([k,l],i)=>'<button type="button" class="fxchip" id="rt_'+k+'" onclick="setRoomTab(\''+k+'\')">'+'①②③'[i]+' '+escapeText(l)+'</button>').join('')+'</div></div>'
-  +'<div id="roomDocs">'+tabs.map(([k,l],i)=>'<div class="stage" style="margin:16px 4px 6px;font-size:16px">'+'①②③'[i]+' '+escapeText(k==='att'?'참석 · QR':l)+'</div><div id="rp_'+k+'">'+(k==='att'?attPanel(r):k==='joint'?jointPanel(r):councilPanel(r))+'</div>').join('')+'</div>'
-  +footPanel(r);
- // 참석자만 8초마다 새로 고침 (작성 중인 내용은 그대로)
- if(r.open)roomTimer=setInterval(async()=>{if(tab!=='jobs'||roomId!==r.id){clearInterval(roomTimer);return}if(loadCount)return;try{const x=await callQuiet('meetingDetail',r.id);if(x.open!==room.open||x.done!==room.done){showRoom(x);return}if(JSON.stringify(x.attendees)!==JSON.stringify(room.attendees)){room.attendees=x.attendees;refreshAtt()}}catch(e){}},8000)}
-function setRoomTab(k){collectDocs();roomTab=k;if(k==='council'||$('rp_council'))refreshResults();const p=$('rp_'+k);if(p)p.previousElementSibling?.scrollIntoView({behavior:'smooth',block:'start'})}
-/** F1.8l [▶ 미팅 시작] = 방 열기 + QR 바로 띄우기 (이미 열렸거나 끝났으면 그냥 들어감) */
-async function meetStart(id){try{let r=await call('meetingDetail',id);if(!r.open&&!r.done)r=await call('setMeetingOpen',id,true);
- else if(r.open&&!r.done&&!r.attendees.some(x=>x.side==='STAFF'&&x.email===state.email))r=await call('meetJoin',id);/* F1.8m 담당자 자동 참석 */jobAt=0;showRoom(r);window.scrollTo(0,0)}catch(e){}}
-/** F1.8l 미팅 날짜만 바꾸기 (시간은 없음) */
-async function meetDate(id,v){if(!/^\d{4}-\d{2}-\d{2}$/.test(v||''))return;try{jobData=await call('setMeetingDate',id,v);jobAt=Date.now();msg('미팅 날짜를 '+v+'(으)로 바꿨습니다.');renderJobs()}catch(e){}}
-/* ① QR 참석 */
-function attRow(x){return '<div class="item"><div class="row" style="justify-content:space-between"><div><b>'+escapeText(x.name)+'</b> <span class="muted">'+escapeText(x.role)+' · '+escapeText(fmtTime(x.checkedAt))+' · '+escapeText(x.email)+'</span>'+(x.status==='PENDING'?' <span class="pill todo">확인 대기</span>':' <span class="pill ok">✔ 참석</span>')+'</div>'+(x.status==='PENDING'?'<div class="row"><button class="button" type="button" onclick="confirmAt(\''+escapeText(x.id)+'\',true)">확인</button><button class="button ghost" type="button" onclick="confirmAt(\''+escapeText(x.id)+'\',false)">제외</button></div>':'')+'</div></div>'}
-function attList(r){const groups=[['아성다이소 (도급인)',r.attendees.filter(x=>x.side==='STAFF')]].concat(r.vendors.map(v=>[v.company+' · '+v.trade+(v.contact?' · 현장대리인 '+v.contact:''),r.attendees.filter(x=>x.side==='VENDOR'&&x.companyId===v.companyId)]));
- return '<div class="card"><h2>참석자 '+okAtt(r).length+'명'+(r.attendees.some(x=>x.status==='PENDING')?' · <span class="req">확인 대기 '+r.attendees.filter(x=>x.status==='PENDING').length+'</span>':'')+'</h2>'+groups.map(([g,list])=>'<div class="stage">'+escapeText(g)+' ('+list.length+')</div>'+(list.map(attRow).join('')||'<p class="muted">아직 없음</p>')).join('')+'</div>'}
-function attPanel(r){const qr='https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=8&data='+encodeURIComponent(r.link);
- return (r.done?'':'<div class="card"><button class="button '+(r.open?'dark':'')+'" style="width:100%" type="button" onclick="toggleRoom('+(!r.open)+')">'+(r.open?'참석 체크 닫기':'▶ 미팅 시작 (QR 띄우기)')+'</button>'
-  +(r.open?'<div style="text-align:center;margin:16px 0 0"><img src="'+escapeText(qr)+'" alt="참석 체크 QR 코드" width="260" height="260" style="border:1px solid var(--line);border-radius:12px"><div class="desc">참석자가 휴대폰 카메라로 찍고 <b>본인 Google 계정</b>으로 로그인하면 체크됩니다.</div><button class="button ghost" type="button" onclick="copyLink(\''+escapeText(r.link)+'\')">참여 링크 복사</button></div>':'<div class="note" style="margin-top:12px">현장에서 [▶ 미팅 시작]을 누르면 QR이 뜨고 참석 체크가 시작됩니다.</div>')+'</div>')
-  +'<div id="roomAtt">'+attList(r)+'</div>'}
-function refreshAtt(){const r=room;if($('jOpin')){collectDocs();$('jOpin').innerHTML=opinHtml(r)}if($('roomAtt'))$('roomAtt').innerHTML=attList(r);if($('rt_att'))$('rt_att').textContent='QR 참석 '+okAtt(r).length+'명';document.querySelectorAll('.jStaff').forEach(x=>x.textContent=staffNames(r));document.querySelectorAll('.jVendor').forEach(x=>x.innerHTML=vendorNamesHtml(r))}
-/* ② 합동점검: 전 항목 양호로 시작 → 불량 누르면 메모·사진 칸이 열림 */
-function photoList(n){const ids=(room.joint.notes[n]||{}).photos||[];return ids.map((id,i)=>photoPrev[id]?'<img class="jph" src="'+photoPrev[id]+'" alt="'+n+'번 불량 사진 '+(i+1)+'" onclick="viewPhoto(\''+escapeText(id)+'\')">':'<button class="button ghost" type="button" onclick="viewPhoto(\''+escapeText(id)+'\')">📷 사진 '+(i+1)+'</button>').join('')}
-function badBox(n,dis){const nt=room.joint.notes[n]||{};return '<div class="jbad"><label for="f_jm'+n+'">지적 내용 · 조치 <span class="req">*</span></label><input id="f_jm'+n+'" class="jmemo" data-n="'+n+'" value="'+escapeText(nt.memo||'')+'" '+dis+' placeholder="예) 개구부 덮개 미설치 → 덮개 설치 (○○인테리어, 10/21)"><div class="row" style="margin-top:8px" id="jp_'+n+'">'+photoList(n)
- +(dis?'':'<label class="button ghost" for="jf_'+n+'">📷 사진 넣기</label><input class="hidefile" type="file" id="jf_'+n+'" accept="image/*" capture="environment" onchange="addPhoto('+n+')" aria-label="'+n+'번 불량 사진 선택">')+'</div></div>'}
-function jointPanel(r){const J=r.joint,dis=r.done?'disabled':'';let grp='';const bad=Object.values(J.items).filter(v=>v==='BAD').length;
- return '<div class="card"><div class="vh-top"><h2 style="margin:0">도급 사업 협력사 합동안전보건 점검표</h2><span class="pill lock">최초1회</span></div>'
-  +'<table class="rtable" style="margin-top:12px"><tr><th>현장명</th><td>다이소 '+escapeText(r.job.storeName)+'</td><th>점검일</th><td>'+escapeText(r.date)+'</td></tr><tr><th>점검자<br>도급인</th><td colspan="3" class="jStaff">'+escapeText(staffNames(r))+'</td></tr><tr><th>점검자<br>수급인</th><td colspan="3" class="jVendor">'+vendorNamesHtml(r)+'</td></tr></table>'
-  +'<p class="desc" style="margin:10px 0 0">전 항목이 <b>양호</b>로 미리 체크되어 있습니다. 지적사항만 <b>불량</b>(또는 해당없음)으로 바꾸고, 불량은 메모와 사진을 남겨 주세요. <span id="jSum">'+(bad?'· 불량 <b class="req">'+bad+'</b>건':'')+'</span></p>'
-  +r.jointItems.map(([g,t],i)=>{const n=i+1,v=J.items[n]||'';const head=g!==grp?(grp=g,'<div class="stage">'+escapeText(g)+'</div>'):'';
-   return head+'<div class="jitem'+(v==='BAD'?' bad':'')+'" id="ji_'+n+'"><div class="jq"><b>'+n+'.</b> '+escapeText(t)+'</div><div class="jm" role="radiogroup" aria-label="'+n+'번 점검 결과">'+Object.entries(MARK).map(([k,l])=>'<label class="jb '+k.toLowerCase()+'"><input type="radio" name="ji'+n+'" value="'+k+'" '+(v===k?'checked':'')+' '+dis+' onchange="jointMark('+n+')"><span>'+l+'</span></label>').join('')+'</div><div id="jbx_'+n+'">'+(v==='BAD'?badBox(n,dis):'')+'</div></div>'}).join('')+'<div id="jOpin">'+opinHtml(r)+'</div></div>'}
-/** 수급인 의견 청취: QR로 참석한 업체마다 의견 칸 (참석이 늘면 자동으로 추가) */
-function opinCos(r){const m=new Map();okAtt(r).filter(x=>x.side==='VENDOR'&&x.companyId).forEach(x=>{if(!m.has(x.companyId))m.set(x.companyId,x.company)});return [...m]}
-function opinHtml(r){const O=(r.joint&&r.joint.opinions)||{},dis=r.done?'disabled':'',cos=opinCos(r);
- return '<div class="stage">수급인 의견 청취 · 제안 사항</div>'+(cos.length?cos.map(([cid,co])=>'<div class="field"><label for="f_jo_'+escapeText(cid)+'"><b>'+escapeText(co)+'</b> 의견 <span class="muted">(선택)</span></label><textarea id="f_jo_'+escapeText(cid)+'" class="jopin" data-cid="'+escapeText(cid)+'" data-co="'+escapeText(co)+'" '+dis+' style="min-height:60px" placeholder="예) 자재 반입 시간 조정 요청 · 의견 없음">'+escapeText((O[cid]||{}).text||'')+'</textarea></div>').join(''):'<p class="muted">QR로 참석 체크한 협력업체가 생기면, 업체마다 의견 칸이 자동으로 생깁니다.</p>')}
-function jointMark(n){collectDocs();const v=room.joint.items[n],el=$('ji_'+n);el.classList.toggle('bad',v==='BAD');el.classList.remove('miss','shake');$('jbx_'+n).innerHTML=v==='BAD'?badBox(n,''):'';if(v==='BAD')setTimeout(()=>$('f_jm'+n)?.focus(),50);
- const bad=Object.values(room.joint.items).filter(x=>x==='BAD').length;$('jSum').innerHTML=bad?'· 불량 <b class="req">'+bad+'</b>건':''}
-/* F1.6b 합동점검 불량 사진: 여러 장 한꺼번에 (항목마다 최대 5장) */
-async function addPhoto(n){const inp=$('jf_'+n);collectDocs();const nt=room.joint.notes[n]=room.joint.notes[n]||{memo:'',photos:[]},left=5-(nt.photos||[]).length,fl=[...(inp.files||[])].slice(0,Math.max(0,left));inp.value='';
- if(!fl.length){if(left<=0)msg('사진은 항목마다 5장까지입니다.');return}
- /* F1.8p 여기서는 올리지 않음 (미리보기만) → [임시 저장]·[미팅 실시 완료] 때 한꺼번에 */
- const rid=room.id,ids=await pendPhotos(fl,async f=>api('uploadMeetingPhoto',[rid,n,await readFile(f,PHOTO_SITE)]));ids.forEach(id=>{if(PEND[id]&&PEND[id].url)photoPrev[id]=PEND[id].url});
- nt.photos=(nt.photos||[]).concat(ids).slice(0,5);$('jbx_'+n).innerHTML=badBox(n,'')}
-/** F1.8p 합동점검 사진 올리기 → 저장 (체크리스트) */
-async function meetSaveRun(title,saveLabel,fn){const L=Object.values((room.joint&&room.joint.notes)||{}).map(x=>x.photos||[]),np=pendCount(L);let out=null;
- await subRun(title,[np&&['지적 사진 '+np+'장 올리기',set=>pendUpload(L,set,photoPrev)],[saveLabel,async()=>{out=await fn()}]]);return out}
-async function viewPhoto(id){if(photoPrev[id]){const w=window.open();if(w)w.document.write('<img src="'+photoPrev[id]+'" style="max-width:100%">');return}try{const f=await call('getMeetingPhoto',room.id,id);photoPrev[id]='data:'+f.mime+';base64,'+f.data;const w=window.open();if(w)w.document.write('<img src="'+photoPrev[id]+'" style="max-width:100%">')}catch(e){}}
-/* ③ 협의체 회의록: 참석 자동, 발의내용 = 법정 협의사항 고정, 심의결과 = 합동점검 지적사항 자동 */
-function resultsLines(){const J=room.joint,bad=Object.entries(J.items).filter(([,v])=>v==='BAD').map(([n])=>Number(n)).sort((p,q)=>p-q);
- if(!(room.kindCodes||[]).includes('JOINT'))return ['협의사항 공유, 특이사항 없음'];
- return bad.length?bad.map(n=>'[합동점검 지적] '+n+'. '+room.jointItems[n-1][1]+' → 불량'+(J.notes[n]?.memo?': '+J.notes[n].memo:' (메모 작성 필요)')):['합동안전보건점검 결과 특이사항 없음 (종결)']}
-function refreshResults(){if($('mResList'))$('mResList').innerHTML=resultsLines().map(x=>'<li>'+escapeText(x)+'</li>').join('');if($('mPhotos'))$('mPhotos').innerHTML=minPhotosHtml();if($('mOpin'))$('mOpin').innerHTML=minOpinHtml();loadMeetPhotos()}
-/** 회의록: 합동점검 불량 항목 사진 (자동) */
-function minPhotosHtml(){const J=room.joint||{},list=Object.entries(J.items||{}).filter(([,v])=>v==='BAD').map(([n])=>Number(n)).sort((a,b)=>a-b).filter(n=>((J.notes||{})[n]||{}).photos&&J.notes[n].photos.length);
- if(!list.length)return '';return '<div class="stage">지적 사진 <span class="muted">(합동점검에서 자동)</span></div>'+list.map(n=>'<div class="mph"><div class="muted">'+n+'. '+escapeText(room.jointItems[n-1][1])+'</div><div class="row">'+J.notes[n].photos.map((id,i)=>'<img class="jph" data-mp="'+escapeText(id)+'" alt="'+n+'번 지적 사진 '+(i+1)+'" '+(photoPrev[id]?'src="'+photoPrev[id]+'"':'')+' onclick="viewPhoto(\''+escapeText(id)+'\')">').join('')+'</div></div>').join('')}
-/** 회의록: 수급인 의견 (합동점검에서 자동) */
-function minOpinHtml(){const O=(room.joint&&room.joint.opinions)||{},l=Object.values(O).filter(o=>o.text);if(!l.length)return '';return '<div class="stage">수급인 의견 <span class="muted">(합동점검에서 자동)</span></div><ol class="rules">'+l.map(o=>'<li><b>'+escapeText(o.company)+'</b>: '+escapeText(o.text)+'</li>').join('')+'</ol>'}
-/* F1.6 한꺼번에 요청 → fb.js가 8장씩 묶어 서버에 한 번만 */
-async function loadMeetPhotos(){const need=new Set();document.querySelectorAll('img[data-mp]').forEach(img=>{const id=img.dataset.mp;if(photoPrev[id])img.src=photoPrev[id];else need.add(id)});
- await Promise.all([...need].map(id=>callQuiet('getMeetingPhoto',room.id,id).then(f=>{photoPrev[id]='data:'+f.mime+';base64,'+f.data;document.querySelectorAll('img[data-mp="'+id+'"]').forEach(x=>x.src=photoPrev[id])}).catch(()=>{})))}
-function councilPanel(r){const M=r.minutes,dis=r.done?'disabled':'';
- return '<div class="card"><h2>협력사 협의체 회의록</h2><table class="rtable"><tr><th>현장명</th><td>'+escapeText(r.job.storeName)+'</td><th>회의구분</th><td><label><input type="radio" name="mType" value="정기" '+(M.type==='정기'?'checked':'')+' '+dis+'> 정기</label> <label><input type="radio" name="mType" value="임시" '+(M.type!=='정기'?'checked':'')+' '+dis+'> 임시</label></td></tr>'
-  +'<tr><th>일 시</th><td colspan="3">'+escapeText(r.date)+' <input type="time" id="f_mStart" value="'+escapeText(M.start)+'" '+dis+' aria-label="시작 시각"> ~ <input type="time" id="f_mEnd" value="'+escapeText(M.end)+'" '+dis+' aria-label="종료 시각"></td></tr>'
-  +'<tr><th>참석 인원<br>도급인</th><td colspan="3" class="jStaff">'+escapeText(staffNames(r))+'</td></tr><tr><th>수급인</th><td colspan="3" class="jVendor">'+vendorNamesHtml(r)+'</td></tr></table>'
-  +'<p class="muted" style="margin:6px 0 0">참석 인원은 QR 참석 체크에서 자동으로 들어옵니다.</p>'
-  +'<div class="stage">발 의 내 용 <span class="muted">(법정 협의사항 · 산업안전보건법 시행규칙 제79조)</span></div><ol class="rules">'+(r.agenda||[]).map(x=>'<li>'+escapeText(x)+'</li>').join('')+'</ol>'
-  +'<div class="stage">심 의 결 과 <span class="muted">(합동점검 결과에서 자동)</span></div><ol class="rules" id="mResList">'+resultsLines().map(x=>'<li>'+escapeText(x)+'</li>').join('')+'</ol>'
-  +'<div id="mPhotos">'+minPhotosHtml()+'</div><div id="mOpin">'+minOpinHtml()+'</div>'
-  +'<div class="field"><label for="f_mEtc">기타사항 <span class="muted">(선택)</span></label><textarea id="f_mEtc" '+dis+' style="min-height:70px">'+escapeText(M.etc||'')+'</textarea></div></div>'}
-function footPanel(r){if(!(r.kindCodes||[]).length)return '';return '<div class="card roomfoot">'+(r.done?'<button class="button ghost" type="button" onclick="reopenDocs()">완료 취소 (내용 고치기)</button>'
- :'<div class="row"><button class="button ghost" type="button" style="flex:1" onclick="saveDocs()">임시 저장</button><button class="button" type="button" style="flex:2" onclick="doneMeeting()">미팅 실시 완료</button></div>')+'</div>'}
-/** 화면 입력값 모으기 (room에도 반영) */
-function collectDocs(){if(!room||!$('roomDocs')||room.done)return room?{joint:room.joint,minutes:room.minutes}:null;const r=room;
- if($('rp_joint')){const items={},notes={};r.jointItems.forEach((_,i)=>{const n=i+1,v=document.querySelector('input[name=ji'+n+']:checked');items[n]=v?v.value:'';if(items[n]==='BAD'){const old=r.joint.notes[n]||{};const m=$('f_jm'+n);notes[n]={memo:m?m.value.trim():(old.memo||''),photos:old.photos||[]}}});const opinions=Object.assign({},(r.joint&&r.joint.opinions)||{});document.querySelectorAll('.jopin').forEach(t=>opinions[t.dataset.cid]={company:t.dataset.co,text:t.value.trim()});r.joint={items,notes,opinions}}
- if($('rp_council'))r.minutes={type:document.querySelector('input[name=mType]:checked')?.value||'정기',start:value('mStart'),end:value('mEnd'),etc:value('mEtc')};
- return {joint:r.joint,minutes:r.minutes}}
-async function saveDocs(){const d=collectDocs(),id=room.id;try{showRoom(await meetSaveRun('임시 저장','점검표·회의록 임시 저장',()=>api('saveMeetingDocs',[id,d])));msg('임시 저장했습니다.')}catch(e){showErr('임시 저장하지 못했습니다',e)}}
-/** 실시 완료: 빠진 곳이 있으면 그 탭으로 이동 → 칸 붉은 테두리·흔들림 */
-async function doneMeeting(){const d=collectDocs(),r=room,K=r.kindCodes||[];
- if(!okAtt(r).some(x=>x.side==='VENDOR')){setRoomTab('att');msg('참석한 협력업체가 없습니다. QR로 참석 체크를 받아 주세요.');return}
- if(r.attendees.some(x=>x.status==='PENDING')){setRoomTab('att');msg('확인 대기 참석자를 [확인] 또는 [제외]해 주세요.');return}
- if(K.includes('JOINT')){const miss=[];r.jointItems.forEach((_,i)=>{const n=i+1;if(!d.joint.items[n])miss.push('ji_'+n);else if(d.joint.items[n]==='BAD'&&!d.joint.notes[n]?.memo)miss.push('f_jm'+n)});
-  if(miss.length){setRoomTab('joint');document.querySelectorAll('.miss').forEach(x=>x.classList.remove('miss','shake'));miss.forEach(id=>{const el=$(id);if(!el)return;el.classList.add('miss');void el.offsetWidth;el.classList.add('shake')});setTimeout(()=>{const f=$(miss[0]);f&&f.scrollIntoView({behavior:'smooth',block:'center'});if(f&&f.tagName==='INPUT')f.focus({preventScroll:true})},50);msg(miss[0].startsWith('f_jm')?'불량 항목의 지적 내용·조치를 적어 주세요':'체크하지 않은 점검 항목이 있습니다');return}}
- if(!confirm('미팅 실시를 완료할까요?\n방이 닫히고 점검표·회의록이 확정됩니다. (고칠 때는 [완료 취소])'))return;
- try{const x=await meetSaveRun('미팅 실시 완료','점검표·회의록 확정',()=>api('completeMeeting',[r.id,d]));showRoom(x);window.scrollTo(0,0);msg('미팅 실시 완료로 확정했습니다.')}catch(e){if(/응답을 받지 못했/.test(e.message||'')){try{const x=await call('meetingDetail',r.id);if(x.done){showRoom(x);window.scrollTo(0,0);msg('미팅 실시 완료로 확정되었습니다.');return}}catch(z){}}alert(e.message)}}
-async function reopenDocs(){if(!confirm('실시 완료를 취소하고 내용을 고칠까요?'))return;try{showRoom(await call('reopenMeetingDocs',room.id))}catch(e){}}
-async function toggleRoom(open){if(!open&&!confirm('방을 닫으면 더 이상 참석 체크가 되지 않습니다. 닫을까요?'))return;try{showRoom(await call('setMeetingOpen',roomId,open))}catch(e){}}
-async function confirmAt(id,ok){if(!confirm(ok?'이 참석자를 확인할까요? (본인 신원을 확인한 경우에만)':'이 참석 기록을 제외할까요?'))return;try{showRoom(await call('confirmAttendee',roomId,id,ok))}catch(e){}}
-function copyLink(t){navigator.clipboard?.writeText(t).then(()=>msg('링크를 복사했습니다.'),()=>prompt('아래 링크를 복사하세요',t))}
-/* ---------- v2.9 참석 체크 (QR로 들어온 모든 계정) ---------- */
-/* F1.8p 응답이 25초 넘게 없으면 로딩을 끝내고 [다시 시도] (예전: 로딩 창이 끝없이 떠 있음) */
-async function meetCheckIn(info){const token=MEET_TOKEN||LINK_REVIEW.slice(5);let tt=0;try{const r=await Promise.race([call('meetCheckIn',token,info||null),new Promise((_,rej)=>{tt=setTimeout(()=>{loadEnd();rej(Error('서버 응답이 늦습니다. 인터넷 연결을 확인한 뒤 [다시 시도]를 눌러 주세요. (이미 기록됐으면 다시 시도 때 완료로 보입니다)'))},25000)})]);showCheckIn(r)}catch(e){$('my').innerHTML='<div class="card"><h2>참석 체크 실패</h2><p class="desc">'+escapeText(e.message||'')+'</p><button class="button" type="button" onclick="meetCheckIn()">다시 시도</button></div>'}finally{clearTimeout(tt)}switchTab('my');$('my').scrollIntoView()}
-/** F1.8p 미등록 계정: 참석 화면 → 사업자 등록 신청(또는 승인 대기) 화면으로 */
-function meetToReg(){try{history.replaceState(null,'',location.pathname)}catch(e){}MEET_TOKEN='';renderMy();switchTab('my');window.scrollTo(0,0)}
-function showCheckIn(r){const head='<div class="card"><small class="muted">'+escapeText(r.store)+' · '+escapeText(r.date)+' · '+escapeText(r.place)+'</small><h2>'+escapeText(r.meeting)+'</h2>';let body='';
- if(r.state==='DONE')body=r.status==='PENDING'?'<div class="note"><b>확인 대기</b> · '+escapeText(r.name)+' ('+escapeText(r.company)+' · '+escapeText(r.role)+')<br>도급인 담당자가 현장에서 신원을 확인하면 참석으로 처리됩니다.</div>':'<div style="text-align:center;padding:10px 0"><div style="font-size:44px">✔</div><h2 style="color:#1b7442">참석 체크 완료</h2><p class="desc"><b>'+escapeText(r.name)+'</b> · '+escapeText(r.company)+' · '+escapeText(r.role)+'<br>'+escapeText(fmtTime(r.checkedAt))+' · 계정 '+escapeText(state.email)+'</p></div>';
- else if(r.state==='NO_VENDOR')body='<div class="note"><b>이 공사에 배정된 협력업체가 없습니다.</b><br>도급인 담당자가 [공사·현장미팅] → 공사 [수정]에서 참여 업체를 먼저 배정해야 합니다.</div><button class="button ghost" type="button" onclick="meetCheckIn()">다시 확인</button>';
- else if(r.state==='NO_COMPANY')body=r.pending?'<div class="note"><b>사업자 등록 승인 대기 중입니다</b> ('+escapeText(r.pending)+')<br>본사 승인이 끝난 뒤 다시 QR을 찍어 주세요.</div><button class="button ghost" type="button" style="width:100%" onclick="meetToReg()">신청 현황 보기</button>'
-  :'<div class="note"><b>등록되지 않은 계정입니다</b><br>사업자 등록을 신청하고 승인받은 뒤 접속해 주세요.<br><span class="muted">계정 '+escapeText(state.email)+'</span></div><button class="button" type="button" style="width:100%" onclick="meetToReg()">사업자 등록 신청하기</button><button class="linkbtn" type="button" style="margin-top:8px" onclick="relogin()">다른 계정으로 로그인</button>';
- else if(r.state==='CLOSED')body='<div class="note">아직 방이 열리지 않았거나 이미 닫혔습니다. 도급인 담당자가 [방 열기]를 누른 뒤 다시 QR을 찍어 주세요.</div><button class="button ghost" type="button" onclick="meetCheckIn()">다시 확인</button>';
- else{const k=r.known;body='<p class="desc">로그인 계정 <b>'+escapeText(state.email)+'</b> 으로 참석을 기록합니다. 이 계정은 점검표 · 회의록 서명란에 그대로 남으니 본인 계정이 맞는지 확인해 주세요. <button class="linkbtn" type="button" onclick="relogin()">다른 계정으로 로그인</button></p><form onsubmit="sendCheckIn(event)">'+input('cName','이름',k?k.name:'','text',false,'예: 홍길동')+(k?'<div class="field"><label>소속 업체</label><div><b>'+escapeText(k.company)+'</b> <span class="muted">(업체 가입 정보로 자동 확인)</span></div></div>':'<div class="field"><label for="f_cCompany">소속 업체</label><select id="f_cCompany"><option value="">업체 선택</option>'+r.vendors.map(v=>'<option value="'+escapeText(v.companyId)+'" '+(r.vendors.length===1?'selected':'')+'>'+escapeText(v.company)+'</option>').join('')+'</select><div class="muted">'+(r.myCompany?'<b class="req">이 계정의 업체('+escapeText(r.myCompany)+')는 이 공사에 배정되어 있지 않습니다.</b> 도급인에게 배정을 요청하거나, 실제 소속 업체를 고르세요.<br>':'이 계정은 업체 대표 계정으로 등록되어 있지 않습니다. ')+'소속 업체를 고르면 도급인 확인 후 참석 처리됩니다.</div></div>')+'<div class="field"><label for="f_cRole">역할</label><select id="f_cRole">'+r.roles.map(x=>'<option>'+escapeText(x)+'</option>').join('')+'</select></div><button class="button" style="width:100%" type="submit">참석 체크</button></form>'}
- $('my').innerHTML=head+body+'</div>'}
-async function sendCheckIn(e){e.preventDefault();const info={name:value('cName'),role:$('f_cRole').value,companyId:$('f_cCompany')?$('f_cCompany').value:''};if(!info.name){alert('이름을 입력해 주세요.');return}if($('f_cCompany')&&!info.companyId){alert('소속 업체를 목록에서 골라 주세요.');$('f_cCompany').focus();return}await meetCheckIn(info)}
-/* ---------- v3.1 수행단계 (업체): 내 공사 → [오늘 할 일] / [비상대응훈련] ---------- */
-let vjobs=null,vjob=null,vtab='today',wkTimer=null,showQr=false,showAdd=false,workerLinkMode=false;
-const SIGN_LABEL={SELF:'✔ 본인 계정 서명',MANAGER:'✔ 소장 확인'};
-let vjobsAt=0;  // v5.18 공사 목록 받은 시각 (방금 받았으면 화면만 다시 그림)
-/* v5.20 가진 목록(메모리·이 기기 저장본)으로 먼저 바로 그림 → 뒤에서 새로 받아 바뀐 경우만 다시 그림 (예전: 대시보드를 누르면 서버 응답까지 이전 화면 그대로) */
-async function loadMyJobs(quick){const x=()=>$('execArea');if(!vjobs){const c=cacheGet('myJobs',[]);if(c)vjobs=c}
- const had=!!vjobs,old=had?JSON.stringify(vjobs):'';if(had){setupVMenu();renderMyJobs();if(quick&&Date.now()-vjobsAt<20000)return}
- try{const r=await (loginJobsPending||(had||/^MEET-/.test(LINK_REVIEW)?callQuiet:call)('myJobs'));/* 참석 QR 화면 위에 로딩 창을 띄우지 않음 */vjobsAt=Date.now();vjobs=r;if(!loginPrepared.has(state?.email||'')&&execOk_(state))prepareJobScreens(r,state.email);if(!had){setupVMenu();renderMyJobs()}else if(JSON.stringify(r)!==old){setupVMenu();if(vmenu==='dash'&&!vjob)renderDash()}}catch(e){if(!had&&x())x().innerHTML='<div class="card"><p class="desc">'+escapeText(e.message||'공사 목록을 불러오지 못했습니다.')+'</p></div>'}}
-function renderMyJobs(){if(vmenu==='dash')renderDash();else vEnsureJob()}
-async function openVJob(id){const c=cacheGet('vendorJob',[id]);vtab='today';showQr=false;showAdd=false;
- if(c){vjob=c;const cp=cacheGet('getPermit',[id,c.today]);if(cp&&!vjob.permitToday)vjob.permitToday=cp;renderVJob();window.scrollTo(0,0);callQuiet('vendorJob',id).then(x=>{if(!vjob||vSel!==id||vjob.job.id!==id||JSON.stringify(x)===JSON.stringify(vjob))return;const typing=document.activeElement&&/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)&&$('execArea')?.contains(document.activeElement);vjob=x;if(!typing&&!document.querySelector('#psheet:not([hidden])'))renderVJob()}).catch(()=>{});return}
- try{const started=Date.now();vjob=await call('vendorJob',id);const received=Date.now();renderVJob();window.scrollTo(0,0);perfRecord('ui','vendorJobRender',Date.now()-received,true);perfRecord('flow','vendorJobTotal',Date.now()-started,true)}catch(e){const el=$('execArea');if(el)el.innerHTML='<div class="card"><h2>공사 화면을 열지 못했습니다</h2><p class="desc">'+escapeText(e.message||'통신 오류가 발생했습니다.')+'</p><button class="button" type="button" onclick="openVJob(vSel)">다시 시도</button></div>';}}
-function backJobs(){vgo('dash')}
-function setVTab(t){vtab=t;renderVJob()}
-function renderVJob(){const el=$('execArea');if(!el||!vjob)return;const v=vjob;clearInterval(wkTimer);
- const head=vJobHead(v);
- el.innerHTML=head+vEndHtml(v)+todayHtml(v);
- if(!(typeof tour!=='undefined'&&tour))setTimeout(()=>dayGuide(false),600);  // F1.8a 하루 한 번 사용 가이드 (가이드가 화면을 바꿀 때는 다시 시작하지 않음)
- /* F1.8a 대시보드 '오늘 할 일'에서 누른 칸으로 바로 이동 */if(window.__vjump){const id=window.__vjump;window.__vjump='';setTimeout(()=>$(id)?.scrollIntoView({block:'start'}),60)}
- if(showQr)wkTimer=setInterval(async()=>{if(!vjob||vjob.job.id!==v.job.id||!showQr){clearInterval(wkTimer);return}try{const x=await callQuiet('vendorJob',v.job.id);if(x.workers.length!==vjob.workers.length){vjob=x;renderVJob();msg('새 작업자가 등록되었습니다.')}}catch(e){}},8000)}
-function todayHtml(v){
- const qr='https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&data='+encodeURIComponent(v.link);
- const method=w=>w.method==='SELF'?'본인 등록':'소장 등록';
- if(vmenu==='edu')return eduHtml(v);  // F1.8b ☰ 신규교육 현황 (전체 명단 · 이수증 나중에 올리기)
- /* F1.8b 오늘 현장 업무: 설명 문구 없이 ① 신규자 등록 → ② 작업허가서 → ③ 순회점검 · 끝낸 칸은 어둡게 + '오늘 완료' 도장 (눌러서 다시 열기) */
- const todayW=v.workers.filter(w=>isTodayWorker(v,w)),noNew=noNewToday(v),regDone=v.jobStatus!=='ENDED'&&(todayW.length>0||noNew),sb='padding:8px 10px;font-size:13px';
- const reg='<div class="card" id="regCard" style="position:relative">'+(regDone?doneMask('신규자 등록'):'')
-  +'<div class="vh-top"><h2 style="margin:0;font-size:16px">① 신규자 등록</h2><button class="button ghost" type="button" id="gdReg" style="padding:4px 8px;font-size:12px" onclick="startTour(\'reg\')">❔ 사용 가이드</button></div>'
-  +'<div class="row" style="margin-top:8px;gap:6px"><button class="button" type="button" id="btnQr" style="flex:1;'+sb+'" onclick="toggleQr()">'+(showQr?'QR 닫기':'QR 보여주기')+'</button><button class="button ghost" type="button" id="btnAdd" style="flex:1;'+sb+'" onclick="toggleAdd()">'+(showAdd?'직접 등록 닫기':'직접 등록')+'</button></div>'
-  +(showQr?'<div style="text-align:center;margin:12px 0 4px"><img src="'+escapeText(qr)+'" alt="작업자 등록 QR 코드" width="220" height="220" style="border:1px solid var(--line);border-radius:12px"><div class="row" style="justify-content:center;margin-top:6px"><button class="button ghost" type="button" style="'+sb+'" onclick="copyLink(\''+escapeText(v.link)+'\')">등록 링크 복사</button><button class="button ghost" type="button" style="'+sb+'" onclick="renewQr()">QR 새로 만들기</button></div></div>':'')
-  /* F2.1 오픈지원: 구분 = 보통인부 고정 · 특별교육 공종·이수증 칸 없음 */
-  +(showAdd?'<form class="subbox" onsubmit="addWorkerForm(event)"><div style="display:grid;grid-template-columns:1.3fr 1fr;gap:6px">'+input('wName','이름','','text',false,'홍길동')+'<div class="field"><label for="f_wRole">구분</label><select id="f_wRole"'+(v.open?' disabled':'')+'>'+v.roles.map(r=>'<option '+(r==='근로자'?'selected':'')+'>'+escapeText(r)+'</option>').join('')+'</select></div>'+'</div>'+(v.open?'':tradeSel('f_wTrade',v.trades)+certFieldHtml('wCert'))+'<label class="desc"><input type="checkbox" id="wAgree"> 채용 시 교육(작업 안전 수칙 '+v.rules.length+'개 항목 포함)을 하고 서약을 받았습니다.</label><button class="button" type="submit" style="width:100%;margin-top:10px">작업자 등록</button></form>':'')
-  /* 오늘 등록한 사람만 표로 (전체 명단·지난 사람 이수증은 ☰ 신규교육 현황) */
-  +'<div id="regToday" style="margin-top:10px">'+(todayW.length?'<table class="rtable"><tr><th>이름</th><th>구분·공정</th><th style="width:72px">이수증</th><th style="width:44px"></th></tr>'+todayW.map(w=>'<tr><td><b>'+escapeText(w.name)+'</b></td><td>'+escapeText(w.role)+(w.trade?' · '+escapeText(w.trade):'')+eduH(w)+'</td><td>'+certCell(w)+'</td><td><button class="linkbtn" type="button" style="font-size:12px" onclick="undoWorker(\''+escapeText(w.id)+'\')" aria-label="'+escapeText(w.name)+' 등록 취소">취소</button></td></tr>').join('')+'</table>'
-   :'<div class="row" style="justify-content:space-between"><span class="muted">오늘 등록한 사람 없음'+(noNew?' · [오늘 신규자 없음] 표시함':'')+'</span>'+(noNew?'<button class="button ghost" type="button" style="padding:4px 8px;font-size:12px" onclick="clearNoNew()">취소</button>':'')+(v.jobStatus!=='ENDED'&&!noNew?'<button class="button ghost" type="button" id="btnNoNew" style="padding:4px 8px;font-size:12px" onclick="setNoNew()">오늘 신규자 없음</button>':'')+'</div>')+'</div></div>';
- /* F2.1 오픈지원: 작업허가서·업체 순회점검 작성·비상훈련 등록 없음 (순회점검·비상훈련은 도급인이 함) → 도급인 지적사항 조치만 */
- if(v.open)return (v.jobStatus!=='ENDED'?accCertCardHtml(true):'')+reg+openFixCardHtml(v);
- return (v.jobStatus!=='ENDED'?accCertCardHtml(true):'')+reg+permitCardHtml(v)+inspCardHtml(v)+(typeof drillStatusHtml==='function'?drillStatusHtml(v):'');
-}
-/** F2.1 오픈지원 ② 지적사항 조치 (도급인 순회점검·합동점검에서 나온 것 · 조치 등록 화면은 공사와 같음) */
-function openFixCardHtml(v){const I=v.insp||{open:[]};
- /* F2.3 현장관리자 · TBM 현황 (계약담당자 보기 · 현장관리자가 매일 저장) */
- const S=(v.siteMgrs||[]).find(x=>x.status==='ACTIVE'),T=v.tbms||[],tt=T.find(x=>x.date===v.today);
- const smCard=v.siteMgrs?'<div class="card" id="openSmCard"><div class="vh-top"><h2 style="margin:0;font-size:16px">관리감독자 · TBM</h2>'+(tt?'<span class="pill ok">오늘 TBM '+tt.n+'장</span>':'<span class="pill todo">오늘 TBM 전</span>')+'</div>'
-  +'<div class="muted" style="margin-top:6px">'+(S?'현장관리자(관리감독자) <b style="color:#111827">'+escapeText(S.name)+'</b> · '+escapeText(S.email)+' · 지정 '+escapeText(mgrHM(S.designatedAt))+(S.designatedName?' ('+escapeText(S.designatedName)+')':''):'<span class="req">관리감독자 미지정</span>')+'</div>'
-  +'<div class="muted" style="margin-top:4px">TBM '+T.length+'일'+(T.length?' · 최근 '+T.slice(0,5).map(x=>escapeText(String(x.date).slice(5))).join(', '):'')+'</div>'
-  +(tt&&tt.photos.length?'<div class="row" style="margin-top:6px">'+thumbs(tt.photos.slice(0,4),'')+'</div>':'')
-  /* F2.4 도급인이 진행한 비상훈련 (보기) */+'<div class="muted" style="margin-top:4px">비상훈련 (도급인 진행): '+((v.openDrills||[]).length?(v.openDrills||[]).map(d=>escapeText(d.label)+' '+escapeText(String(d.date).slice(5))+' · '+d.n+'명'+(d.done?' ✔':' (진행 중)')).join(' / '):'아직 없음')+'</div></div>':'';
- if(tt&&tt.photos.length)setTimeout(()=>loadInspPhotos(v.job.id),50);
- return smCard+'<div class="card" id="openFixCard"><div class="vh-top"><h2 style="margin:0;font-size:16px">② 지적사항 조치</h2>'+(I.open.length?'<span class="pill bad">미조치 '+I.open.length+'</span>':'<span class="pill ok">미조치 없음</span>')+'</div>'
-  +(I.open.length?I.open.map(f=>findRow(f,'vendor')).join(''):'')+'</div>'
-  /* F2.7 오픈지원은 ☰ 신규교육 현황 메뉴가 없음 → 매장 상세에서 근로자 명단 · 교육일지 */
-  +'<button class="vtodo" type="button" id="openEduBtn" onclick="vgo(\'edu\',\''+escapeText(v.job.id)+'\')"><span>🎓 근로자 명단 · 교육일지</span><span>'+v.workers.length+'명 ›</span></button>'}
-/** F1.8s 공종 고르기 (계획서에서 고른 공종) · 특별교육 대상 공종이면 교육 2H · 안 고르면 채용 시 교육 1H */
-function tradeSel(id,T){return '<div class="field"><label for="'+id+'">특별교육 공종 (해당 시)</label><select id="'+id+'" onchange="tradeHint(this)"><option value="">해당 없음 (채용 시 교육만)</option>'+(T||[]).map(t=>'<option value="'+escapeText(t.key)+'" data-sp="'+escapeText((t.special||[]).join(' / '))+'">'+escapeText(t.name)+'</option>').join('')+'</select><div class="muted" id="'+id+'_h" style="font-size:12px;margin-top:2px">채용 시 교육 1H</div></div>'}
-function tradeHint(s){const o=s.options[s.selectedIndex],sp=o&&o.dataset.sp,h=$(s.id+'_h');if(h)h.textContent=sp?'채용 시 교육 + 특별교육 2H ('+sp+')':'채용 시 교육 1H'}
-const eduH=w=>' · <b>'+(Number(w.eduHours)||1)+'H</b>'+((w.special||[]).length?' 특별':'');
-/** 오늘 등록한 사람 (등록하면 그날 작업 안전 수칙 서명 기록에 들어감) */
-function isTodayWorker(v,w){if(v.todayCrew&&(v.todayCrew.workers||[]).some(x=>x.id===w.id))return true;try{return new Date(w.eduAt).toLocaleDateString('sv-SE',{timeZone:'Asia/Seoul'})===v.today}catch(e){return false}}
-/** [오늘 신규자 없음] (이 기기에 그날만 기억) → 신규자 등록 칸을 완료로 */
-const noNewKey=v=>'noNew:'+v.job.id+':'+v.today;
-function noNewToday(v){try{return localStorage.getItem(noNewKey(v))==='1'}catch(e){return false}}
-function setNoNew(){try{localStorage.setItem(noNewKey(vjob),'1')}catch(e){}const y=window.scrollY;renderVJob();window.scrollTo(0,y)}
-/** 끝낸 칸 위 어두운 막 + '오늘 완료' 도장 · 누르면 막이 걷혀서 다시 볼 수 있음 */
-function doneMask(label){return '<div class="doneMask" role="button" tabindex="0" aria-label="'+escapeText(label)+' 오늘 완료 · 눌러서 열기" onclick="this.remove()" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();this.remove()}" style="position:absolute;inset:0;z-index:3;border-radius:inherit;background:rgba(17,24,39,.55);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;cursor:pointer">'
- +'<span style="border:3px solid #fff;color:#fff;border-radius:10px;padding:6px 16px;font-size:20px;font-weight:800;transform:rotate(-8deg)">✔ 오늘 완료</span><span style="color:#fff;font-size:12px">눌러서 열기</span></div>'}
-/** 이수증 칸: 있으면 보기 · 없으면 바로 올리기 */
-function certCell(w){if(!w.certDoc&&(w.role==='보통인부'||w.role==='현장관리자'))return '<span class="muted" style="font-size:12px">해당 없음</span>';/* F2.1 오픈지원 보통인부 */return w.certDoc?'<button class="linkbtn" type="button" style="font-size:12px;color:var(--ok)" onclick="certView(\''+escapeText(w.certDoc)+'\',\''+escapeText(w.name)+'\')" aria-label="'+escapeText(w.name)+' 이수증 보기">✔ 보기</button>'
- :'<button class="linkbtn req" type="button" style="font-size:12px" onclick="pickCertFor(\''+escapeText(w.id)+'\')" aria-label="'+escapeText(w.name)+' 이수증 사진 넣기">📷 올리기</button>'}
-/** F1.8b ☰ 신규교육 현황: 이 공사에 등록한 전체 명단 · 이수증 놓친 사람 나중에 올리기 · 작업 안전 수칙 서명 기록 */
-function eduHtml(v){const W=v.workers.slice().sort((x,y)=>String(y.eduAt||'').localeCompare(String(x.eduAt||''))),ok=W.filter(w=>w.certDoc).length,method=w=>w.method==='SELF'?'본인':'소장';
- const rules=v.history.length?'<details class="hist" style="margin-top:12px"><summary>작업 안전 수칙 서명 기록 '+v.history.length+'일 (등록한 날)</summary>'+v.history.map(h=>'<div class="item"><div class="row" style="justify-content:space-between"><span>'+escapeText(h.date)+' · '+h.count+'명</span><button class="button ghost" type="button" onclick="showRules(\''+escapeText(h.date)+'\')">보기</button></div></div>').join('')+'</details>':'';
- return gdRow('edu')+'<div class="card" id="eduCard"><div class="vh-top"><h2 style="margin:0;font-size:16px">신규교육 현황</h2>'+(v.open?'<span class="pill ok">등록 '+W.length+'명</span>':'<span class="pill '+(W.length&&ok===W.length?'ok':'todo')+'">이수증 '+ok+' / '+W.length+'명</span>')+'</div>'
-  +(W.length?'<table class="rtable" style="margin-top:10px"><tr><th>이름</th><th>구분·공정</th><th style="width:64px">등록일</th><th style="width:76px">이수증</th></tr>'+W.map(w=>'<tr><td><b>'+escapeText(w.name)+'</b><div class="muted" style="font-size:11px">'+method(w)+' 등록 · <button class="linkbtn" type="button" style="font-size:11px" onclick="dropWorker(\''+escapeText(w.id)+'\',\''+escapeText(w.name)+'\')">빼기</button></div></td><td>'+escapeText(w.role)+(w.trade?' · '+escapeText(w.trade):'')+eduH(w)+'</td><td>'+escapeText(String(fmtTime(w.eduAt)).slice(5,10))+'</td><td>'+certCell(w)+'<br><button class="linkbtn" type="button" style="font-size:12px" onclick="showEduSheet(\''+escapeText(w.id)+'\')" aria-label="'+escapeText(w.name)+' 교육일지 보기">📋 교육일지</button></td></tr>').join('')+'</table>'
-   :'<p class="muted" style="margin-top:10px">아직 등록한 작업자가 없습니다.</p>')+rules+'</div>'}
-const kstDay=t=>{try{return new Date(t).toLocaleDateString('sv-SE',{timeZone:'Asia/Seoul'})}catch(e){return ''}};
-/* ===== F1.9u A4 양식 공통 디자인 (빨간 띠 · 남색 제목 줄 · 연회색 칸 · 표만 사용 → 드라이브 PDF 변환에서도 같은 모양) · app.js · Relay.gs 똑같이 ===== */
-/* F1.9v 한 장 꽉 채우기: FKs(k) = 크기 배율 k (글씨 = 1+(k-1)×0.55배 · 칸 높이·여백 = k배) · 양식마다 내용 양을 보고 k를 정함 (fitK_) */
-const FKs=(k0)=>{const k=Math.max(.75,Math.min(6,Number(k0)||1)),f=1+(Math.min(k,1.6)-1)*.55,R=n=>Math.round(n*f*10)/10,V=n=>Math.round(n*k*10)/10,W=n=>Math.round(n*Math.min(k,1.6)*10)/10;
- const RED='#E60012',NAVY='#111827',LB='#F3F4F6',LR='#FDECEC',LG='#E8F5EC',LY='#FFF8DB',LO='#FFF1E0',GRN='#1B7F3B',AMB='#B45309',GRY='#6B7280',BD='1px solid #9CA3AF',INK='#1f3a8a';
- const T='width:100%;border-collapse:collapse',NB='font-size:1px;padding:0';
- const cs=(fs,p)=>{const q=String(p||'4px 7px').split(' ').map(parseFloat);return `border:${BD};padding:${V(q[0])}px ${R(q.length>1?q[1]:q[0])}px;font-size:${R(fs||10.5)}px;vertical-align:middle`};
- const B=cs(),H=B+`;background:${LB};font-weight:bold;text-align:center;color:${NAVY}`;
- const WD=['일','월','화','수','목','금','토'];
- /** 'YYYY-MM-DD' → '2026. 10. 19. (월)' */
- const day=d=>{const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(d||''));if(!m)return String(d||'');return m[1]+'. '+Number(m[2])+'. '+Number(m[3])+'. ('+WD[new Date(m[1]+'-'+m[2]+'-'+m[3]+'T00:00:00Z').getUTCDay()]+')'};
- /** 머리글 (title·sub·right 는 html) */
- const head=(title,sub,right)=>{const n=String(title).replace(/<[^>]*>|\s/g,'').length,ls=n<=8?6:n<=12?3:1,fs=n<=12?21:17;
-  return `<table style="${T}"><tr><td colspan="3" style="background:${RED};height:6px;${NB}">&nbsp;</td></tr>`
-  +`<tr><td style="width:24%;padding:${W(8)}px 0 ${W(6)}px;font-size:${R(10)}px;color:${RED};font-weight:bold;vertical-align:bottom">DAISO 아성다이소<div style="color:${GRY};font-weight:normal;font-size:${R(9)}px">도급 안전관리</div></td>`
-  +`<td style="text-align:center;padding:${W(8)}px 0 ${W(6)}px"><div style="font-size:${R(fs)}px;font-weight:bold;letter-spacing:${ls}px;color:${NAVY}">${title}</div>${sub?`<div style="font-size:${R(9.5)}px;color:${GRY};margin-top:2px">${sub}</div>`:''}</td>`
-  +`<td style="width:24%;text-align:right;font-size:${R(10)}px;color:${NAVY};vertical-align:bottom;padding:${W(8)}px 0 ${W(6)}px">${right||''}</td></tr>`
-  +`<tr><td colspan="3" style="border-top:2px solid ${NAVY};height:2px;${NB}">&nbsp;</td></tr></table>`};
- /** 섹션 제목 줄 (sm = 촘촘하게) */
- const sec=(n,t,r,sm)=>`<table style="${T};margin-top:${W(sm?4:7)}px"><tr><td style="width:6px;background:${RED};${NB}"></td><td style="background:${NAVY};color:#fff;font-weight:bold;font-size:${R(sm?10.5:11.5)}px;padding:${W(sm?2:4)}px 8px">${n!==''&&n!=null?n+'. ':''}${t}</td>${r?`<td style="background:${NAVY};color:#D1D5DB;font-size:${R(9)}px;padding:${W(sm?2:4)}px 8px;text-align:right">${r}</td>`:''}</tr></table>`;
- const big=t=>`<table style="${T};margin-top:${W(9)}px"><tr><td style="background:${RED};width:6px;${NB}"></td><td style="background:${NAVY};color:#fff;font-weight:bold;font-size:${R(13)}px;padding:${W(5)}px 9px;letter-spacing:1px">${t}</td></tr></table>`;
- const sub=t=>`<table style="${T};margin-top:${W(6)}px"><tr><td style="border-left:4px solid ${RED};padding:${W(1)}px 7px;font-size:${R(11)}px;font-weight:bold;color:${NAVY}">${t}</td></tr></table>`;
- /** 셀: html 또는 {h, bg, c, b, cs, rs, st, col} */
- const cell=(x,base)=>{const o=(x&&typeof x==='object')?x:{h:x};return `<td style="${base||B}${o.c?';text-align:center':''}${o.bg?';background:'+o.bg:''}${o.b?';font-weight:bold':''}${o.col?';color:'+o.col:''}${o.st?';'+o.st:''}"${o.cs?` colspan="${o.cs}"`:''}${o.rs?` rowspan="${o.rs}"`:''}>${o.h==null||o.h===''?'&nbsp;':o.h}</td>`};
- const obj=x=>(x&&typeof x==='object')?Object.assign({},x):{h:x};
- /** 항목-값 표: [라벨,값] 또는 [라벨,값,라벨,값] (값 = html) */
- const kv=(rows,lw)=>`<table style="${T}">`+rows.map(r=>'<tr>'+r.map((c,i)=>i%2?cell(r.length===2?Object.assign(obj(c),{cs:3}):c,B+(r.length===4?';width:'+(50-(lw||15))+'%':'')):cell(c,H+';width:'+(lw||15)+'%')).join('')+'</tr>').join('')+'</table>';
- /** 목록 표: cols = [[제목, 너비, 'c'(가운데)]] */
- const grid=(cols,rows,fs,p)=>{const b=cs(fs,p),h=b+`;background:${LB};font-weight:bold;text-align:center;color:${NAVY}`;
-  return `<table style="${T}"><tr>`+cols.map(c=>`<td style="${h}${c[1]?';width:'+c[1]:''}">${c[0]}</td>`).join('')+'</tr>'
-  +rows.map(r=>'<tr>'+r.map((x,i)=>{const o=obj(x);if(cols[i]&&cols[i][2]==='c'&&o.c==null)o.c=1;return cell(o,b)}).join('')+'</tr>').join('')+'</table>'};
- const box=(h,bg,bl)=>`<table style="${T}"><tr><td style="border:${BD};${bl?'border-left:4px solid '+bl+';':''}background:${bg||'#fff'};padding:${V(6)}px ${R(9)}px;font-size:${R(10.5)}px;line-height:1.65">${h}</td></tr></table>`;
- const statRow=items=>`<table style="${T}"><tr>`+items.map(([l,v,c,bg])=>`<td style="border:${BD};background:${bg||'#fff'};text-align:center;padding:${V(5)}px 4px"><div style="font-size:${R(9.5)}px;color:${GRY}">${l}</div><div style="font-size:${R(17)}px;font-weight:bold;color:${c||NAVY}">${v}</div></td>`).join('')+'</tr></table>';
- const res=k=>k==='BAD'?{h:'불량',b:1,col:RED,bg:LR,c:1}:k==='OK'?{h:'양호',col:GRN,c:1}:k==='NA'?{h:'해당없음',col:GRY,c:1}:{h:'-',col:GRY,c:1};
- const lvl=k=>k==='상'?{h:'상',b:1,col:'#fff',bg:RED,c:1}:k==='중'?{h:'중',b:1,col:'#fff',bg:'#D97706',c:1}:{h:'하',b:1,col:'#fff',bg:GRN,c:1};
- const ok=t=>`<b style="color:${GRN}">✔ ${t}</b>`,no=t=>`<b style="color:${RED}">✖ ${t}</b>`;
- const stamp=t=>`<span style="border:2px solid ${RED};color:${RED};padding:1px 5px;font-size:${R(10)}px;font-weight:bold">${t}</span>`;
- /** F1.9v 서명: (인)·(서명) 글자 위에 손글씨(나눔손글씨 붓) 이름을 겹쳐 찍음 · n = 이름(html) · m = '인' | '서명' · fs = 서명 글씨 크기 */
- const SIGNF="'Nanum Brush Script','나눔손글씨 붓',cursive";
- const nm=(n,m,fs)=>{if(!n)return `(${m})`;const z=R(fs||21),mz=Math.max(R(9),Math.round(z*.42)),mw=(String(m).length+0.7)*mz,nw=String(n).replace(/<[^>]*>/g,'').replace(/&[a-z#0-9]+;/g,'x').length*z*.6;
-  return `<span style="font-size:${mz}px;color:${GRY};white-space:nowrap">(${m})</span><span style="font-family:${SIGNF};font-size:${z}px;line-height:1;color:${INK};white-space:nowrap;margin-left:-${Math.round(mw/2+nw/2)}px;position:relative;top:-${Math.round(z*.12)}px">${n}</span>`};
- const gap=h=>`<div style="height:${V(h)}px"></div>`;
- const foot=(n,at)=>`<table style="${T};margin-top:${W(6)}px"><tr><td style="font-size:${R(8.5)}px;color:${GRY};padding:0">${n||''}</td><td style="font-size:${R(8.5)}px;color:${RED};font-weight:bold;text-align:right;padding:0;white-space:nowrap;width:30%">DAISO 도급 안전관리${at?' · 출력 '+at:''}</td></tr></table>`;
- const BRK='<div style="page-break-after:always"></div>';
- /** 드라이브 PDF 변환·인쇄용 문서 (배경색 그대로 인쇄 · 서명 글씨체) */
- const doc=body=>'<html><head><meta charset="utf-8"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nanum+Brush+Script&display=swap"><style>@page{size:A4;margin:11mm 12mm}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}</style></head><body style="font-family:sans-serif;color:#111827;margin:0">'+body+'</body></html>';
- return {k,R,V,RED,NAVY,LB,LR,LG,LY,LO,GRN,AMB,GRY,BD,INK,T,NB,cs,B,H,day,head,sec,big,sub,cell,kv,grid,box,statRow,res,lvl,ok,no,stamp,nm,gap,foot,BRK,doc};};
-const FK=FKs(1);
-/** F1.9v 양식별 크기 배율 (내용이 적으면 키워서 A4 한 장을 채움) · FIT_TEST_ = 검사용 덮어쓰기 */
-/** 내용 양(예상 높이 mm) → 배율 (측정표 사이는 직선으로) */
-const kOf_=(h,t)=>{if(h<=t[0][0])return t[0][1];for(let i=1;i<t.length;i++)if(h<=t[i][0]){const [a,ka]=t[i-1],[b,kb]=t[i];return +(ka+(h-a)*(kb-ka)/(b-a)).toFixed(3)}return t[t.length-1][1]};
-const fitK_=(id,k)=>(typeof FIT_TEST_!=='undefined'&&FIT_TEST_&&FIT_TEST_[id]!=null)?FIT_TEST_[id]:k;
+  const now = () => new Date().toISOString();
+  const tidy = (v, max = 600) => String(v ?? '').trim().slice(0, max);
+  const lower = (v) => String(v || '').trim().toLowerCase();
+  const fail = (m) => { throw Error(m); };
+  /* F1.7f 접속 구분이 비어 있으면(예전에 작업자 QR로 로그인한 기기) 로그인 화면에서 마지막으로 고른 구분을 씀
+   *  → 직원 명단에 있는 사람이 [협력업체]로 쓰다가 작업자 QR을 한 번 찍은 뒤 업체 업무가 직원 기준으로 처리되던 문제 */
+  const getMode = () => { try { const m = localStorage.getItem('fbMode') || localStorage.getItem('loginMode') || ''; return ['VENDOR', 'STAFF'].includes(m) ? m : ''; } catch (e) { return ''; } };
+  async function me() {
+    await ready;
+    if (!USER) fail('로그인이 만료되었습니다. 다시 로그인해 주세요.');
+    return { uid: USER.uid, email: lower(USER.email), mode: getMode() };
+  }
+  /* F1.9t 마스터 = 기본 마스터(MASTER_EMAILS · 못 바꿈) + 데이터 관리 🔑에서 체크한 사람 (SETTINGS/masters.emails) */
+  let MASTERS = new Set(MASTER_EMAILS), mastersP = null;
+  function loadMasters(force) {
+    if (!force && mastersP) return mastersP;
+    mastersP = db.collection('SETTINGS').doc('masters').get().then((d) => { MASTERS = new Set(MASTER_EMAILS.concat(d.exists ? (d.data().emails || []).map(lower) : [])); }).catch(() => { MASTERS = new Set(MASTER_EMAILS); });
+    return mastersP;
+  }
+  const isMaster = (a) => a.mode !== 'VENDOR' && MASTERS.has(a.email);
+  const isInternalEmail = (e) => CFG.APPROVER_DOMAINS.some((d) => lower(e).endsWith('@' + d));
+  /** Firebase 오류를 알아듣기 쉬운 말로 */
+  function nice(e) {
+    const c = e && e.code || '';
+    if (c === 'permission-denied') return Error('권한이 없습니다. (보안 규칙에서 막힘)');
+    if (c === 'unavailable') return Error('인터넷 연결이 불안정합니다. 잠시 후 다시 시도해 주세요.');
+    return e instanceof Error ? e : Error(String(e));
+  }
+  const audit = (a, companyId, action, detail) => db.collection('AUDIT').add({ time: now(), email: a.email, uid: a.uid, companyId: companyId || '', action, detail: tidy(detail, 2000) }).catch(() => {});
 
-/** F1.9u 교육일지 1명당 1장 · A4 1장 (특별교육 수에 따라 크기 배율) · app.js · Relay.gs 같은 함수
- *  o = { esc, w, date, store, company, teacher, type, hire, etc, special, rulesN, signAt, cert(html), certAt, outAt } */
-function eduOneHtml(o){const e=o.esc,w=o.w,SPD=o.special||{};
- const sp=(Array.isArray(w.special)?w.special:[]).map(Number).filter(k=>SPD[k]),hrs=sp.length?2:1,tm='08:00 ~ '+(hrs===2?'10:00':'09:00')+' ('+hrs+'시간)';
- const K=FKs(fitK_('edu'+Math.min(sp.length,2),[1.28,1.13,1.06][Math.min(sp.length,2)])),{T,B,H,BD,RED,LB,LR,GRN,GRY,R,V}=K;
- const list=(l,fs)=>{let h='<table style="'+T+'">';for(let i=0;i<l.length;i+=2)h+='<tr>'+[i,i+1].map(j=>j<l.length?'<td style="border:'+BD+';padding:'+V(3)+'px 6px;font-size:'+R(fs)+'px;width:50%;vertical-align:top;line-height:1.35"><b style="color:'+RED+'">'+(j+1)+'.</b> '+e(l[j])+'</td>':'<td style="border:'+BD+';width:50%"></td>').join('')+'</tr>';return h+'</table>'};
- const kinds=[['신규채용 시',true],['작업내용 변경 시',false],['특별안전보건교육',sp.length>0],['일반 안전보건교육',false],['기타',false]];
- const ck=k=>k[1]?'<b style="color:'+RED+'">☑ '+k[0]+'</b>':'<span style="color:'+GRY+'">☐ '+k[0]+'</span>';
- const boxH=V(sp.length>1?150:sp.length?185:235);
- const sign='<div style="font-size:'+R(10)+'px;color:'+GRY+';margin-bottom:'+V(6)+'px">성명 <b style="color:#111827;font-size:'+R(13)+'px">'+e(w.name)+'</b></div><div style="padding:'+V(8)+'px 0">'+K.nm(e(w.name),'서명',38)+'</div>'
-  +'<div style="color:'+GRN+';font-weight:bold;font-size:'+R(10.5)+'px;margin-top:'+V(8)+'px">✔ '+(w.method==='SELF'?'본인 계정으로 서명':w.confirmBy?e(w.confirmBy)+' 확인':'현장책임자 '+e(o.teacher||'')+' 확인')+'</div>'
-  +(o.signAt?'<div style="color:#374151;font-size:'+R(10)+'px;margin-top:2px">'+e(o.signAt)+'</div>':'')+(w.method==='SELF'&&w.email?'<div style="color:#374151;font-size:'+R(9.5)+'px;margin-top:2px;word-break:break-all">'+e(w.email)+'</div>':'')/* F1.9z 본인 계정 = Google 계정 */+'<div style="font-size:'+R(9.5)+'px;color:#4B5563;margin-top:'+V(10)+'px">위 교육을 받았고 안전 수칙 준수를 서약합니다.</div>';
- const cert=o.cert?String(o.cert).replace(/max-height:\s*\d+px/g,'max-height:'+Math.round(boxH-24)+'px')+'<div style="font-size:'+R(9.5)+'px;color:'+GRN+';font-weight:bold;margin-top:3px">✔ 제출'+(o.certAt?' · '+e(o.certAt):'')+'</div>'
-  :w.certDoc?'<div style="color:#4B5563">이수증 파일 있음 (원본 파일 참조)</div>':(w.role==='보통인부'||w.role==='현장관리자')?'<div style="color:#4B5563">해당 없음 (오픈지원 · 보통인부)</div>':'<div style="color:'+RED+';font-weight:bold;font-size:'+R(13)+'px">✖ 미제출</div>';
- return K.head('안전보건 교육일지','','<b>'+K.day(o.date)+'</b>')
-  +K.sec(1,'교육 개요')
-  +'<table style="'+T+'"><tr><td style="'+H+';width:15%">교육명칭</td><td style="'+B+';width:35%"><b>'+e(o.type)+(sp.length?' + 특별교육':'')+'</b></td><td style="'+H+';width:15%">교육시간</td><td style="'+B+';background:'+LR+'"><b style="color:'+RED+'">'+tm+'</b></td></tr>'
-  +'<tr><td style="'+H+'">교육구분</td><td style="'+B+';line-height:1.6" colspan="3">'+kinds.map(ck).join('&nbsp;&nbsp;&nbsp;')+'</td></tr>'
-  +'<tr><td style="'+H+'">교육장소</td><td style="'+B+'">다이소 '+e(o.store)+' 현장</td><td style="'+H+'">교육강사</td><td style="'+B+'">'+e(o.company)+(o.teacher?' · '+e(o.teacher):'')+' (현장책임자)</td></tr>'
-  +'<tr><td style="'+H+'">교육방법</td><td style="'+B+'" colspan="3">현장 교육 후 서약 (본인 계정 QR 서명 또는 현장책임자 확인)</td></tr>'
-  +'<tr><td style="'+H+'">교육과목</td><td style="'+B+'" colspan="3">산업안전보건법 시행규칙 [별표 5] 채용 시 교육'+(sp.length?' · 특별교육 '+sp.map(k=>k+'번').join('·'):'')+' · 현장 작업 안전 수칙</td></tr></table>'
-  +K.sec(2,'교육대상자')
-  +K.grid([['소속','28%'],['직책','18%'],['성명','18%'],['공종','']],[[{h:e(o.company),c:1},{h:e(w.role||'-'),c:1},{h:'<b>'+e(w.name)+'</b>',c:1,st:'font-size:'+R(12)+'px'},{h:e(w.trade||'-'),c:1}]])
-  +K.sec(3,'교육내용 · 채용 시 교육','[별표 5] 다목 · 1시간')
-  +list(o.hire.concat([o.etc]),sp.length?9.5:10)
-  +'<table style="'+T+'"><tr><td style="border:'+BD+';border-top:0;padding:'+V(3)+'px 7px;font-size:'+R(9.5)+'px;color:#374151;background:'+LB+'">※ 현장 작업 안전 수칙 <b style="color:'+RED+'">'+o.rulesN+'개</b> 항목 교육·서약 포함</td></tr></table>'
-  +(sp.length?K.sec(4,'특별교육','[별표 5] 라목 · 1시간 추가')
-   +sp.map(k=>'<table style="'+T+'"><tr><td style="border:'+BD+';border-bottom:0;background:'+LR+';padding:'+V(3)+'px 7px;font-size:'+R(10.5)+'px"><b style="color:'+RED+'">'+k+'. '+e(SPD[k][2]||SPD[k][0])+'</b>'+(SPD[k][2]?' <span style="font-size:'+R(9)+'px;color:#4B5563">'+e(SPD[k][0])+'</span>':'')+'</td></tr></table>'+list(SPD[k][1].concat([o.etc]),9.5)).join(''):'')
-  +K.sec(sp.length?5:4,'교육 확인')
-  +'<table style="'+T+'"><tr><td style="'+H+';width:50%">① 교육 확인 서명</td><td style="'+H+'">② 건설업 기초안전보건교육 이수증</td></tr>'
-  +'<tr><td style="'+B+';text-align:center;height:'+boxH+'px">'+sign+'</td><td style="'+B+';text-align:center;height:'+boxH+'px">'+cert+'</td></tr></table>'
-  +K.foot('',o.outAt?e(o.outAt):'');}  /* F1.9z 하단 안내 문구 뺌 */
+  /* ---------- 직원 · 권한 ---------- */
+  async function seedStaffIfEmpty(a) {
+    if (!isMaster(a)) return;
+    const s = await db.collection('STAFF').limit(1).get();
+    if (!s.empty) return;
+    const b = db.batch();
+    STAFF_SEED.forEach(([name, ce, le]) => b.set(db.collection('STAFF').doc(le), { name, dept: '안전보건팀', role: 'SAFETY', companyEmail: ce, loginEmail: le, active: 'Y', createdBy: 'SYSTEM', createdAt: now() }));
+    await b.commit();
+  }
+  /** 직원 정보 (협력업체로 접속하면 null) — 기존 staffOf_와 같음 */
+  async function staffOf(a, memo) {
+    if (a.mode === 'VENDOR') return null;
+    if (memo && 'staff' in memo) return memo.staff;
+    await loadMasters();  // F1.9t 체크로 받은 마스터
+    let s = null;
+    try { const d = await db.collection('STAFF').doc(a.email).get(); if (d.exists) s = d.data(); }
+    catch (e) { if (e.code !== 'permission-denied') throw e; }
+    let r;
+    if (isMaster(a)) { await seedStaffIfEmpty(a); r = { ...(s || { name: '마스터', dept: '시스템 관리', companyEmail: '', loginEmail: a.email, active: 'Y' }), role: 'SAFETY', master: true }; }
+    else r = s && String(s.active).trim().toUpperCase() !== 'N' ? s : null;
+    if (memo) memo.staff = r;
+    return r;
+  }
+  const isSafety = async (a, memo) => (await staffOf(a, memo))?.role === 'SAFETY';
 
-/** F1.9u 작업 안전 수칙 (매일 1장) · 작업자 서명 2열 (20명까지 1장) · app.js · Relay.gs 같은 함수
- *  o = { esc, date, store, title, siteManager, rules, pledge, ws:[{name,trade,sign}], savedAt, outAt } */
-function rulesOneHtml(o){const e=o.esc,ws=o.ws||[];
- const slots=Math.max(20,ws.length+ws.length%2),rows=slots/2;
- const K=FKs(fitK_('rules',rows<=10?1.12:rows<=12?1:.92)),{T,B,RED,LR,GRN,GRY,R,V}=K;
- const c=i=>{const w=ws[i];return [{h:i+1,c:1,col:GRY,st:'height:'+V(19)+'px'},w?e(w.trade||''):'',w?'<b>'+e(w.name)+'</b> <span style="font-size:'+R(9.5)+'px;color:'+GRN+'">'+(w.sign==='SELF'?'✔ 본인 계정 서명':'✔ 소장 확인')+'</span>'+(w.sign==='SELF'&&w.email?'<div style="font-size:'+R(8.5)+'px;color:'+GRY+';word-break:break-all;line-height:1.2">'+e(w.email)+'</div>':''):'']};  /* F1.9z 본인 계정 서명 = Google 계정 */
- return K.head('작업 안전 수칙','매일 1회 · 작업 전 교육 · 서약','<b>'+K.day(o.date)+'</b>')
-  +K.sec(1,'현장 정보')+K.kv([['현장명','다이소 '+e(o.store)+(o.title?' <span style="font-size:'+R(9.5)+'px;color:'+GRY+'">('+e(o.title)+')</span>':''),'작업일',K.day(o.date)],['현장책임자',e(o.siteManager||'-'),'작업자',ws.length+'명']])
-  +K.sec(2,'작업 안전 수칙',o.rules.length+'개 항목')
-  +'<table style="'+T+'">'+o.rules.map((r,i)=>'<tr><td style="'+B+';width:5%;text-align:center;font-weight:bold;color:'+RED+';background:'+LR+'">'+(i+1)+'</td><td style="'+B+';line-height:1.45">'+e(r)+'</td></tr>').join('')+'</table>'
-  +K.box('<b>'+e(o.pledge)+'</b>',LR,RED)
-  +K.sec(3,'작업자 확인 서명','작업자 '+ws.length+'명')
-  +K.grid([['No','5%','c'],['공정명','13%'],['이름 · 서명','32%'],['No','5%','c'],['공정명','13%'],['이름 · 서명','32%']],Array.from({length:rows},(_,r)=>c(r).concat(c(r+rows))))
-  +K.foot('',o.outAt?e(o.outAt):'');}  /* F1.9z 하단 안내 문구 · 저장 시각 뺌 */
-/* ===== F1.9u 공통 디자인 끝 ===== */
+  /* ---------- 중계 Apps Script (파일 · 메일 · 승인처럼 업체가 직접 쓰면 안 되는 일) ---------- */
+  const relayUrl = () => String(window.APP_CONFIG && window.APP_CONFIG.APPS_SCRIPT_URL || '').trim();
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  /** 중계 서버에 요청. retry=true면 연결 실패 시 2번까지 다시 보냄 (조회·내려받기만) */
+  async function relay(op, body, retry, waitMs) {
+    const url = relayUrl();
+    if (!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(url)) fail('config.js에 중계 Apps Script 주소(/exec)가 아직 등록되지 않았습니다.');
+    await ready; if (!USER) fail('로그인이 만료되었습니다. 다시 로그인해 주세요.');
+    const idToken = await USER.getIdToken();
+    for (let i = 0; ; i++) {
+      const ctl = typeof AbortController === 'function' ? new AbortController() : null, t = ctl && setTimeout(() => ctl.abort(), waitMs || 90000);
+      let o;
+      try {
+        // text/plain으로 보내야 Apps Script가 추가 확인 요청(CORS) 없이 받음
+        const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ ...body, op, idToken, mode: getMode() }), signal: ctl ? ctl.signal : undefined, redirect: 'follow' });
+        o = await r.json().catch(() => null);
+        if (!o) throw Error('중계 서버 응답을 읽을 수 없습니다. (배포 설정의 액세스가 "모든 사용자"인지 확인)');
+      } catch (e) {
+        if (retry && i < 2) { await sleep(800 * (i + 1)); continue; }
+        if (e && e.name === 'AbortError') fail('중계 서버 응답이 늦습니다. 화면을 새로 고쳐 처리됐는지 확인해 주세요.');
+        if (e instanceof TypeError) fail('중계 서버에 연결하지 못했습니다. 인터넷 연결을 확인한 뒤 화면을 새로 고쳐 처리됐는지 확인해 주세요.');
+        throw e;
+      } finally { if (t) clearTimeout(t); }
+      if (!o.ok) fail(o.error || '중계 서버 오류');
+      return o.data;
+    }
+  }
 
-const kstFull=t=>{try{return new Date(t).toLocaleString('sv-SE',{timeZone:'Asia/Seoul'}).slice(0,16)}catch(e){return ''}};
-/** F1.8v 교육일지 보기 (1명당 1장 · 최종 ZIP의 교육일지 PDF와 같은 내용) · 이수증은 열고 나서 불러옴 */
-function showEduSheet(wid){const v=vjob,E=v.edu,w=(v.workers||[]).find(x=>x.id===wid);if(!E||!w)return;clearInterval(wkTimer);
- $('execArea').innerHTML='<div class="card row" style="justify-content:space-between"><button class="button ghost" type="button" onclick="renderVJob()">‹ 이전으로</button><button class="button" type="button" onclick="printA4(\'a4Sheet\',\''+escapeText(w.name)+' 교육일지\')">🖨 인쇄 · PDF</button></div><div class="card sheet" style="overflow-x:auto"><div id="a4Sheet">'
-  +eduOneHtml({esc:escapeText,w,date:kstDay(w.eduAt),store:v.job.storeName,company:v.company.company,teacher:v.siteManager,type:E.type,hire:E.hire,etc:E.etc,special:E.special,rulesN:v.rules.length,signAt:kstFull(w.eduAt),cert:w.certDoc?'<div id="esCert" class="muted">이수증 불러오는 중…</div>':'',certAt:w.certAt?kstFull(w.certAt):'',outAt:kstFull(new Date())})+'</div></div>';window.scrollTo(0,0);
- if(w.certDoc){const put=f=>{const el=$('esCert');if(!el)return;el.outerHTML=/^image\//.test(f.mime||'')?'<img src="data:'+escapeText(f.mime)+';base64,'+f.data+'" alt="'+escapeText(w.name)+' 기초안전보건교육 이수증" style="max-width:100%;max-height:230px">':'<button class="button ghost" type="button" onclick="certView(\''+escapeText(w.certDoc)+'\',\''+escapeText(w.name)+'\')">📄 이수증 PDF 열기</button>'};
-  if(certMem[w.certDoc])put(certMem[w.certDoc]);else callQuiet('viewCert',w.certDoc).then(f=>{certMem[w.certDoc]=f;put(f)}).catch(()=>{const el=$('esCert');if(el)el.textContent='이수증을 불러오지 못했습니다'})}}
-/** F1.8a 오늘 현장 업무 순서 안내 (하루 한 번 자동 · ❔ 버튼으로 다시) */
-function dayGuide(force){const v=vjob;if(!v||v.jobStatus==='ENDED')return;const key='dayGuide:'+v.today;let seen=false;try{seen=localStorage.getItem(key)==='1'}catch(e){}
- if(!force&&(seen||$('modal').style.display==='flex'||(typeof tour!=='undefined'&&tour)||vmenu!=='today'))return;try{localStorage.setItem(key,'1')}catch(e){}
- startTour('day')}  // F1.8a 화면 따라가기 가이드 (guide.js)
-/** F1.8a 오늘 작업 인원 체크 (허가서·점검 화면 공용) · 기본: 오늘 저장한 인원 → 최근 출근 인원 → 전원 */
-function crewPickHtml(v,pre,picked){const sel=picked||new Set(v.crewDefault||[]);
- if(!v.workers.length)return '<div class="note">등록된 작업자가 없습니다. ① 신규자 등록을 먼저 하면 여기에 나옵니다. (없어도 제출은 됩니다)</div>';
- return '<div class="row" style="justify-content:space-between;margin:4px 0"><span class="muted">오늘 일하는 사람 체크 = 오늘 작업 안전 수칙 서명</span><button class="linkbtn" type="button" onclick="document.querySelectorAll(\'.'+pre+'ck\').forEach(x=>x.checked=true)">전체 선택</button></div>'
-  +v.workers.map(w=>'<label class="wk"><input type="checkbox" class="'+pre+'ck" id="'+pre+'_'+escapeText(w.id)+'" '+(sel.has(w.id)?'checked':'')+'><span><b>'+escapeText(w.name)+'</b> <span class="muted">'+escapeText(w.role)+(w.trade?' · '+escapeText(w.trade):'')+'</span></span></label>').join('')}
-function crewPicked(v,pre){if(!v||!$(pre+'_'+((v.workers[0]||{}).id||'x')))return null;return new Set(v.workers.filter(w=>$(pre+'_'+w.id)&&$(pre+'_'+w.id).checked).map(w=>w.id))}
-function drillHtml(v){return '<div class="card"><div class="vh-top"><h2 style="margin:0">비상대응훈련</h2><span class="pill todo">공사당 1회 · 미완료</span></div><p class="desc">훈련을 실시한 뒤 결과를 한 번 등록하면 <b>완료</b>로 바뀝니다.</p><div class="note">등록 화면은 다음 단계에서 열립니다.</div></div>'}
-function toggleQr(){showQr=!showQr;renderVJob()}
-function toggleAdd(){showAdd=!showAdd;renderVJob();if(showAdd)setTimeout(()=>$('f_wName')?.focus(),50)}
-function checkAllCrew(){const l=[...document.querySelectorAll('.crewck')],all=l.every(x=>x.checked);l.forEach(x=>x.checked=!all)}
-async function renewQr(){if(!confirm('QR을 새로 만들면 이전 QR·링크는 더 이상 쓸 수 없습니다. 새로 만들까요?'))return;try{vjob=await call('renewWorkerQr',vjob.job.id);renderVJob();msg('새 QR을 만들었습니다.')}catch(e){}}
-/* v5.24: 서버 등록 성공 영수증을 받으면 즉시 화면에 반영.
- * 전체 공사 조회는 백그라운드 수행해 느린 조회가 등록 확인을 가로막지 않게 한다. */
-let workerSubmitting=false,workerPending=null;
-function workerApplyReceipt(r,d){
- if(!vjob||!r||!r.saved||!r.workerId||vjob.job.id!==r.jobId)return false;
- const w={id:r.workerId,name:r.name||d.name,role:r.role||d.role,trade:r.trade||d.trade,tradeKey:r.tradeKey||'',special:r.special||[],eduHours:r.eduHours||1,method:'MANUAL',eduAt:new Date().toISOString(),email:''};
- if(!vjob.workers.some(x=>x.id===w.id))vjob.workers.push(w);
- if(vjob.todayCrew&&Array.isArray(vjob.todayCrew.workers)){
-  if(!vjob.todayCrew.workers.some(x=>x.id===w.id))vjob.todayCrew.workers.push({...w,sign:'MANAGER'});
-  vjob.todayCrew.count=vjob.todayCrew.workers.length;
- }else{
-  vjob.todayCrew={date:r.date,count:1,workers:[{...w,sign:'MANAGER'}],siteManager:vjob.siteManager||'',savedAt:new Date().toISOString()};
- }
- return true;
-}
-async function addWorkerForm(e){
- e.preventDefault();if(workerSubmitting)return;
- const d={name:value('wName'),role:$('f_wRole').value,trade:'',tradeKey:$('f_wTrade')?$('f_wTrade').value:'',agree:$('wAgree').checked};
- if(!d.name){markMissing([{key:'wName'}]);return}
- if(!d.agree){msg('교육 실시·서약 확인에 체크해 주세요.');return}
- /* F1.8b 이수증: 있으면 등록 직후 올림 · 없으면 확인 후 '미제출'로 등록 */
- const cf=vjob.open?null:certPick.wCert;let cert=null;  // F2.1 오픈지원 = 이수증 없음
- if(vjob.open){}else if(cf){try{cert=await readFile(cf,PHOTO_CERT)}catch(x){showErr('이수증 사진을 읽지 못했습니다',x);return}}
- else if(!await askOk('이수증 없이 등록할까요?',d.name+' 님의 건설업 기초안전보건교육 이수증이 없으면 "미제출"로 등록됩니다.\n교육 없이 투입된 것으로 보고 업체 평가에 반영됩니다. (나중에 작업자 카드에서 올릴 수 있습니다)','이수증 없이 등록'))return;
- const jobId=vjob.job.id,mark=[jobId,d.name,d.role,d.tradeKey].join('|');
- if(!workerPending||workerPending.mark!==mark){
-  const id=(globalThis.crypto&&crypto.randomUUID?crypto.randomUUID().replace(/-/g,''):Array.from({length:32},()=>Math.floor(Math.random()*16).toString(16)).join(''));
-  workerPending={mark,id};
- }
- workerSubmitting=true;
- const btn=e.target?.querySelector('button[type=submit]');if(btn){btn.disabled=true;btn.textContent='등록 처리 중…'}
- try{
-  /* F1.8p 체크리스트 한 번: 작업자 등록 → 이수증 올리기 (예전: 로딩 두 번) */
-  let r=null,vc=null,certErr=null;
-  try{await subRun('작업자 등록',[['작업자 등록 · '+d.name,async()=>{r=await api('addWorker',[jobId,d,workerPending.id]);if(!r?.saved||!r.workerId)throw Error('등록 결과를 확인할 수 없습니다.')}],cert&&['이수증 올리기',async()=>{vc=await api('uploadWorkerCert',[jobId,r.workerId,cert])}]])}
-  catch(x){if(!(r&&r.saved&&r.workerId))throw x;certErr=x}
-  workerPending=null;certPick.wCert=null;
-  workerApplyReceipt(r,d);showAdd=false;
-  if(vc){vjob=vc;renderVJob();msg(d.name+' 님 등록 · 이수증까지 올렸습니다.');return}
-  renderVJob();msg(d.name+' 님이 등록됐습니다.');
-  if(certErr)showErr('등록은 됐지만 이수증을 올리지 못했습니다',{message:(certErr.message||'')+'\n작업자 카드의 [이수증 올리기]로 다시 올려 주세요.'});
-  // 전체 자료 조회는 화면을 가리지 않으며 실패하더라도 방금 완료된 등록을 실패로 처리하지 않는다.
-  callQuiet('vendorJob',jobId).then(latest=>{
-   if(vjob&&vjob.job.id===jobId&&latest){vjob=latest;renderVJob()}
-  }).catch(()=>{});
- }catch(err){
-  // 네트워크 장애 시 이미 서버에 저장됐을 수 있다. 같은 요청 ID로만 다시 시도할 수 있게 유지.
-  msg('등록 결과를 확인하지 못했습니다. 같은 작업자를 다시 추가하기 전에 명단을 확인해 주세요.');
-  // 재확인은 화면을 막지 않음. 등록 ID가 확인될 때만 완료 처리.
-  const rid='WK-'+workerPending.id.slice(0,16).toUpperCase();
-  callQuiet('vendorJob',jobId).then(latest=>{
-   if(!latest||!vjob||vjob.job.id!==jobId)return;
-   vjob=latest;
-   if((latest.workers||[]).some(w=>w.id===rid)){
-    workerPending=null;showAdd=false;renderVJob();msg(d.name+' 님이 등록된 것을 확인했습니다.');
-   }
-  }).catch(()=>{});
- }finally{workerSubmitting=false;if(btn&&btn.isConnected){btn.disabled=false;btn.textContent='작업자 등록'}}
-}
-async function dropWorker(id,name){if(!confirm(name+' 님을 작업자 명단에서 뺄까요? (지난 기록은 남습니다)'))return;try{vjob=await call('removeWorker',vjob.job.id,id);renderVJob()}catch(e){}}
-async function saveCrewForm(e){e.preventDefault();const ids=[...document.querySelectorAll('.crewck:checked')].map(x=>x.value),sm=value('crewSm');if(!sm){markMissing([{key:'crewSm'}]);return}if(!ids.length){alert('오늘 일하는 사람을 한 명 이상 체크해 주세요.');return}if(!confirm('오늘 작업 인원 '+ids.length+'명을 저장할까요?\n저장하면 오늘 작업 안전 수칙 서명으로 기록됩니다.'))return;try{vjob=await call('saveCrew',vjob.job.id,ids,sm);renderVJob();msg('오늘 작업 인원 '+ids.length+'명을 저장했습니다.');$('crewCard')?.scrollIntoView({block:'start'})}catch(err){}}
-/** F1.9u 작업 안전 수칙 (날짜별 A4 1장 · 최종 ZIP의 PDF와 같은 모양) */
-function showRules(date){const v=vjob,h=v.history.find(x=>x.date===date)||v.todayCrew;if(!h)return;clearInterval(wkTimer);
- $('execArea').innerHTML='<div class="card row" style="justify-content:space-between"><button class="button ghost" type="button" onclick="renderVJob()">‹ 이전으로</button><button class="button" type="button" onclick="printA4(\'a4Sheet\',\'작업 안전 수칙 '+escapeText(date)+'\')">🖨 인쇄 · PDF</button></div><div class="card sheet" style="overflow-x:auto"><div id="a4Sheet">'
-  +rulesOneHtml({esc:escapeText,date,store:v.job.storeName,title:v.job.title,siteManager:h.siteManager,rules:v.rules,pledge:v.pledge,ws:(h.workers||[]).map(w=>{const x=(v.workers||[]).find(y=>y.id===w.id);return {name:w.name,trade:w.trade,sign:w.sign,email:w.sign==='SELF'&&x&&x.method==='SELF'?x.email||'':''}}),savedAt:h.savedAt?kstFull(h.savedAt):'',outAt:kstFull(new Date())})+'</div></div>';window.scrollTo(0,0)}
-/** F1.9u A4 인쇄 · PDF 저장: 화면의 양식만 새 창에 열어 인쇄 (PC: 「PDF로 저장」 · 휴대폰: 공유/인쇄 메뉴) · 배경색 그대로 */
-function printA4(id,title){const el=$(id);if(!el)return;const w=window.open('','_blank');if(!w){alert('팝업이 막혀 있습니다. 브라우저에서 팝업을 허용해 주세요.');return}
- w.document.write('<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+escapeText(title||'양식')+'</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nanum+Brush+Script&display=swap"><style>@page{size:A4;margin:11mm 12mm}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}body{margin:0;font-family:"Malgun Gothic","맑은 고딕",sans-serif;color:#111827}@media screen{body{max-width:186mm;margin:10px auto;padding:0 8px}}</style></head><body>'+el.innerHTML+'</body></html>');
- w.document.close();w.focus();const go=()=>{try{w.print()}catch(e){}};try{w.document.fonts.ready.then(()=>setTimeout(go,300))}catch(e){setTimeout(go,800)}}
-/* ---------- v3.1 작업자 등록 QR로 들어온 계정 ---------- */
-async function wkCheckIn(info){const token=LINK_REVIEW.slice(4);try{const r=await call('workerCheckIn',token,info||null);if(r&&r.email&&state){state.email=r.email;$('identity').textContent='접속 계정: '+r.email}showWk(r)}catch(e){$('my').innerHTML='<div class="card"><h2>작업자 등록 실패</h2><p class="desc">'+escapeText(e.message||'')+'</p></div>'}$('pageTitle').textContent='작업자 등록';window.scrollTo(0,0)}
-function showWk(r){window.__wkCo=String((r&&r.company)||'');window.__wkOpen=!!(r&&r.open);/* F2.1 오픈지원 = 이수증 없음 *//* F1.9y 이수증 스탬프 업체명 (작업자 본인 휴대폰) */const head='<div class="card"><small class="muted">'+escapeText(r.store)+' · '+escapeText(r.company)+' ('+escapeText(r.trade)+')</small><h2>작업자 등록 · 채용 시 교육</h2>';let body='';
- if(r.state==='DONE')body='<div style="text-align:center;padding:10px 0"><div style="font-size:44px;color:var(--ok)">✔</div><h2 style="color:var(--ok)">'+(r.again?'이미 등록되어 있습니다':'등록 완료')+'</h2><p class="desc"><b>'+escapeText(r.name)+'</b> · '+escapeText(r.role)+' · '+escapeText(r.company)+'<br>교육 확인 '+escapeText(fmtTime(r.eduAt))+' · 계정 '+escapeText(state.email)+(r.again||r.open?'':'<br>기초안전보건교육 이수증: '+(r.cert?'<b style="color:var(--ok)">✔ 제출</b>':'<b class="req">미제출</b> (소장님께 이수증을 보여 주세요)'))+'</p><div class="note" style="text-align:left">이 공사에서는 다시 QR을 찍지 않아도 됩니다.<br>내일부터는 소장님이 출근 인원을 체크합니다.</div></div>';
- else body='<p class="desc">로그인 계정 <b>'+escapeText(state.email)+'</b> 으로 등록합니다. <b>본인 계정</b>인지 확인해 주세요. 이 공사에서 처음 한 번만 하면 됩니다. <button class="linkbtn" type="button" onclick="relogin()">다른 계정으로 로그인</button></p><form onsubmit="sendWk(event)">'+input('kName','이름','','text',false,'예: 홍길동')+'<div class="field"><label for="f_kRole">구분</label><select id="f_kRole"'+(r.open?' disabled':'')+'>'+r.roles.map(x=>'<option '+(x==='근로자'?'selected':'')+'>'+escapeText(x)+'</option>').join('')+'</select></div>'
-  /* F2.1 오픈지원: 보통인부 고정 · 특별교육 공종·이수증 칸 없음 */+(r.open?'':tradeSel('f_kTrade',r.trades)+certFieldHtml('kCert'))
-  +'<div class="stage">작업 안전 수칙 (끝까지 읽어 주세요)</div><ol class="rules boxed">'+r.rules.map(x=>'<li>'+escapeText(x)+'</li>').join('')+'</ol><p class="pledge">'+escapeText(r.pledge)+'</p><label class="wk"><input type="checkbox" id="kAgree"><span>위 작업 안전 수칙을 교육받았고, 준수할 것을 서약합니다.</span></label><p class="muted" style="margin:8px 0 0">서명하면 이 Google 계정(<b>'+escapeText((state&&state.email)||'')+'</b>)이 교육일지 · 작업 안전 수칙 서명 기록으로 서류에 남습니다.</p><button class="button" style="width:100%;margin-top:10px" type="submit">교육 확인 및 서명</button></form>';
- $('my').innerHTML=head+body+'</div>'}
-async function sendWk(e){e.preventDefault();const info={name:value('kName'),role:$('f_kRole').value,tradeKey:$('f_kTrade')?$('f_kTrade').value:'',agree:$('kAgree').checked};if(!info.name){markMissing([{key:'kName'}]);return}if(!info.agree){popup('확인해 주세요','작업 안전 수칙 교육 확인·서약에 체크해 주세요.','확인');return}
- // F1.8b 기초안전보건교육 이수증 (없으면 '미제출'로 등록 · 소장님이 나중에 올릴 수 있음)
- const cf=window.__wkOpen?null:certPick.kCert;if(window.__wkOpen){}else if(cf){try{info.cert=await readFile(cf,PHOTO_CERT)}catch(x){showErr('이수증 사진을 읽지 못했습니다',x);return}}
- else if(!await askOk('이수증 없이 등록할까요?','건설업 기초안전보건교육 이수증이 없으면 "미제출"로 등록됩니다.\n교육을 받지 않고 투입된 것으로 보고 업체 평가에 반영됩니다.\n\n이수증을 가져왔으면 [취소]를 누르고 사진을 찍어 주세요.','이수증 없이 등록'))return;
- await wkCheckIn(info);certPick.kCert=null}
-/* F1.8c 사진 넣기: 아래에서 올라오는 창 [📷 촬영] [🖼 앨범·파일] (뒤 화면은 어둡게) → 고른 파일을 cb로 */
-function pickPhoto(cb,opt){opt=opt||{};closePick();
- if(!$('pickCss')){const s=document.createElement('style');s.id='pickCss';s.textContent='@keyframes pickUp{from{transform:translateY(100%)}to{transform:none}}#pickSheet .pk{animation:pickUp .22s ease-out}@media (prefers-reduced-motion:reduce){#pickSheet .pk{animation:none}}';document.head.appendChild(s)}
- const bg=document.createElement('div');bg.id='pickSheet';bg.setAttribute('role','dialog');bg.setAttribute('aria-modal','true');bg.setAttribute('aria-label',opt.title||'사진 넣기');
- bg.style.cssText='position:fixed;inset:0;z-index:66;background:rgba(15,23,42,.55);display:flex;align-items:flex-end;justify-content:center';
- bg.innerHTML='<div class="pk" style="background:#fff;width:100%;max-width:520px;border-radius:16px 16px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom))"><b style="display:block;margin-bottom:12px;font-size:15px">'+escapeText(opt.title||'사진 넣기')+'</b>'
-  +'<div style="display:grid;gap:8px"><button class="button" type="button" id="pkCam">📷 촬영</button><button class="button ghost" type="button" id="pkGal">🖼 앨범 · 파일</button><button class="button ghost" type="button" id="pkNo">취소</button></div></div>';
- document.body.appendChild(bg);
- const run=cap=>{const i=document.createElement('input');i.type='file';i.accept=opt.accept||'image/*';i.dataset.gal='1';if(cap)i.setAttribute('capture','environment');i.style.display='none';
-  i.onchange=()=>{const f=i.files&&i.files[0];i.remove();if(f)cb(f)};document.body.appendChild(i);closePick();i.click()};
- $('pkCam').onclick=()=>run(true);$('pkGal').onclick=()=>run(false);$('pkNo').onclick=closePick;bg.onclick=e=>{if(e.target===bg)closePick()};bg.onkeydown=e=>{if(e.key==='Escape')closePick()};setTimeout(()=>$('pkCam')?.focus(),30)}
-function closePick(){$('pickSheet')?.remove()}
-/** F1.8b·c 이수증 사진 칸 (본인 등록·소장 직접 등록 공용): 제목 | 📷 버튼 → 촬영·앨범 창 · 고른 사진은 certPick에 보관 */
-const certPick={};
-function certFieldHtml(id){return '<div class="field" id="'+id+'Box"><div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:nowrap"><span style="font-size:14px"><b>건설업 기초안전보건교육 이수증 사진</b> <span class="req">*</span></span>'
- +'<button class="button ghost" type="button" id="'+id+'Btn" style="padding:8px 14px;font-size:18px;flex:none" onclick="pickCert(\''+id+'\')" aria-label="이수증 사진 넣기 (촬영 또는 앨범)">📷</button></div>'
- +'<div id="'+id+'Prev" style="font-size:12px;margin-top:4px">'+certPrev(id)+'</div><p class="muted" style="font-size:11px;margin:4px 0 0">이름·생년월일은 교육 이수 확인에만 쓰이며 다이소 담당자와 소속 업체만 봅니다.</p></div>'}
-function certPrev(id){const f=certPick[id];return f?'<span style="color:var(--ok)">✔ '+escapeText(f.name||'사진')+'</span> <button class="linkbtn" type="button" onclick="certDrop(\''+id+'\')">빼기</button>':'<span class="muted">없으면 "미제출"로 등록되고 업체 평가에 반영됩니다.</span>'}
-function certDrop(id){certPick[id]=null;const p=$(id+'Prev');if(p)p.innerHTML=certPrev(id)}
-function pickCert(id){pickPhoto(f=>{certPick[id]=f;const p=$(id+'Prev');if(p)p.innerHTML=certPrev(id)},{title:'이수증 사진 넣기',accept:'image/*,.pdf'})}
-/** F1.8b [업체] 작업자 이수증 올리기 (오늘 등록 표 · 신규교육 현황) */
-function pickCertFor(wid){const w=vjob&&vjob.workers.find(x=>x.id===wid);pickPhoto(f=>uploadCertFile(wid,f),{title:(w?w.name+' 님 ':'')+'이수증 사진 넣기',accept:'image/*,.pdf'})}
-async function uploadCertFile(wid,f0){const w=vjob.workers.find(x=>x.id===wid);
- try{const f=await readFile(f0,PHOTO_CERT);vjob=await call('uploadWorkerCert',vjob.job.id,wid,f);const y=window.scrollY;renderVJob();window.scrollTo(0,y);msg((w?w.name+' 님 ':'')+'이수증을 올렸습니다.')}catch(e){showErr('이수증을 올리지 못했습니다',e)}}
-async function uploadCertFor(wid){const inp=$('wc_'+wid),f0=inp&&inp.files[0];if(f0)await uploadCertFile(wid,f0)}
-/** F1.8c 잘못 누른 것 되돌리기 */
-async function undoWorker(wid){const w=vjob.workers.find(x=>x.id===wid);if(!w)return;
- if(!await askOk('등록 취소',w.name+' 님 등록을 취소할까요?\n신규자 교육일지와 오늘 작업 안전 수칙 서명에서도 빠집니다. (잘못 등록했을 때만)','등록 취소'))return;
- try{vjob=await call('undoWorker',vjob.job.id,wid);const y=window.scrollY;renderVJob();window.scrollTo(0,y);msg(w.name+' 님 등록을 취소했습니다.')}catch(e){showErr('등록을 취소하지 못했습니다',e)}}
-function clearNoNew(){try{localStorage.removeItem(noNewKey(vjob))}catch(e){}const y=window.scrollY;renderVJob();window.scrollTo(0,y);msg('[오늘 신규자 없음]을 취소했습니다.')}
-async function cancelInspToday(){if(!await askOk('순회점검 제출 취소','오늘 낸 순회점검을 취소하고 다시 작성할까요?\n오늘 점검일지와 지적사항이 지워집니다. (도급인 확인 전에만)','제출 취소'))return;
- try{vjob=await call('cancelInspection',vjob.job.id);renderVJob();$('inspCard')?.scrollIntoView({block:'start'});msg('순회점검 제출을 취소했습니다. 다시 작성해 주세요.')}catch(e){showErr('제출을 취소하지 못했습니다',e)}}
-/* ---------- v2.8 직원 관리 (안전보건팀) ---------- */
-let staffData=null;
-/* F1.9g 직원 관리 → 조직·구성원 관리 (org.js) */
-async function loadStaff(){orgLoad()}
-/** 휴대폰 사진(1.5MB 초과)은 긴 변 2000px JPEG로 줄여서 올림 */
-/* F1.6b 일부 휴대폰 카메라는 찍은 사진의 파일 종류(image/jpeg)를 비워서 줌 → 예전에는 사진으로 못 알아봐 "사진만 올릴 수 있습니다"로 막힘
- *  → 종류가 비었거나 이름이 사진이면 일단 사진으로 열어 보고, 열리면 JPEG로 다시 만듦 (HEIC·WEBP도 JPEG로) */
-function shrinkImage(f,o){o=o||{};if(f&&f._st)return Promise.resolve(f);/* F1.9y 이미 스탬프를 찍은 사진은 다시 줄이지 않음 (글씨 흐려짐 방지) */const MX=o.max||2000,Q=o.q||0.82,t=String(f.type||'').toLowerCase(),okType=/^image\/(jpeg|png)$/.test(t);
- const maybe=!t||t==='application/octet-stream'||/^image\//.test(t)||/\.(jpe?g|png|heic|heif|webp)$/i.test(f.name||'');
- if(!maybe||(!o.max&&okType&&f.size<=1.5*1024*1024))return Promise.resolve(f);
- return (o.stamp?exifTime(f):Promise.resolve(null)).then(at=>new Promise(res0=>{const url=URL.createObjectURL(f),img=new Image();
-  /* F1.7f 일부 휴대폰·앱 안 브라우저는 사진을 열다가 아무 응답이 없음 → 15초 지나면 원본 그대로 (예전: 끝없이 멈춤) */
-  let done=false;const res=x=>{if(done)return;done=true;clearTimeout(tm);res0(x)},tm=setTimeout(()=>{try{URL.revokeObjectURL(url)}catch(e){}res(f)},15000);
-  img.onload=()=>{const s=Math.min(1,MX/Math.max(img.width,img.height)),cv=document.createElement('canvas');cv.width=Math.round(img.width*s);cv.height=Math.round(img.height*s);cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);URL.revokeObjectURL(url);
-   let st=false;if(o.stamp){try{photoStamp(cv,at,stampWho());st=true}catch(e){}}
-   const base=(String(f.name||'').replace(/\.[^.]+$/,'')||'photo_'+Date.now());
-   cv.toBlob(b=>{const out=b&&(st||!okType||b.size<f.size)?new File([b],base+'.jpg',{type:'image/jpeg'}):f;if(st&&out!==f)out._st=1;cv.width=0;cv.height=0;img.src='';res(out)},'image/jpeg',Q)};/* F1.8z 그림판·원본 그림 바로 비움 (오래된 휴대폰 메모리) */
-  img.onerror=()=>{URL.revokeObjectURL(url);res(f)};img.src=url}))}
-/* ---------- F1.9y 사진 시각 스탬프 (사진 맨 아래 얇은 반투명 띠 · 왼쪽 업체명 작게 · 오른쪽 촬영 날짜·시간) ----------
- *  시각 = 사진 파일 안의 촬영 시각(EXIF) · 없으면 올린 시각 + 「올림」 · 현장 사진(순회점검·합동점검)과 이수증에만 (서류는 안 찍음) */
-const PHOTO_STAMP={max:1024,q:0.55,stamp:true},PHOTO_CERT={max:1280,q:0.55,stamp:true};
-const stampWho=()=>{try{if(state&&state.staff)return '아성다이소';return String((state&&state.company&&state.company.company)||window.__wkCo||'')}catch(e){return ''}};
-function exifTime(f){return new Promise(res=>{try{const r=new FileReader();r.onload=()=>{try{res(exifParse(new DataView(r.result)))}catch(e){res(null)}};r.onerror=()=>res(null);r.readAsArrayBuffer(f.slice(0,262144))}catch(e){res(null)}})}
-/** JPEG EXIF → 촬영 시각 (DateTimeOriginal → DateTimeDigitized → DateTime) · 없거나 못 읽으면 null */
-function exifParse(v){if(v.byteLength<4||v.getUint16(0)!==0xFFD8)return null;let p=2;
- while(p+10<v.byteLength){const m=v.getUint16(p);if((m&0xFF00)!==0xFF00)return null;const len=v.getUint16(p+2);
-  if(m===0xFFE1&&v.getUint32(p+4)===0x45786966){const t=p+10,le=v.getUint16(t)===0x4949,u16=o=>v.getUint16(t+o,le),u32=o=>v.getUint32(t+o,le);
-   const ifd=(o,want)=>{const n=u16(o),r={};for(let i=0;i<n;i++){const e=o+2+i*12,tag=u16(e);if(want.includes(tag))r[tag]=u32(e+8)}return r};
-   const str=o=>{let s='';for(let i=0;i<19;i++)s+=String.fromCharCode(v.getUint8(t+o+i));return s};
-   const i0=ifd(u32(4),[0x8769,0x0132]);let s='';if(i0[0x8769]){const i1=ifd(i0[0x8769],[0x9003,0x9004]);s=i1[0x9003]?str(i1[0x9003]):i1[0x9004]?str(i1[0x9004]):''}if(!s&&i0[0x0132])s=str(i0[0x0132]);
-   const d=/^(\d{4}):(\d\d):(\d\d) (\d\d):(\d\d)/.exec(s);if(!d||+d[1]<2000)return null;return new Date(+d[1],d[2]-1,+d[3],+d[4],+d[5])}
-  if(m===0xFFDA)return null;p+=2+len}return null}
-function photoStamp(cv,at,who){const g=cv.getContext('2d'),w=cv.width,h=cv.height,s=Math.min(w,h),f=Math.max(12,Math.round(s*.032)),sm=Math.round(f*.72),pad=Math.round(f*.55),bh=Math.round(f*1.55),two=n=>String(n).padStart(2,'0');
- const d=at||new Date(),t1=d.getFullYear()+'.'+two(d.getMonth()+1)+'.'+two(d.getDate())+' '+two(d.getHours())+':'+two(d.getMinutes())+(at?'':' 올림'),font=n=>(n===f?'bold ':'')+n+"px 'Malgun Gothic','Apple SD Gothic Neo','Noto Sans KR',sans-serif";
- g.save();g.textBaseline='middle';g.fillStyle='rgba(0,0,0,.42)';g.fillRect(0,h-bh,w,bh);
- g.fillStyle='rgba(255,255,255,.95)';g.font=font(f);g.textAlign='right';g.fillText(t1,w-pad,h-bh/2);
- if(who){g.fillStyle='rgba(255,255,255,.82)';g.font=font(sm);g.textAlign='left';g.fillText(who,pad,h-bh/2,Math.max(10,w-pad*3-g.measureText(t1).width*1.4))}g.restore()}
-const MAX_MB=10;
-/* F1.7 사진 용량 최소화: 사진은 크기와 상관없이 항상 줄여서 올림 (긴 변 1280px · 화질 0.55 → 보통 100~250KB)
- *  현장 사진(순회점검·합동점검·조치 후)은 화면에서 더 작게 지정 (긴 변 1024px · 0.5 → 보통 80~150KB) · PDF·문서 파일은 그대로 */
-const PHOTO_DEFAULT={max:1280,q:0.55},PHOTO_SITE={max:1024,q:0.5};
-async function readFile(f0,o){if(!f0)throw Error('파일을 선택해 주세요.');const f=await shrinkImage(f0,o||PHOTO_DEFAULT);return new Promise((res,rej)=>{if(f.size>MAX_MB*1024*1024)return rej(Error('파일은 '+MAX_MB+'MB 이하만 올릴 수 있습니다. (현재 '+(f.size/1048576).toFixed(1)+'MB)'));const ext=(String(f.name||'').match(/\.(jpe?g|png|pdf)$/i)||[])[1],guess=ext?({jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',pdf:'application/pdf'})[ext.toLowerCase()]:'';const r=new FileReader();r.onload=()=>res({name:f.name||('photo_'+Date.now()+'.jpg'),mime:f.type||guess||'application/octet-stream',data:r.result.split(',')[1]});r.onerror=()=>rej(Error('파일을 읽을 수 없습니다.'));r.readAsDataURL(f)})}
-/* ---------- F1.8p 사진·파일은 고를 때 올리지 않고 이 휴대폰에만 두었다가 [제출] 때 한꺼번에 ----------
- *  고르면: 임시 ID(L-…) + 미리보기 → 제출하면: 진행 체크리스트(사진 올리기 n/N → 저장) 한 번만
- *  한 번 올라간 사진은 기억해 두어, 저장만 실패해서 다시 눌러도 사진을 또 올리지 않음 */
-const PEND={};let pendSeq=0;
-const isPend=id=>/^L-/.test(String(id||''));
-/** up(file) → {id} (서버 업로드 함수) */
-function pendAdd(f0,up){const id='L-'+Date.now().toString(36)+(pendSeq++);let url='';try{if(/^image\//.test(f0.type||'')||!f0.type)url=URL.createObjectURL(f0)}catch(e){}PEND[id]={f0,up,url,name:f0.name||'',done:''};return id}
-/** F1.8z 사진을 고르는 즉시 한 장씩 차례로 작게 줄여서 보관 (원본 큰 사진을 들고 있지 않음 → 메모리 부족 줄임) */
-async function pendPhotos(files,up){const ids=[];if(files.length)barStart();try{for(const f0 of files){let f=f0;try{f=await shrinkImage(f0,PHOTO_STAMP)}catch(e){}/* F1.9y 현장 사진 = 시각 스탬프 */ids.push(pendAdd(f,up))}}finally{if(files.length)barEnd()}return ids}
-/** 고른 사진 빼기 → 미리보기 주소도 정리 */
-function pendDrop(id){const p=PEND[id];if(!p)return;try{if(p.url)URL.revokeObjectURL(p.url)}catch(e){}delete PEND[id]}
-/** 여러 목록 안의 아직 안 올린 사진 수 */
-const pendCount=lists=>new Set(lists.flat().filter(id=>isPend(id)&&PEND[id]&&!PEND[id].done)).size;
-/** 목록 안의 임시 ID를 실제로 올리고 진짜 ID로 바꿈 (목록을 그 자리에서 고침 · 3장씩 동시에) · prev = 미리보기 저장소 */
-async function pendUpload(lists,set,prev){const todo=[...new Set(lists.flat().filter(id=>isPend(id)&&PEND[id]&&!PEND[id].done))],N=todo.length;let k=0,i=0;if(set)set('0/'+N);
- const one=async()=>{while(i<todo.length){const id=todo[i++],p=PEND[id];const r=await p.up(p.f0);p.done=r.id;if(prev&&p.url)prev[r.id]=p.url;k++;if(set)set(k+'/'+N)}};
- await Promise.all([one(),one(),one()]);
- lists.forEach(l=>{for(let j=l.length-1;j>=0;j--){const id=l[j];if(isPend(id)){if(PEND[id]&&PEND[id].done)l[j]=PEND[id].done;else l.splice(j,1)}}})}
-/* 제출 진행 체크리스트 (로그인 때 쓰는 체크리스트와 같은 모양) */
-let SUB=null;
-function subUI(title,labels){let el=$('subBox');if(!el){el=document.createElement('div');el.id='subBox';document.body.appendChild(el)}
- el.innerHTML='<div class="bootcard" role="status" aria-live="polite"><h2>'+escapeText(title)+'</h2><p class="muted bootsub">창을 닫지 말고 잠시만 기다려 주세요.</p><ol class="bootlist">'+labels.map((l,i)=>'<li id="sb_'+i+'" class="wait"><i aria-hidden="true"></i><span>'+escapeText(l)+'</span><em id="sbs_'+i+'"></em></li>').join('')+'</ol><p class="bootnote" id="subNote"></p><button class="button ghost" type="button" id="subReload" hidden style="width:100%;margin-top:10px" onclick="waitReload()">⟳ 새로 고침</button></div>';
- el.hidden=false;if(SUB)clearInterval(SUB.tm);SUB={st:labels.map(()=>'wait'),s0:[],tx:[],tm:setInterval(subTick,500)}}
-function subSet(i,s){if(!SUB)return;const li=$('sb_'+i);SUB.st[i]=s;if(s==='run')SUB.s0[i]=Date.now();if(li)li.className=s;if(s==='done'||s==='fail'){const e=$('sbs_'+i);if(e)e.textContent=s==='fail'?'실패':(SUB.tx[i]?SUB.tx[i]+' · ':'')+((Date.now()-SUB.s0[i])/1000).toFixed(1)+'초'}subTick()}
-function subTick(){if(!SUB)return;const i=SUB.st.indexOf('run'),n=$('subNote');if(i<0){if(n)n.textContent='';return}const e=Math.floor((Date.now()-SUB.s0[i])/1000),t=$('sbs_'+i);if(t)t.textContent=(SUB.tx[i]?SUB.tx[i]+' · ':'')+(e?e+'초':'');
- if(e>=25&&$('subReload'))$('subReload').hidden=false;
- if(n)n.textContent=e<8?'':e<25?'사진이 많거나 인터넷이 느리면 시간이 더 걸립니다 · 정상 진행 중입니다':'평소보다 오래 걸리고 있습니다 ('+e+'초). 창을 닫지 말고 조금만 더 기다려 주세요.'}
-/** F1.9i 오래 걸리는 창의 [⟳ 새로 고침] · 저장·제출 중이었으면 서버에 이미 들어갔을 수 있어 다시 열린 화면에서 확인 */
-async function waitReload(){if(!await askOk('새로 고침','화면을 처음부터 다시 엽니다.\n저장·제출 중이었다면 서버에 이미 들어갔을 수 있습니다. 다시 열린 화면에서 확인해 주세요.','새로 고침'))return;location.reload()}
-function subEnd(){const el=$('subBox');if(el)el.hidden=true;if(SUB)clearInterval(SUB.tm);SUB=null}
-/** steps = [[이름, async(set)=>{…}], …] · set('2/5')로 진행 숫자 표시 · 실패하면 그 단계에 '실패' 표시 후 오류를 그대로 던짐 */
-async function subRun(title,steps){steps=steps.filter(Boolean);subUI(title,steps.map(s=>s[0]));let i=0;
- try{for(;i<steps.length;i++){const k=i;subSet(k,'run');await steps[k][1](t=>{if(SUB){SUB.tx[k]=t;subTick()}});subSet(k,'done')}await new Promise(r=>setTimeout(r,350))}
- catch(e){subSet(i,'fail');await new Promise(r=>setTimeout(r,700));throw e}finally{subEnd()}}
-async function register(e){e.preventDefault();try{const fields=['company','regNo','representative','address','contact','phone','approverEmail','industry'];const d=Object.fromEntries(fields.map(n=>[n,value(n)]));d.agree=$('agree').checked;const picked=$('cert').files[0];let f=null;if(picked)f=await readFile(picked);
- if(regEdit&&state.company&&state.company.status==='PENDING'){if(!await askOk('고쳐서 다시 보내기','고친 내용으로 승인 요청 메일을 '+d.approverEmail+' 에게 다시 보냅니다.\n예전에 보낸 승인 링크는 쓸 수 없게 됩니다.','다시 보내기'))return;const s=await call('reRegisterBusiness',d,f);regEdit=false;display(s);msg('고친 내용으로 승인 요청을 다시 보냈습니다.');return}
- if(!await askOk('사업자 등록 신청','입력한 정보로 신청할까요?'+(f?'':'\n\n사업자등록증은 첨부하지 않았습니다. (선택 항목 · 승인 담당자가 확인할 수 있게 가능하면 첨부해 주세요)'),'신청'))return;display(await call('registerBusiness',d,f));msg('사업자 등록 신청이 접수됐습니다.')}catch(e){alert(e.message)}}
-async function otp(e){e.preventDefault();try{display(await call('verifyOtp',value('otp')));msg('업체 이메일 인증 완료')}catch(e){}}
-function changed(){if(!state?.company||['SUBMITTED','SAFETY_REVIEW','APPROVED'].includes(state.company.submissionStatus))return;dirty=true;$('saved').textContent='변경사항 있음 · 잠시 후 자동저장';clearTimeout(saveTimer);saveTimer=setTimeout(()=>save(false),1700)}
-function stepValues(){const d={},fields=state.fields[activeStep]||[];for(const [k] of fields){const n=$('f_'+k);if(n&&!n.disabled)d[k]=value(k);}if(activeStep===3){for(let i=1;i<=2;i++){const k='industry'+i;if($('f_'+k)&&!$('f_'+k).disabled)d[k]=value(k)}}return d}
-async function save(manual=true){clearTimeout(saveTimer);if(!dirty&&!manual)return true;const n=activeStep,d=stepValues();if(!Object.keys(d).length)return true;try{const next=await (manual?call:callQuiet)('saveStep',n,d);dirty=false;const currently=activeStep;state=next;if(currently===activeStep){const s=$('saved');if(s)s.textContent='서버 저장 완료 · '+new Date().toLocaleTimeString('ko-KR')}if(manual)msg('임시저장 완료');return true}catch(e){const s=$('saved');if(s)s.textContent='저장 실패 · 다시 시도하세요';return false}}
-async function saveManual(e){e.preventDefault();await save(true)}
-async function goStep(n){if(dirty){if(!await save(false))return}activeStep=n;renderMy()}
-async function upload(){try{const f=await readFile($('evidence').files[0]);display(await call('uploadEvidence',f));msg('파일 첨부 완료')}catch(e){alert(e.message)}}
-/** F1.4 파일 열기: 서버가 주소(url)를 주면 구글 드라이브 화면으로 바로 열고(빠름), 내용(data)을 주면 예전처럼 내려받기
- *  새 창이 막히면(휴대폰 팝업 차단) 안내 창의 [열기] 버튼으로 다시 열기 */
-function openFile(f){if(!f)return;if(!f.url){saveBlob(f);return}const w=window.open(f.url,'_blank');if(!w)popup('파일 열기',(f.name||'파일')+'\n\n구글 드라이브 화면으로 엽니다.\n'+(f.email?'('+f.email+' 계정으로 보기 권한이 있습니다)':''),'열기',()=>window.open(f.url,'_blank'))}
-/* F1.8j 업체가 올리거나 만든 서류 보기: 구글 드라이브로 가지 않고 화면 안 창 (이미지 바로 · PDF는 창 안 미리보기 + 열기) */
-const fileMem={};
-async function viewFile(id){let f=fileMem[id];if(!f){try{f=await call('getMyFile',id)}catch(e){return}if(f&&f.data)fileMem[id]=f}if(!f)return;if(!f.data){openFile(f);return}fileShow(f,f.name||'')}
-/* F1.8g 이수증 보기: 구글 드라이브로 가지 않고 화면 안 창에 이미지만 (한 번 본 것은 다시 받지 않음) */
-const certMem={};
-async function certView(id,who){let f=certMem[id];if(!f){try{f=certMem[id]=await call('viewCert',id)}catch(e){return}}fileShow(f,(who||'')+' 이수증')}
-const b64Blob=f=>{const s=atob(f.data),u=new Uint8Array(s.length);for(let i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return new Blob([u],{type:f.mime||'application/octet-stream'})};
-/** 화면 안 파일 보기 창 (이미지 · PDF) · PDF는 [열기]를 누르면 휴대폰 PDF 보기로 (드라이브 아님) */
-function fileShow(f,title){closeCert();const pdf=/pdf/.test(f.mime||''),img=/^image\//.test(f.mime||''),url=URL.createObjectURL(b64Blob(f));
- const bg=document.createElement('div');bg.id='certDlg';bg.className='certbg';bg.setAttribute('role','dialog');bg.setAttribute('aria-modal','true');bg.setAttribute('aria-label',title||'파일 보기');
- bg.innerHTML='<div class="certtop"><b style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escapeText(title||'')+'</b><button class="certx" type="button" id="certClose" aria-label="닫기">✕</button></div>'
-  +'<div class="certbody">'+(img?'<img src="'+url+'" alt="'+escapeText(title||'')+'">':pdf&&!IS_IOS&&!IS_AND?'<iframe src="'+url+'" title="'+escapeText(title||'')+'" style="width:100%;height:100%;border:0;background:#fff;border-radius:6px"></iframe>':'<div class="certpdf"><p>'+escapeText(f.name||'파일')+'</p><button class="button" type="button" id="certSave" style="width:100%">📄 '+(pdf?'PDF 열기':'파일 받기')+'</button></div>')+'</div>';
- document.body.appendChild(bg);bg._url=url;$('certClose').onclick=closeCert;bg.onclick=e=>{if(e.target===bg||e.target.classList.contains('certbody'))closeCert()};bg.onkeydown=e=>{if(e.key==='Escape')closeCert()};
- if($('certSave'))$('certSave').onclick=()=>{if(pdf&&window.open(url,'_blank'))return;saveBlob(f)};setTimeout(()=>$('certClose')?.focus(),30)}
-/** F1.8k 위임장 · 현장대리인계 보기 (서버가 만든 양식 · 화면 안 창 · 인쇄 가능) */
-const PAPER_T={COUNCIL:'산업안전보건 협의체 위임장',JOINT:'합동안전보건점검 위임장',AGENT:'현장대리인계'};
-async function jobPaperView(jobId,kind,cid){let r;try{r=await call('jobPaper',jobId,kind,cid||'')}catch(e){return}closeCert();
- const bg=document.createElement('div');bg.id='certDlg';bg.className='certbg';bg.setAttribute('role','dialog');bg.setAttribute('aria-modal','true');bg.setAttribute('aria-label',PAPER_T[kind]||'서류');
- bg.innerHTML='<div class="certtop"><b>'+escapeText(PAPER_T[kind]||'서류')+'</b><span><button class="certx" type="button" id="paperPrint" aria-label="인쇄" style="margin-right:8px">🖨</button><button class="certx" type="button" id="certClose" aria-label="닫기">✕</button></span></div><div class="certbody"><iframe id="paperFrame" title="'+escapeText(PAPER_T[kind]||'서류')+'" style="width:100%;height:100%;border:0;background:#fff;border-radius:6px"></iframe></div>';
- document.body.appendChild(bg);$('paperFrame').srcdoc=r.html;$('certClose').onclick=closeCert;bg.onkeydown=e=>{if(e.key==='Escape')closeCert()};
- $('paperPrint').onclick=()=>{try{$('paperFrame').contentWindow.print()}catch(e){msg('인쇄하지 못했습니다.')}};setTimeout(()=>$('certClose')?.focus(),30)}
-function closeCert(){const d=$('certDlg');if(!d)return;const u=d._url;d.remove();if(u)setTimeout(()=>URL.revokeObjectURL(u),60000)}
-/* F1.4 휴대폰에서 사진 칸을 누르면 카메라만 열리던 것(capture) → 옆에 [🖼 앨범·파일] 버튼을 자동으로 붙임
- *  고른 사진은 원래 사진 칸에 넣고 원래 처리(올리기)를 그대로 실행. 화면을 다시 그려도 계속 붙음 */
-(function(){
- function addGallery(inp){if(inp.dataset.gal||!inp.id)return;inp.dataset.gal='1';
-  const g=document.createElement('input');g.type='file';g.className='hidefile';g.id=inp.id+'_gal';g.accept=inp.accept||'image/*';g.multiple=true;/* F1.6b 여러 장 한 번에 */g.disabled=inp.disabled;g.setAttribute('aria-label',(inp.getAttribute('aria-label')||'사진')+' (앨범·파일에서 고르기, 여러 장 가능)');
-  const lb=document.createElement('label');lb.className='button ghost';lb.htmlFor=g.id;lb.textContent='🖼 앨범·파일';
-  g.addEventListener('change',()=>{if(!g.files.length)return;try{const dt=new DataTransfer();Array.from(g.files).forEach(f=>dt.items.add(f));inp.files=dt.files}catch(e){g.value='';msg('이 브라우저에서는 앨범에서 고르기가 안 됩니다. 크롬·사파리로 열어 주세요.');return}
-   g.value='';inp.dispatchEvent(new Event('change',{bubbles:true}))});
-  const cam=document.querySelector('label[for="'+CSS.escape(inp.id)+'"]');if(cam&&/^📷 (사진 넣기)?$/.test(cam.textContent.trim()))cam.textContent='📷 촬영';
-  inp.after(lb,g)}
- const scan=()=>document.querySelectorAll('input[type=file][capture]').forEach(addGallery);
- new MutationObserver(scan).observe(document.documentElement,{childList:true,subtree:true});scan();
+  /* ---------- 업체 (COMPANIES: 업체는 읽기만 · 쓰기는 중계 서버만) ---------- */
+  const byNewest = (x, y) => String(y.createdAt || '').localeCompare(String(x.createdAt || ''));
+  const docs = (s) => s.docs.map((d) => ({ ...d.data(), id: d.data().id || d.id }));
+  /** 내가 신청한 업체 전부 (최신순) */
+  async function myCompanies(a) { return docs(await db.collection('COMPANIES').where('uid', '==', a.uid).get()).sort(byNewest); }
+  /** 지금 쓰는 업체 (반려 제외) — 기존 mine_와 같음 */
+  async function myCompany(a) {
+    if (a.mode === 'STAFF') return null;  // 담당자로 접속하면 업체 화면 사용 안 함
+    const b = (await myCompanies(a)).find((x) => x.status !== 'REJECTED') || null;
+    if (b && b.status === 'OTP_PENDING') b.status = 'VERIFIED';  // 예전 인증번호 단계 → 바로 작성 가능
+    return b;
+  }
+  /* ---------- 계약 전 서류 공통 (기존 Code.gs와 같은 판단) ---------- */
+  const kst = (iso) => { try { return new Date(iso).toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' }); } catch (e) { return ''; } };  // yyyy-mm-dd (한국 시간)
+  const today = () => kst(new Date().toISOString());
+  const parse = (j, d) => { try { return JSON.parse(j || ''); } catch (e) { return d; } };
+  const docTypes = () => DOC_TYPE_SEED.map(([code, stage, order, name, cycle, owner, kind, required]) => ({ code, stage, order, name, cycle, owner, kind, required }))
+    .sort((x, y) => (DOC_STAGE_ORDER[x.stage] - DOC_STAGE_ORDER[y.stage]) || (x.order - y.order));
+  const vendorDocTypes = (stage) => docTypes().filter((t) => t.stage === stage && ['VENDOR', 'JOINT'].includes(t.owner) && t.kind !== 'EVALUATION');
+  const canExec = (b) => !!b && b.status === 'VERIFIED' && (b.submissionStatus === 'APPROVED' || !!b.renewAt);
+  function canUploadDoc(b, code) {
+    if (!b || b.status !== 'VERIFIED') return false;
+    const s = b.submissionStatus || 'DRAFT'; if (s === 'DRAFT') return true;
+    return s === 'CORRECTION' && parse(b.correctionKeys, []).includes('4:doc' + code);
+  }
+  const staleForm = (b, at) => !!(b && b.renewAt && b.renewMode === 'NEW' && String(at || '') < String(b.renewAt));
+  const infoFresh = (b) => !(b && b.renewAt && b.renewMode === 'NEW') || String(b.infoAt || '') >= String(b.renewAt);
+  /** 계약 전 평가 유효기간 1년 {from,until,expired,days} */
+  function contractValid(b) {
+    if (!b || b.status !== 'VERIFIED') return null;
+    const at = b.approvedAt || (b.submissionStatus === 'APPROVED' || b.renewAt ? b.submittedAt : ''); if (!at) return null;
+    const from = kst(at); if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) return null;
+    const d = new Date(from + 'T00:00:00Z'); d.setUTCFullYear(d.getUTCFullYear() + 1); d.setUTCDate(d.getUTCDate() - 1);
+    const until = d.toISOString().slice(0, 10), t = today();
+    return { from, until, expired: t > until, days: Math.round((new Date(until + 'T00:00:00Z') - new Date(t + 'T00:00:00Z')) / 86400000) };
+  }
+  const docUploads = (subs, code) => subs.filter((x) => x.docType === code).sort((x, y) => Number(y.version) - Number(x.version)).map((x) => ({ id: x.documentId, name: x.name, version: Number(x.version), uploadedAt: x.uploadedAt, status: x.status }));
+  function activeTemplates(list) { const m = {}; list.filter((x) => x.active === 'Y').forEach((x) => { if (!m[x.docType] || Number(x.version) > Number(m[x.docType].version)) m[x.docType] = x; }); return m; }
+  /** 업체 화면용: 계약 단계 제출서류 + 이후 단계 참고 양식 + 전체 표 */
+  function vendorDocBoard(b, tpl, subs) {
+    const own = (t) => DOC_OWNER[t.owner] || t.owner;
+    const contract = vendorDocTypes('CONTRACT').map((t) => ({ code: t.code, name: t.name, cycle: t.cycle, ownerLabel: own(t), required: t.required === 'Y',
+      template: tpl[t.code] ? { name: tpl[t.code].name, version: Number(tpl[t.code].version) } : null, uploads: docUploads(subs, t.code), canUpload: canUploadDoc(b, t.code) }));
+    const later = docTypes().filter((t) => t.stage !== 'CONTRACT' && tpl[t.code]).map((t) => ({ code: t.code, name: t.name, stageLabel: DOC_STAGE[t.stage], cycle: t.cycle, ownerLabel: own(t), template: { name: tpl[t.code].name, version: Number(tpl[t.code].version) } }));
+    const rows = docTypes().map((t) => {
+      const vendorDoc = ['VENDOR', 'JOINT'].includes(t.owner) && t.kind !== 'EVALUATION';
+      return { code: t.code, stage: t.stage, stageLabel: DOC_STAGE[t.stage], name: t.name, cycle: t.cycle, owner: t.owner, ownerLabel: own(t), kind: t.kind, required: t.required === 'Y', vendorDoc,
+        template: tpl[t.code] ? { version: Number(tpl[t.code].version) } : null, uploads: vendorDoc ? docUploads(subs, t.code) : [],
+        canUpload: vendorDoc && ((t.stage === 'CONTRACT' && canUploadDoc(b, t.code)) || (t.stage === 'EXECUTION' && canExec(b))) };
+    });
+    return { contract, later, rows };
+  }
+  const reviewDocBoard = (subs) => vendorDocTypes('CONTRACT').map((t) => ({ code: t.code, name: t.name, required: t.required === 'Y', uploads: docUploads(subs, t.code) }));
+  function planDefaults(b, p) {
+    const y = Number(today().slice(0, 4)), w = PLAN_INDUSTRY_WORKS[b.industry] || [];
+    return { policy: planPolicy_(b.company), goal: '무재해 달성 (산업재해 0건)',
+      kpis: [{ name: '순회점검 실시율 (2일 1회)', target: '100%' }, { name: '작업 전 TBM·안전교육 실시율', target: '100%' }, { name: '지적사항 즉시 시정률', target: '100%' }],
+      org: [{ role: '안전관리책임자 (현장대리인)', name: p.siteManager || '', phone: p.siteManagerPhone || '' }],  // F1.8k 협력업체 관리자 = 현장대리인 1명
+      agent: { birth: '', addr: '', licKind: '', licType: '', licNo: '' },  // F1.8k 현장대리인계 (공사마다 자동)
+      /* F1.8r 위험성평가: 업종 기본 공종의 위험요인을 전부 체크해 두고 업체가 해당 없는 것만 뺌 */
+      works: [], risks: [],  /* F1.9h 처음엔 비어 있음 · 업체가 직접 고름 (업종 w는 참고용) */
+      scen: [],
+      hospital: '', years: [y - 3, y - 2, y - 1], accidents: ['', '', ''], evidence: [], practice: '',
+      drill: { route: '', assembly: '', equip: '', manager: p.siteManager || '', items: [] } };  // F1.8c 비상대피훈련 계획 (중계 서버 planDefaults_와 같게)
+  }
+  /** 업체 화면용: 앱 작성 서류 (규정 C01 · 계획서 C02) */
+  function contractFormsView(b, forms, files, p1) {
+    const fresh = (code) => { const f = forms.find((x) => x.code === code); return f && !staleForm(b, f.updatedAt) ? { f, d: parse(f.json, null) } : { f, d: null }; };
+    const r = fresh('C01'), p = fresh('C02'), D = planDefaults(b, p1); let d = p.d;
+    // 해가 바뀐 뒤 다시 작성하면 최근 3년이 달라짐 → 같은 연도 값만 옮김
+    if (d && Array.isArray(d.years) && JSON.stringify(d.years.map(Number)) !== JSON.stringify(D.years)) { const old = d.years.map(Number), ac = d.accidents || []; d.accidents = D.years.map((y) => { const i = old.indexOf(y); return i >= 0 ? String(ac[i] ?? '') : ''; }); d.years = D.years; }
+    const fmap = (ids) => (ids || []).map((id) => { const x = files.find((y) => y.id === id); return x ? { id, name: x.name } : null; }).filter(Boolean), ev = fmap(d && d.evidence), pev = fmap(d && d.practiceEv);  // F1.9b 이행 사례 증빙
+    return { today: today(), hq: HQ_NAME, hqRep: b.approverName || '', rule: { title: RULE_TITLE, text: RULE_TEXT }, C01: r.d ? { data: r.d, savedAt: r.f.updatedAt } : null,
+      /* F2.1 계획서 공종: 오픈지원 업체 = 오픈지원 공종 4개만 · 다른 업종 = 예전 공종 그대로 (오픈지원 공종은 안 보임) */
+      plan: { works: PLAN_WORKS, trades: RISK_TRADES.filter((t) => OPEN_TRADES.includes(t[0]) === isOpenInd(b.industry)).map((t) => [t[0], t[1], t[4], t[6]]), after: RISK_AFTER, scen: PLAN_SCEN.map((s) => [s[0], s[1]]), laws: PLAN_LAWS, defaults: D, C02: d ? { data: Object.assign(d, { evidenceFiles: ev, practiceFiles: pev }), savedAt: p.f.updatedAt } : null } };
+  }
+  /** 화면에 보여 줄 업체 정보 (기존 publicCompany_와 같은 항목) */
+  function publicCompany(b) {
+    if (!b) return null;
+    const o = {};
+    ['id', 'email', 'company', 'regNo', 'representative', 'address', 'industry', 'contact', 'phone', 'contactEmail', 'status', 'createdAt', 'duplicate', 'reason', 'submissionStatus', 'submittedAt', 'correctionKeys', 'approverEmail', 'renewAt', 'renewMode', 'infoAt'].forEach((k) => o[k] = b[k] ?? '');
+    o.certMissing = !b.certFileId; o.valid = contractValid(b); o.infoFresh = infoFresh(b);
+    o.accCerts = (parse(b.accCerts, []) || []).map((x) => ({ id: String(x.id || ''), name: String(x.name || ''), at: String(x.at || '') }));  // F1.9x 산재 확인서 추가 제출
+    return o;
+  }
+  /** 직원이 볼 수 있는 업체: 안전보건팀 = 전체 / 그 외 = 본인(로그인 계정·회사메일)이 승인 담당자인 업체 */
+  async function visibleCompanies(a, st, status) {
+    const C = db.collection('COMPANIES');
+    if (st && st.role === 'SAFETY') return docs(await (status ? C.where('status', '==', status) : C).get());
+    const mails = [...new Set([a.email, lower(st && st.companyEmail)].filter(Boolean))], seen = new Map();
+    // 보안 규칙이 확인할 수 있게 메일 주소마다 따로 조회
+    const snaps = await Promise.all(mails.map((m) => { let q = C.where('approverEmail', '==', m); if (status) q = q.where('status', '==', status); return q.get(); }));
+    snaps.forEach((s) => docs(s).forEach((x) => seen.set(x.id, x)));
+    return [...seen.values()];
+  }
+  /** 알림 숫자: 사업자 승인 대기 · 서류 검토 대기 · (안전보건팀) 안 읽은 참조 알림. 공사 관련 숫자는 F1.3부터 */
+  async function badges(a, memo) {
+    const o = { admin: 0, review: 0, jobs: 0, newVendors: [], pendingAttend: 0, notices: 0 }, st = await staffOf(a, memo);
+    if (!st && !isInternalEmail(a.email)) return o;
+    const cs = await visibleCompanies(a, st);
+    o.admin = cs.filter((x) => x.status === 'PENDING').length;
+    if (st) o.review = cs.filter((x) => x.status === 'VERIFIED' && x.submissionStatus === 'SUBMITTED').length;
+    if (st && st.role === 'SAFETY') o.notices = docs(await db.collection('NOTICES').get()).filter((n) => !(n.readBy || []).includes(a.email)).length;
+    if (st) {
+      // 계약 전 검토가 끝났는데 아직 어느 공사에도 배정 안 된 업체 + 종료 예정·종료일 지난 공사
+      const [jvs, ver, jobs] = await Promise.all([db.collection('JOB_VENDORS').get().then(docs), db.collection('COMPANIES').where('status', '==', 'VERIFIED').get().then(docs), db.collection('JOBS').get().then(docs)]);
+      const assigned = new Set(jvs.map((x) => x.companyId));
+      o.newVendors = ver.filter((x) => x.submissionStatus === 'APPROVED' && !assigned.has(x.id)).map((x) => ({ id: x.id, company: x.company, industry: x.industry }));
+      o.jobEnd = jobs.filter((j) => (st.role === 'SAFETY' || lower(j.hostEmail) === a.email) && ['SOON', 'OVER'].includes(jobEndInfo(j).state)).length;
+      const mine = jobs.filter((j) => st.role === 'SAFETY' || lower(j.hostEmail) === a.email).map((j) => j.id);
+      o.permits = mine.length ? (await byJobs('PERMITS', mine)).filter((p) => p.status === 'ISSUED').length : 0;  // 승인 대기 허가서
+      o.pendingAttend = mine.length ? (await byJobs('ATTEND', mine)).filter((x) => x.status === 'PENDING').length : 0;  // 미팅 참석 확인 대기
+      o.insp = mine.length ? (await byJobs('INSPECTIONS', mine)).filter((x) => !x.checkedAt).length : 0;  // 도급인 확인 대기 순회점검
+      o.evalDraft = mine.length ? (await byJobs('JOB_EVALS', mine)).filter((e) => e.status === 'DRAFT').length : 0;  // 작성 중인 종료 평가
+      o.jobs = o.newVendors.length + o.pendingAttend + o.permits + o.insp + o.jobEnd + o.evalDraft;
+    }
+    return o;
+  }
+
+  /* ---------- 기능 (기존 Code.gs 이름 그대로) ---------- */
+  const API = {};
+  /** 첫 화면 정보 (기존 portalData와 같은 모양) */
+  /** 승인된 업체의 작성 자료 한꺼번에 (내 것만 읽도록 uid로 조회) */
+  async function vendorBundle(a, b) {
+    const mine = (col) => db.collection(col).where('uid', '==', a.uid).get().then(docs).then((l) => l.filter((x) => x.companyId === b.id));
+    const [profiles, files, subs, forms, tpls, jvs] = await Promise.all([mine('PROFILES'), mine('DOCUMENTS'), mine('DOC_SUBMISSIONS'), mine('CONTRACT_FORMS'), db.collection('TEMPLATES').where('active', '==', 'Y').get().then(docs),
+      db.collection('JOB_VENDORS').where('vendorUid', '==', a.uid).get().then(docs).then((l) => l.filter((x) => x.companyId === b.id))]);
+    // 진행 중(종료 전) 공사 수 → 0이면 업체 메뉴에서 공사 업무를 숨김
+    const js = await Promise.all(jvs.map((v) => db.collection('JOBS').doc(v.jobId).get().then((s) => (s.exists ? s.data() : null)).catch(() => null)));
+    return { profiles, files, subs, forms, tpl: activeTemplates(tpls), openJobs: js.filter((j) => j && j.status !== 'ENDED').length };
+  }
+  API.portalData = async (a) => {
+    const memo = {}, st = await staffOf(a, memo), b = await myCompany(a), verified = !!b && b.status === 'VERIFIED';
+    const [isApprover, V, bd, mg, sm0] = await Promise.all([
+      isInternalEmail(a.email) ? db.collection('COMPANIES').where('approverEmail', '==', a.email).limit(1).get().then((s) => !s.empty) : false,
+      verified ? vendorBundle(a, b) : null, badges(a, memo),
+      !b && !st && a.mode !== 'STAFF' ? myMgrs(a) : [],  // F2.2 업체 계정이 아니면 인력관리자인지 확인
+      !b && !st && a.mode !== 'STAFF' ? mySms(a) : []]);  // F2.3 현장관리자인지 확인
+    let steps = [], documents = [], docBoard = null, forms = null;
+    if (V) {
+      steps = V.profiles.map((x) => ({ step: Number(x.step), data: staleForm(b, x.updatedAt) ? {} : (x.data || {}) }));
+      // F1.8n 사업장 정보(현장대리인 · 연락처 · 주소)는 가입 때 받은 값 → 비어 있으면 한 번 채워 둠 (예전에 가입한 업체 포함)
+      if (b.submissionStatus === 'DRAFT' && (!(b.renewAt && b.renewMode === 'NEW') || String(b.infoAt || '') >= String(b.renewAt))) {
+        const s1 = steps.find((x) => x.step === 1), cur = (s1 && s1.data) || {}, fill = { siteManager: b.contact, siteManagerPhone: b.phone, siteAddress: b.address }, next = { ...cur };
+        let ch = false; Object.keys(fill).forEach((k) => { if (!String(cur[k] || '').trim() && fill[k]) { next[k] = tidy(fill[k], 4000); ch = true; } });
+        if (ch) { try { await db.collection('PROFILES').doc(b.id + '_1').set({ companyId: b.id, uid: a.uid, step: 1, data: next, updatedAt: now(), updatedBy: a.email }); if (s1) s1.data = next; else steps.push({ step: 1, data: next }); } catch (e) { console.warn('사업장 정보 자동 채움 실패', e && e.message); } }
+      }
+      const linked = new Set(V.subs.map((x) => x.documentId));
+      documents = V.files.filter((x) => !linked.has(x.id)).map((x) => ({ id: x.id, name: x.name, mime: x.mime }));
+      docBoard = vendorDocBoard(b, V.tpl, V.subs);
+      forms = contractFormsView(b, V.forms, V.files, (steps.find((x) => x.step === 1) || {}).data || {});
+      // F1.8k 규정 "갑" 다이소 현장대리인 = 위임받은 도급인 책임자 (곽동민)
+      const P = await principal().catch(() => null); if (P && P.delegate.name) forms.hqRep = P.delegate.name;
+    }
+    return {
+      email: a.email, isApprover, correctionNote: b && b.submissionStatus === 'CORRECTION' ? b.correctionNote || '' : '', openJobs: V ? V.openJobs : null,
+      staff: st ? { name: st.name, role: st.role, roleLabel: (st.master ? '마스터 · ' : '') + (STAFF_ROLES[st.role] || st.role), master: !!st.master,
+        /* F2.6 볼 수 있는 화면: 마스터 · 안전보건팀 = 둘 다 (들어갈 때 고름) · 그 외 = 조직도 담당 (비어 있으면 인테리어) */
+        scopes: st.master || st.role === 'SAFETY' ? Object.keys(SCOPES) : (cleanScopes(st.scopes).length ? cleanScopes(st.scopes) : ['INT']), scopeLabels: SCOPES } : null,
+      isMaster: isMaster(a), testSkipFiles: CFG.TEST_SKIP_FILES,
+      company: publicCompany(b),
+      role: st ? st.role : 'VENDOR', industries: CFG.INDUSTRIES, fields: FIELDS, stepNames: STEP_NAMES, industryFields: (b && INDUSTRY_FIELDS[b.industry]) || [],
+      steps, documents, docBoard, forms, appVersion: VERSION, mode: a.mode,
+      sm: sm0.some((s) => s.status === 'ACTIVE') ? { name: sm0.find((s) => s.status === 'ACTIVE').name, n: sm0.filter((s) => s.status === 'ACTIVE').length } : null,  // F2.3 현장관리자 (끝난 오픈 매장은 smHome이 거름)
+      mgr: mg.length ? { name: (mg.find((m) => m.status === 'ACTIVE') || mg[0]).name, active: mg.some((m) => m.status === 'ACTIVE'), companies: mg.map((m) => ({ company: m.company, status: m.status })) } : null,
+      badges: bd, loginUrl: location.origin + location.pathname,
+    };
+  };
+  /** [업체] 승인 대기 화면의 자동 확인용 (반려 포함 가장 최근 신청) */
+  API.myStatus = async (a) => {
+    const b = (await myCompanies(a))[0];
+    return b ? { status: b.status === 'OTP_PENDING' ? 'VERIFIED' : b.status, reason: b.reason || '', submissionStatus: b.submissionStatus || 'DRAFT' } : null;
+  };
+  API.myBadges = async (a) => badges(a);
+
+  /** [업체] 사업자 등록 신청 → 중계 서버가 기록·승인요청 메일 */
+  API.registerBusiness = async (a, d, cert) => {
+    if (a.mode === 'STAFF') fail('다이소 담당자로 접속했습니다. 업체 신청은 로그인 화면에서 [협력업체]로 다시 로그인해 주세요.');
+    await relay('register', { d: d || {}, cert: cert && cert.data ? cert : null });
+    return API.portalData(a);
+  };
+  /** F1.8z [업체] 승인 대기 중 신청 내용 고쳐 다시 보내기 (등록증은 새로 고른 경우만) */
+  API.reRegisterBusiness = async (a, d, cert) => {
+    if (a.mode === 'STAFF') fail('다이소 담당자로 접속했습니다.');
+    await relay('reRegister', { d: d || {}, cert: cert && cert.data ? cert : null });
+    return API.portalData(a);
+  };
+  /** [직원] 사업자 등록 신청 목록 */
+  API.applications = async (a) => {
+    const st = await staffOf(a);
+    if (!st && !isInternalEmail(a.email)) fail('승인 담당자 권한이 없습니다.');
+    return (await visibleCompanies(a, st)).sort(byNewest).map(publicCompany);
+  };
+  /** [직원] 업체 현황 */
+  API.vendorList = async (a) => {
+    const st = await staffOf(a);
+    if (!st && !isInternalEmail(a.email)) fail('아성다이소 직원 계정만 볼 수 있습니다.');
+    const list = (await visibleCompanies(a, st)).sort(byNewest);
+    // 승인된 업체: 제출 서류 · 계획서 증빙 · 계약 전 평가 결과 (직원 명단에 없는 승인 담당자는 보안 규칙상 못 봄 → 빈칸)
+    const detail = async (b) => {
+      if (b.status !== 'VERIFIED' || !st) return { docs: [], evidence: [], contractEval: null };
+      const by = (col) => db.collection(col).where('companyId', '==', b.id).get().then(docs);
+      try {
+        const [subs, forms, evs] = await Promise.all([by('DOC_SUBMISSIONS'), by('CONTRACT_FORMS'), by('EVALUATIONS')]);
+        const ids = (parse((forms.find((x) => x.code === 'C02') || {}).json, {}) || {}).evidence || [];
+        const files = ids.length ? await by('DOCUMENTS') : [];
+        const e = evs.filter((x) => x.result === 'APPROVED').sort((p, q) => String(p.evaluatedAt).localeCompare(String(q.evaluatedAt))).pop();
+        return { docs: reviewDocBoard(subs), evidence: ids.map((id) => { const x = files.find((y) => y.id === id); return x ? { id, name: x.name } : null; }).filter(Boolean),
+          contractEval: e ? { good: Number(e.good) || 0, normal: Number(e.normal) || 0, poor: Number(e.poor) || 0, at: e.evaluatedAt } : null };
+      } catch (e) { if (e.code !== 'permission-denied') throw e; return { docs: [], evidence: [], contractEval: null }; }
+    };
+    const [more, jvs, evs, jobs] = await Promise.all([Promise.all(list.map(detail)), st ? db.collection('JOB_VENDORS').get().then(docs) : [],
+      st ? db.collection('JOB_EVALS').where('status', '==', 'DONE').get().then(docs) : [], st ? db.collection('JOBS').get().then(docs) : []]);
+    const le = lastEvals(evs, jobs);
+    return { list: list.map((b, i) => ({ ...publicCompany(b), ...more[i], jobs: jvs.filter((x) => x.companyId === b.id).length, lastEval: le[b.id] || null })) };
+  };
+  /** [직원] 승인·반려 → 중계 서버가 처리하고 업체에 메일 */
+  API.decideBusiness = async (a, id, decision, reason, ret) => {
+    if (!['APPROVE', 'REJECT'].includes(decision)) fail('승인 또는 반려를 선택해 주세요.');
+    if (decision === 'REJECT' && !tidy(reason)) fail('반려 사유를 입력해 주세요.');
+    await relay('decide', { companyId: String(id || ''), decision, reason: tidy(reason, 500) });
+    return ret === 'vendors' ? API.vendorList(a) : API.applications(a);
+  };
+  /** [직원] 신청 첨부파일 목록 (직원 명단에 있으면 바로, 아니면 중계 서버가 권한 확인) */
+  API.getRegistrationDocs = async (a, id) => {
+    if (await staffOf(a)) return docs(await db.collection('DOCUMENTS').where('companyId', '==', String(id || '')).get()).map((x) => ({ id: x.id, name: x.name }));
+    return relay('regDocs', { companyId: String(id || '') }, true);
+  };
+  /** 파일 내려받기 (권한은 중계 서버가 다시 확인) */
+  API.getInternalFile = async (a, companyId, docId) => relay('file', { companyId: String(companyId || ''), docId: String(docId || '') }, true);
+  API.getMyFile = async (a, docId) => relay('file', { docId: String(docId || ''), raw: true }, true);  // F1.8j 드라이브 화면 대신 내용 (화면 안에서 보기)
+  /** F1.8j ZIP 바로 내려받기 (8MB씩) */
+  API.jobEvalFilePart = async (a, id, fid, i) => { await staffOnly(a); return relay('evalZipPart', { evalId: tidy(id, 40), fid: tidy(fid, 80), i: Number(i) || 0 }, true, 180000); };
+  /** F1.8g 이수증 보기: 파일 내용만 받아 화면 안 창에 띄움 (구글 드라이브 화면 안 열림) */
+  API.viewCert = async (a, docId) => relay('certView', { docId: tidy(docId, 60) }, true);
+  /* ---------- F1.8k 도급인 책임자 (SETTINGS/principal · 중계 서버 PRINCIPAL_DEF_와 같은 기본값) ---------- */
+  const PRINCIPAL_DEF = { ceo: { name: '김기호', rank: '대표이사', title: '안전보건총괄책임자', org: '경영진' },
+    delegate: { name: '곽동민', rank: '부장', title: '인테리어부장', org: '영업본부 매장지원부문 인테리어부' }, manager: { name: '', rank: '', org: '' } };
+  let PRINC = null;
+  async function principal(force) {
+    if (PRINC && !force) return PRINC;
+    let s = {}; try { const d = await db.collection('SETTINGS').doc('principal').get(); if (d.exists) s = d.data(); } catch (e) {}
+    const o = {}; ['ceo', 'delegate', 'manager'].forEach((k) => { o[k] = Object.assign({}, PRINCIPAL_DEF[k]); Object.keys(s[k] || {}).forEach((f) => { if (s[k][f]) o[k][f] = String(s[k][f]); }); });
+    if (!o.manager.name) { try { const m = await db.collection('STAFF').doc(MASTER_EMAILS[0]).get(); if (m.exists) o.manager.name = m.data().name || ''; } catch (e) {} }
+    PRINC = o; return o;
+  }
+  API.principalGet = async (a) => { await staffOnly(a); return { ...(await principal(true)), def: PRINCIPAL_DEF }; };
+  API.principalSave = async (a, d) => {
+    if (!isMaster(a)) fail('마스터 계정만 고칠 수 있습니다.');
+    const o = {}; ['ceo', 'delegate', 'manager'].forEach((k) => { o[k] = {}; ['name', 'rank', 'title', 'org', 'memberId'].forEach((f) => { o[k][f] = tidy(((d || {})[k] || {})[f], 60); }); });  // F1.9g memberId = 조직·구성원에서 고른 사람
+    if (!o.ceo.name || !o.delegate.name) fail('총괄책임자와 위임받는 책임자 이름은 꼭 적어 주세요.');
+    await db.collection('SETTINGS').doc('principal').set({ ...o, updatedAt: now(), updatedBy: a.email }); audit(a, '', 'PRINCIPAL_SAVE', o.ceo.name + ' → ' + o.delegate.name);
+    return API.principalGet(a);
+  };
+  /* ---------- F1.9g 조직·구성원 (마스터) ----------
+   *  SETTINGS/org.units = 조직도 [{id, name, kind(경영진·본부·부문·부·팀), parent}] (배열 순서 = 화면 순서)
+   *  ORG_MEMBERS/{M-…}  = 구성원 {unitId, name, title(직책), phone, companyEmail, gmail(로그인), role(SAFETY·CLIENT·NONE)}
+   *  앱 로그인 권한은 예전처럼 STAFF/{로그인 Gmail} — 구성원을 저장할 때 자동으로 맞춤 (NONE이면 STAFF에서 뺌) */
+  const ORG_SEED = [['U-EXEC', '경영진', '경영진', ''], ['U-SALES', '영업본부', '본부', ''], ['U-SSD', '매장지원부문', '부문', 'U-SALES'], ['U-INT', '인테리어부', '부', 'U-SSD'],
+    ['U-INT1', '인테리어1팀', '팀', 'U-INT'], ['U-INT2', '인테리어2팀', '팀', 'U-INT'], ['U-NEW', '신축팀', '팀', 'U-INT'], ['U-FAC', '매장시설관리팀', '팀', 'U-INT'],
+    ['U-HR', '인사총무본부', '본부', ''], ['U-CUL', '기업문화관리부', '부', 'U-HR'], ['U-SAFE', '안전보건팀', '팀', 'U-CUL']].map(([id, name, kind, parent]) => ({ id, name, kind, parent }));
+  const ORG_KINDS = ['경영진', '본부', '부문', '부', '팀'], ORG_ROLE_OK = { SAFETY: 1, CLIENT: 1, NONE: 1 };
+  const orgGate = (a) => { if (!isMaster(a)) fail('마스터 계정만 조직·구성원을 관리할 수 있습니다.'); };
+  async function orgUnits() { const d = await db.collection('SETTINGS').doc('org').get().catch(() => null); return d && d.exists && Array.isArray(d.data().units) ? d.data().units : null; }
+  /* F2.6 담당 (화면 구분) · 비어 있으면 인테리어 · 마스터 · 안전보건팀은 모두 (들어갈 때 고름) */
+  const SCOPES = { INT: '인테리어 (공사)', OPEN: '오픈지원' };
+  const cleanScopes = (v) => [...new Set((Array.isArray(v) ? v : []).map(String))].filter((k) => SCOPES[k]);
+  const memView = (m) => ({ id: m.id, unitId: m.unitId || '', name: m.name || '', title: m.title || '', phone: m.phone || '', companyEmail: m.companyEmail || '', gmail: m.gmail || '', role: ORG_ROLE_OK[m.role] ? m.role : 'NONE', scopes: cleanScopes(m.scopes) });
+  API.orgGet = async (a) => {
+    orgGate(a);
+    let units = await orgUnits(); if (!units) { units = ORG_SEED; await db.collection('SETTINGS').doc('org').set({ units, updatedAt: now(), updatedBy: a.email }); }
+    let mem = docs(await db.collection('ORG_MEMBERS').get());
+    if (!mem.length) {  // 처음 한 번: 예전 직원 명단 + 도급인 책임자로 채움 (소속은 부서 이름이 같은 팀으로)
+      const st = docs(await db.collection('STAFF').get()), P = await principal(true), B = db.batch(), byName = (n) => (units.find((u) => u.name === String(n || '').trim()) || {}).id || '';
+      const add = (o) => { const id = 'M-' + rand8(); B.set(db.collection('ORG_MEMBERS').doc(id), { id, ...o, createdAt: now(), createdBy: a.email }); mem.push({ id, ...o }); };
+      st.forEach((s) => add({ unitId: byName(s.dept) || (s.role === 'SAFETY' ? 'U-SAFE' : ''), name: s.name || '', title: s.title || '', phone: s.phone || '', companyEmail: s.companyEmail || '', gmail: s.loginEmail || s.id, role: s.active === 'N' ? 'NONE' : s.role === 'SAFETY' ? 'SAFETY' : 'CLIENT' }));
+      if (!mem.some((m) => m.name === P.ceo.name)) add({ unitId: 'U-EXEC', name: P.ceo.name, title: '대표이사', phone: '', companyEmail: '', gmail: '', role: 'NONE' });
+      if (!mem.some((m) => m.name === P.delegate.name)) add({ unitId: 'U-INT', name: P.delegate.name, title: P.delegate.rank || '부장', phone: '', companyEmail: '', gmail: '', role: 'NONE' });
+      await B.commit();
+    }
+    const P = await principal(true), pkOf = (id) => (P.ceo.memberId === id ? 'ceo' : P.delegate.memberId === id ? 'delegate' : '');
+    return { me: a.email, units, members: mem.map((m) => ({ ...memView(m), pk: pkOf(m.id) })).sort((x, y) => x.name.localeCompare(y.name, 'ko')), principal: P };
+  };
+  /** 구성원 → 로그인 명단(STAFF) 맞추기 */
+  async function staffSync(a, m, units, oldGmail) {
+    const unit = units.find((u) => u.id === m.unitId), dept = unit ? unit.name : '', keep = (g) => g === a.email || MASTER_EMAILS.includes(g);
+    if (oldGmail && oldGmail !== m.gmail && !keep(oldGmail)) await db.collection('STAFF').doc(oldGmail).delete().catch(() => {});
+    if (!m.gmail) return;
+    const ref = db.collection('STAFF').doc(m.gmail), cur = await ref.get().catch(() => null), base = cur && cur.exists ? cur.data() : null;
+    if (m.role === 'NONE') { if (base && !keep(m.gmail)) await ref.delete(); return; }
+    await ref.set({ name: m.name, dept, role: m.role, companyEmail: m.companyEmail, loginEmail: m.gmail, active: 'Y', title: m.title, phone: m.phone, unitId: m.unitId, memberId: m.id, scopes: cleanScopes(m.scopes),  // F2.6 담당
+      createdBy: (base && base.createdBy) || a.email, createdAt: (base && base.createdAt) || now(), updatedBy: a.email, updatedAt: now() });
+  }
+  /** F1.9t 권한은 소속으로 자동: 안전보건팀(이름)과 그 아래 조직 = 안전보건팀 · 그 외 = 도급인 담당자 · 로그인 Gmail이 없으면 로그인 명단에 안 넣음 */
+  function orgRoleOf(units, unitId, gmail, a) {
+    if (!gmail) return 'NONE'; if (MASTER_EMAILS.includes(gmail)) return 'SAFETY';
+    let u = units.find((x) => x.id === unitId), g = 0; while (u && g++ < 20) { if (/안전보건팀/.test(u.name)) return 'SAFETY'; const p = u.parent; u = units.find((x) => x.id === p); }
+    return 'CLIENT';
+  }
+  const orgPathOf = (units, id) => { const L = []; let u = units.find((x) => x.id === id), g = 0; while (u && g++ < 20) { L.unshift(u.name); const p = u.parent; u = units.find((x) => x.id === p); } return L; };
+  /** 위임장·규정에 들어가는 사람 (pk = ceo | delegate) → SETTINGS/principal */
+  async function orgPrincipalSet(a, units, m, pk) {
+    const P = await principal(true), cur = {}; ['ceo', 'delegate', 'manager'].forEach((k) => { cur[k] = { ...(P[k] || {}) }; });
+    ['ceo', 'delegate'].forEach((k) => { if (cur[k].memberId === m.id && k !== pk) cur[k].memberId = ''; });  // 다른 역할로 바꾸거나 '해당 없음'이면 지정만 뺌 (이름은 남겨 문서가 비지 않게)
+    if (pk) { const path = orgPathOf(units, m.unitId), unit = path.slice(-1)[0] || '';
+      cur[pk] = { memberId: m.id, name: m.name, rank: m.title, org: path.join(' '), title: pk === 'ceo' ? (cur.ceo.title || '안전보건총괄책임자') : (/장$/.test(m.title) ? unit + '장' : unit + ' ' + m.title) }; }
+    const o = {}; ['ceo', 'delegate', 'manager'].forEach((k) => { o[k] = {}; ['name', 'rank', 'title', 'org', 'memberId'].forEach((f) => { o[k][f] = tidy((cur[k] || {})[f], 60); }); });
+    await db.collection('SETTINGS').doc('principal').set({ ...o, updatedAt: now(), updatedBy: a.email }); PRINC = null;
+    audit(a, '', 'PRINCIPAL_SAVE', o.ceo.name + ' → ' + o.delegate.name);
+  }
+  API.orgSaveUnits = async (a, units) => {
+    orgGate(a);
+    const L = (Array.isArray(units) ? units : []).slice(0, 200).map((u) => ({ id: tidy(u && u.id, 20), name: tidy(u && u.name, 40), kind: tidy(u && u.kind, 10), parent: tidy(u && u.parent, 20) })).filter((u) => /^U-[A-Z0-9-]{1,16}$/.test(u.id) && u.name);
+    if (!L.length) fail('조직이 하나도 없습니다.');
+    const ids = new Set(L.map((u) => u.id)); L.forEach((u) => { if (!ids.has(u.parent) || u.parent === u.id) u.parent = ''; });
+    L.forEach((u) => { let p = u.parent, g = 0; while (p && g++ < 20) { if (p === u.id) { u.parent = ''; break; } p = (L.find((x) => x.id === p) || {}).parent; } });  // 돌고 도는 위치 막기
+    const mem = docs(await db.collection('ORG_MEMBERS').get());
+    if (mem.some((m) => !ids.has(m.unitId) && (units || []).some((u) => u && u.id === m.unitId) === false && m.unitId)) { /* 지운 조직의 사람은 화면에서 이미 막음 */ }
+    await db.collection('SETTINGS').doc('org').set({ units: L, updatedAt: now(), updatedBy: a.email }); audit(a, '', 'ORG_SAVE', L.length + '개 조직');
+    // 조직 이름·위치가 바뀌면 권한(안전보건팀 아래인지)과 부서 표시를 다시 맞춤
+    for (const m of mem) { const role = orgRoleOf(L, m.unitId, m.gmail, a); if (role !== m.role) await db.collection('ORG_MEMBERS').doc(m.id).update({ role }).catch(() => {}); await staffSync(a, { ...m, role }, L, '').catch(() => {}); }
+    return API.orgGet(a);
+  };
+  API.orgSaveMember = async (a, d) => {
+    orgGate(a);
+    const units = (await orgUnits()) || ORG_SEED, id = /^M-[A-Za-z0-9]{1,12}$/.test(String((d && d.id) || '')) ? d.id : '', pk = ['ceo', 'delegate'].includes(d && d.pk) ? d.pk : '';
+    const m = { unitId: tidy(d && d.unitId, 20), name: tidy(d && d.name, 40), title: tidy(d && d.title, 30), phone: tidy(d && d.phone, 30), companyEmail: lower(tidy(d && d.companyEmail, 160)), gmail: lower(tidy(d && d.gmail, 160)), scopes: cleanScopes(d && d.scopes) };  // F2.6 담당
+    const bad = []; if (!units.some((u) => u.id === m.unitId)) bad.push('소속 조직'); if (!m.name) bad.push('이름'); if (!m.title) bad.push('직책');
+    if (m.companyEmail && !isInternalEmail(m.companyEmail)) bad.push('회사 이메일 (@' + CFG.APPROVER_DOMAINS.join(', @') + ' 주소만)');
+    if (m.gmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(m.gmail)) bad.push('로그인 Gmail 형식');
+    if (bad.length) fail('다음 항목을 확인해 주세요:\n- ' + bad.join('\n- '));
+    m.role = orgRoleOf(units, m.unitId, m.gmail, a);
+    if (m.gmail === a.email && m.role !== 'SAFETY') fail('본인 계정은 안전보건팀 아래에 두어야 합니다.');
+    const all = docs(await db.collection('ORG_MEMBERS').get()); if (m.gmail && all.some((x) => x.gmail === m.gmail && x.id !== id)) fail('이미 다른 사람에 등록된 로그인 Gmail입니다.');
+    const old = id ? all.find((x) => x.id === id) : null; if (id && !old) fail('고칠 사람을 찾을 수 없습니다. 화면을 새로 고쳐 주세요.');
+    const mid = id || 'M-' + rand8();
+    await db.collection('ORG_MEMBERS').doc(mid).set({ id: mid, ...m, createdAt: (old && old.createdAt) || now(), createdBy: (old && old.createdBy) || a.email, updatedAt: now(), updatedBy: a.email });
+    await staffSync(a, { id: mid, ...m }, units, old && old.gmail);
+    const P = await principal(true), was = P.ceo.memberId === mid ? 'ceo' : P.delegate.memberId === mid ? 'delegate' : '';
+    if (pk || was) await orgPrincipalSet(a, units, { id: mid, ...m }, pk);  // 지정했거나, 지정돼 있던 사람(이름·직책이 바뀌면 문서에도 반영)
+    audit(a, '', id ? 'MEMBER_EDIT' : 'MEMBER_ADD', m.name + ' ' + m.role + ' ' + m.gmail + (pk ? ' ' + pk : ''));
+    return API.orgGet(a);
+  };
+  API.orgDeleteMember = async (a, id) => {
+    orgGate(a);
+    const ref = db.collection('ORG_MEMBERS').doc(tidy(id, 20)), s = await ref.get(); if (!s.exists) fail('구성원을 찾을 수 없습니다.');
+    const m = s.data(), P = await principal(true);
+    if (m.gmail === a.email || MASTER_EMAILS.includes(m.gmail)) fail('마스터 계정은 삭제할 수 없습니다.');
+    if (['ceo', 'delegate', 'manager'].some((k) => (P[k] || {}).memberId === m.id)) fail('도급인 책임자로 지정된 사람입니다. ③ 도급인 책임자에서 다른 사람으로 바꾼 뒤 삭제해 주세요.');
+    await ref.delete(); if (m.gmail) await db.collection('STAFF').doc(m.gmail).delete().catch(() => {});
+    audit(a, '', 'MEMBER_DELETE', m.name + ' ' + (m.gmail || ''));
+    return API.orgGet(a);
+  };
+  /** 위임장 · 현장대리인계 보기 (중계 서버가 양식을 만들어 줌) */
+  API.jobPaper = async (a, jobId, kind, companyId) => relay('jobPaper', { jobId: tidy(jobId, 40), kind: tidy(kind, 10), companyId: tidy(companyId, 40) }, true);
+  /** F1.8i [마스터] 데이터 현황 · 지우기 (중계 서버가 마스터인지 다시 확인) */
+  const masterGate = (a) => { if (!isMaster(a)) fail('마스터 계정만 사용할 수 있습니다.'); };
+  API.adminStats = async (a) => { masterGate(a); return relay('adminStats', {}, true, 120000); };
+  API.adminPreview = async (a, d) => { masterGate(a); return relay('adminPreview', { d: d || {} }, false, 120000); };
+  API.adminDelete = async (a, token) => { masterGate(a); return relay('adminDelete', { token: String(token || '') }, false, 150000); };
+  /* F1.9t 데이터 관리 (왼쪽 목록 · 표로 보기 · 바로 처리) */
+  API.adminTree = async (a) => { masterGate(a); return relay('adminTree', {}, true, 120000); };
+  /* F1.9t 🔑 마스터 권한: 조직도 구성원 목록 + 체크 (화면이 Firestore에 바로 · 보안 규칙이 마스터만 허락) */
+  /* F1.9t 📄 업체 안내문: 내 직원 정보 (조직도 → 직원 명단에 맞춰 둔 소속 · 직책 · 연락처 · 회사메일) */
+  API.flyerInfo = async (a) => {
+    const s = await staffOnly(a);
+    return { name: s.name || '', dept: s.dept || '', title: s.title || '', phone: s.phone || '', email: lower(s.companyEmail || '') };
+  };
+  API.masterList = async (a) => {
+    masterGate(a); await loadMasters(true);
+    const [mem, units] = await Promise.all([db.collection('ORG_MEMBERS').get().then(docs), orgUnits()]), U = {}; (units || []).forEach((u) => { U[u.id] = u.name; });
+    return { me: a.email, fixed: MASTER_EMAILS, list: mem.map((m) => { const g = lower(m.gmail || ''); return { id: m.id, name: m.name || '', title: m.title || '', unit: U[m.unitId] || '', gmail: g, master: !!g && MASTERS.has(g), fixed: MASTER_EMAILS.includes(g) }; })
+      .sort((x, y) => (y.master - x.master) || x.name.localeCompare(y.name, 'ko')) };
+  };
+  API.masterSet = async (a, memberId, on) => {
+    masterGate(a);
+    const ms = await db.collection('ORG_MEMBERS').doc(tidy(memberId, 20)).get(); if (!ms.exists) fail('조직도 구성원을 찾을 수 없습니다.');
+    const m = ms.data(), g = lower(m.gmail || ''); if (!g) fail('로그인 Gmail이 없는 사람은 마스터가 될 수 없습니다. 조직도에서 Gmail을 먼저 넣어 주세요.');
+    if (MASTER_EMAILS.includes(g)) fail('기본 마스터 계정은 바꿀 수 없습니다.');
+    const ref = db.collection('SETTINGS').doc('masters');
+    await db.runTransaction(async (tx) => {
+      const d = await tx.get(ref), cur = new Set(d.exists ? (d.data().emails || []).map(lower) : []);
+      on ? cur.add(g) : cur.delete(g); tx.set(ref, { emails: [...cur], updatedAt: now(), updatedBy: a.email });
+    });
+    audit(a, '', on ? 'MASTER_GRANT' : 'MASTER_REVOKE', (m.name || '') + ' ' + g);
+    return API.masterList(a);
+  };
+  API.adminRows = async (a, kind) => { masterGate(a); return relay('adminRows', { kind: String(kind || '') }, true, 120000); };
+  API.adminRowsDelete = async (a, kind, ids) => { masterGate(a); return relay('adminRowsDelete', { kind: String(kind || ''), ids: (ids || []).slice(0, 200).map(String) }, false, 150000); };
+  API.adminFix = async (a, act, id, email) => { masterGate(a); return relay('adminFix', { act: String(act || ''), id: String(id || ''), email: String(email || '') }, false, 120000); };
+
+  /* ---------- F1.2 계약 전 서류 ---------- */
+  /** [업체] 사업장 정보 저장 (자동저장) — Firestore에 바로 씀. 상태·보완 항목은 보안 규칙이 다시 확인 */
+  API.saveStep = async (a, step, data) => {
+    const b = await myCompany(a), n = Number(step);
+    if (!b || b.status !== 'VERIFIED' || !FIELDS[n]) fail('작성 권한이 없습니다.');
+    const s = b.submissionStatus || 'DRAFT';
+    if (!['DRAFT', 'CORRECTION'].includes(s)) fail('제출 완료된 자료는 수정할 수 없습니다.');
+    if (s === 'CORRECTION') { const keys = parse(b.correctionKeys, []); if (Object.keys(data || {}).some((k) => !keys.includes(n + ':' + k))) fail('보완 요청받은 항목만 변경할 수 있습니다.'); }
+    const allowed = FIELDS[n].map((v) => v[0]); if (n === 3) allowed.push('industry1', 'industry2');
+    const id = b.id + '_' + n, cur = docs(await db.collection('PROFILES').where('uid', '==', a.uid).get()).find((x) => x.id === id);
+    const next = { ...(cur && !staleForm(b, cur.updatedAt) ? cur.data || {} : {}) };
+    for (const [k, v] of Object.entries(data || {})) { if (!allowed.includes(k)) fail('허용되지 않은 입력항목입니다.'); next[k] = tidy(v, 4000); }
+    await db.collection('PROFILES').doc(id).set({ companyId: b.id, uid: a.uid, step: n, data: next, updatedAt: now(), updatedBy: a.email });
+    return API.portalData(a);
+  };
+  /** [업체] 제출 전 누락 확인 · 최종 제출 (제출·검토 메일은 중계 서버) */
+  API.checkSubmission = async () => relay('check', {}, true);
+  API.submitProfile = async (a) => { const r = await relay('submit', {}); return r && r.ok ? { ok: true, portal: await API.portalData(a) } : r; };
+  /** [업체] 서류 파일 등록 (덮어쓰지 않고 새 버전) */
+  API.uploadContractDoc = async (a, code, f) => { await relay('contractDoc', { code: String(code || ''), f }); return API.portalData(a); };
+  API.uploadEvidence = async (a, f) => { await relay('evidence', { f }); return API.portalData(a); };
+  /** [업체] 규정·계획서 작성 완료 → 중계 서버가 서명 PDF를 만들어 제출서류로 등록 */
+  API.saveRuleDoc = async (a, d, sign) => { await relay('rule', { d: d || {}, sign: String(sign || '') }); return API.portalData(a); };
+  API.savePlanDoc = async (a, d, sign) => { await relay('plan', { d: d || {}, sign: String(sign || '') }); return API.portalData(a); };
+  API.uploadPlanFile = async (a, f) => relay('planFile', { f });
+  /** F1.9x [업체] 산재요양승인 반려여부 확인증 추가 제출 → 계약 전 평가 12번 자동 반영 (중계 서버) */
+  API.uploadAccCert = async (a, f) => relay('accCert', { f }, false, 120000);
+
+  /** [업체] 신규 작성(재평가) 시작 · 사업자 정보 수정 */
+  API.startRenewal = async (a, mode) => { await relay('renew', { renewMode: mode === 'NEW' ? 'NEW' : 'KEEP' }); return API.portalData(a); };
+  /** F1.7e [업체] 신규 작성 취소 (제출 전만) → 시작 전 승인 상태로 */
+  API.cancelRenewal = async (a) => { await relay('renewCancel', {}); return API.portalData(a); };
+  API.saveCompanyInfo = async (a, d, cert) => { await relay('companyInfo', { d: d || {}, cert: cert && cert.data ? cert : null }); return API.portalData(a); };
+
+  /* 표준양식 (샘플): 목록은 Firestore · 파일은 구글 드라이브(중계) */
+  API.getTemplate = async (a, code) => relay('template', { code: String(code || '') }, true);
+  API.templateAdminList = async (a) => {
+    if (!(await isSafety(a))) fail('안전보건팀만 표준양식을 관리할 수 있습니다.');
+    const all = docs(await db.collection('TEMPLATES').get());
+    return docTypes().map((t) => {
+      const cur = all.filter((x) => x.docType === t.code && x.active === 'Y').sort((x, y) => Number(y.version) - Number(x.version))[0];
+      return { code: t.code, stage: t.stage, stageLabel: DOC_STAGE[t.stage], name: t.name, cycle: t.cycle, ownerLabel: DOC_OWNER[t.owner] || t.owner, kind: t.kind, required: t.required === 'Y',
+        current: cur ? { name: cur.name, version: Number(cur.version), uploadedAt: cur.uploadedAt, uploadedBy: cur.uploadedBy } : null, history: all.filter((x) => x.docType === t.code).length };
+    });
+  };
+  API.uploadTemplate = async (a, code, f) => { await relay('tplUpload', { code: String(code || ''), f }); return API.templateAdminList(a); };
+  API.refreshTemplateFolders = async (a) => { const report = await relay('tplSync', {}); return { report, list: await API.templateAdminList(a) }; };
+
+  /* 참조 알림 (안전보건팀) */
+  API.noticeList = async (a) => {
+    if (!(await isSafety(a))) fail('안전보건팀만 볼 수 있습니다.');
+    const list = docs(await db.collection('NOTICES').get()).sort((x, y) => String(y.time).localeCompare(String(x.time))).slice(0, 100);
+    return { labels: NOTICE_LABEL, list: list.map((n) => ({ id: n.id, time: n.time, type: n.type, text: n.text, jobId: n.jobId, read: (n.readBy || []).includes(a.email) })) };
+  };
+  API.readNotices = async (a) => {
+    if (!(await isSafety(a))) fail('안전보건팀만 볼 수 있습니다.');
+    const s = await db.collection('NOTICES').get(), b = db.batch(); let n = 0;
+    s.docs.forEach((d) => { const r = d.data().readBy || []; if (!r.includes(a.email)) { b.update(d.ref, { readBy: r.concat(a.email) }); n++; } });
+    if (n) await b.commit();
+    return API.noticeList(a);
+  };
+
+  /* 직원 관리: 화면은 줄 번호(row)를 쓰므로 번호 ↔ 문서(로그인 Gmail)를 기억 */
+  let ROWS = [];
+  API.staffList = async (a) => {
+    if (!(await isSafety(a))) fail('안전보건팀만 직원 명단을 관리할 수 있습니다.');
+    const s = await db.collection('STAFF').get();
+    const list = s.docs.map((d) => ({ id: d.id, ...d.data() })).sort((x, y) => String(x.createdAt || '').localeCompare(String(y.createdAt || '')) || x.id.localeCompare(y.id));
+    ROWS = list.map((x) => x.id);
+    return { me: a.email, roles: STAFF_ROLES, list: list.map((x, i) => ({ row: i + 1, name: x.name, dept: x.dept, role: x.role, companyEmail: x.companyEmail, loginEmail: x.loginEmail || x.id, active: x.active })) };
+  };
+  API.saveStaff = async (a, d) => {
+    if (!(await isSafety(a))) fail('안전보건팀만 직원 명단을 관리할 수 있습니다.');
+    const name = tidy(d?.name, 40), dept = tidy(d?.dept, 60), role = String(d?.role || ''), ce = lower(tidy(d?.companyEmail, 160)), le = lower(tidy(d?.loginEmail, 160)), active = d?.active === 'N' ? 'N' : 'Y';
+    const bad = []; if (!name) bad.push('이름'); if (!STAFF_ROLES[role]) bad.push('역할'); if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(le)) bad.push('로그인 Gmail'); if (ce && !isInternalEmail(ce)) bad.push('회사메일(@' + CFG.APPROVER_DOMAINS.join(', @') + ')');
+    if (bad.length) fail('다음 항목을 확인해 주세요:\n- ' + bad.join('\n- '));
+    const row = Number(d?.row) || 0, curId = row ? ROWS[row - 1] : null;
+    if (row && !curId) fail('수정할 직원을 찾을 수 없습니다. 화면을 새로 고쳐 주세요.');
+    if (curId === a.email && (active === 'N' || role !== 'SAFETY')) fail('본인 계정은 사용중지하거나 안전보건팀에서 뺄 수 없습니다.');
+    const o = { name, dept, role, companyEmail: ce, loginEmail: le, active };
+    await db.runTransaction(async (tx) => {
+      const tgt = db.collection('STAFF').doc(le), t = await tx.get(tgt);
+      if (t.exists && le !== curId) fail('이미 등록된 로그인 Gmail입니다.');
+      if (curId) {
+        const old = await tx.get(db.collection('STAFF').doc(curId)); if (!old.exists) fail('수정할 직원을 찾을 수 없습니다.');
+        const base = old.data();
+        tx.set(tgt, { ...o, createdBy: base.createdBy || a.email, createdAt: base.createdAt || now(), updatedBy: a.email, updatedAt: now() });
+        if (le !== curId) tx.delete(old.ref);  // 로그인 Gmail을 바꾸면 문서 이름도 바뀜
+      } else tx.set(tgt, { ...o, createdBy: a.email, createdAt: now() });
+    });
+    audit(a, '', curId ? 'STAFF_EDIT' : 'STAFF_ADD', name + ' ' + le + ' ' + role + ' ' + active);
+    return API.staffList(a);
+  };
+  API.deleteStaff = async (a, row) => {
+    if (!(await isSafety(a))) fail('안전보건팀만 직원 명단을 관리할 수 있습니다.');
+    const id = ROWS[Number(row) - 1]; if (!id) fail('삭제할 직원을 찾을 수 없습니다. 화면을 새로 고쳐 주세요.');
+    if (id === a.email) fail('본인 계정은 삭제할 수 없습니다.');
+    if (MASTER_EMAILS.includes(id)) fail('마스터 계정은 삭제할 수 없습니다.');
+    await db.collection('STAFF').doc(id).delete();
+    audit(a, '', 'STAFF_DELETE', id);
+    return API.staffList(a);
+  };
+
+  /* ---------- F1.3 공사 · 업체 배정 · 작업자 · 오늘 인원 ----------
+   *  JOBS/{JOB-…}                 공사 (vendorUids = 배정 업체 대표 계정 → 업체가 자기 공사만 읽음)
+   *  JOB_VENDORS/{공사ID_업체ID}   배정 (workerToken = 작업자 등록 QR 값)
+   *  WORKERS/{WK-…}               작업자 명단 = 신규자 교육일지 (본인 QR 등록은 중계 서버가 씀)
+   *  CREW/{공사ID_업체ID_날짜}      오늘 작업 인원 = 그날 작업안전수칙 서명 */
+  /* F2.1 OPEN = 오픈지원 매장 (업종 '오픈지원' 업체만 배정) · WORK·CONTRACT에는 오픈지원 업체 배정 안 함 */
+  const JOB_KINDS = { WORK: '매장 공사', OPEN: '오픈지원 (매장 오픈)', CONTRACT: '계약 단위(입고도우미·재고조사 등)' };
+  const MEET_KINDS = { COUNCIL: '안전보건협의체 회의', JOINT: '합동안전보건점검' };
+  const WORK_RULES = ['작업에 적합한 단정한 복장을 착용한다.',
+    '안전화, 안전모 등 안전보호구를 착용하고, 작업에 따라 안전보호구를 선별하며 철저히 착용 후 관리자의 인가를 받고 작업한다.',
+    '사다리 포함 고소 작업 시에는 반드시 안전벨트를 착용하고 체결 후 작업한다.',
+    '관리감독자의 지시에 따라 올바른 순서로 작업한다.',
+    '작업 공구 및 기계는 반드시 안전점검 후 사용한다.',
+    '핸드그라인더, 고속절단기 등 유해위험 기계기구는 반드시 안전장치를 설치 후 사용한다.',
+    '전기 및 위험물을 취급 시에는 관계자의 지시에 따른다.',
+    '현장 내에서는 절대로 뛰어다니지 않는다.',
+    '사전 승인 없는 화기의 취급 및 절단, 용접은 엄금한다.',
+    '유해위험 작업 시 반드시 작업구역을 설정하고, 경계를 분명히 하여 작업 중 재해가 발생하지 않도록 주의한다.',
+    '작업중 음주 및 흡연은 엄금하고, 흡연은 정해진 장소에서만 한다.',
+    '작업이 끝나면 반드시 정리정돈을 실시하고, 관계자의 인가를 받고 작업을 종료한다.',
+    '관계자의 인가없이 작업을 끝낸 후 하자가 발생하면 공사업체 책임자가 책임을 진다.',
+    '업체 책임자 및 직원은 관계인의 연락처를 숙지하고, 긴급상황 등 이상 발생 시 즉시 연락을 취한다.'];
+  const WORK_PLEDGE = '작업자는 상기의 안전 작업 수칙을 교육 받고, 작업 시 안전 작업 수칙을 준수하며, 안전 작업 서약서에 서명 후 작업을 실시한다.';
+  const WORKER_ROLES = ['관리자', '근로자'], EDU_TYPE = '채용 시 교육';
+  const INSP_ITEMS = ['정리정돈 실시상태', '소방설비 관리상태', '복장 및 보호구 착용상태', '안전장치 관리상태', '안전표지 부착', '유해위험작업관리', '안전수칙 준수', '관리감독 이행여부', '유해물질관리', '감전재해 예방관리', '인화성 가스 안전관리'];
+  /* F1.8a 순회점검표 = 공통 5항목 + 안전보건관리계획서 위험성평가에서 고른 위험작업별 안전대책
+   *  (계획서에 위험작업이 없으면 예전 11항목) · 점검마다 항목 이름을 같이 저장(labels) → 나중에 계획서가 바뀌어도 그날 점검표 그대로 */
+  const INSP_BASE = ['정리정돈 실시상태', '소방설비 관리상태', '복장 및 보호구 착용상태', '안전표지 부착', '안전수칙 준수'];
+  /* F1.8r 공통 5항목 + 계획서에서 고른 위험요인의 짧은 점검 질문 (예: 해체·폐기물 반출 시 … 떨어질 위험은 없는가?) */
+  const inspItemsFor = (plan) => { const r = planRisks(plan); return r.length ? INSP_BASE.concat(r.map((x) => x.q)) : INSP_ITEMS.slice(); };
+  /* F1.9w 순회점검 = 오늘 공정을 골라 점검표 · 공정 = 계획서에서 고른 공종(위험요인이 있는 것) · 점검표 = 공통 5항목 + 고른 공종의 위험요인
+   *  계획서에 위험요인이 없으면 예전처럼 11항목 (공정 고르기 없음) */
+  const planWorks = (plan) => { const m = new Map(); planRisks(plan).forEach((r) => { if (!m.has(r.t)) m.set(r.t, { t: r.t, tl: r.tl, qs: [] }); m.get(r.t).qs.push(r.q); }); return [...m.values()]; };
+  const inspItemsPick = (plan, works) => { const W = planWorks(plan); if (!W.length) return INSP_ITEMS.slice(); const on = new Set(works || []); return INSP_BASE.concat(...W.filter((w) => on.has(w.t)).map((w) => w.qs)); };
+  /** 업체의 계획서(C02)에서 고른 위험요인 → 점검 항목 */
+  async function planOf(a, b) {
+    const f = docs(await db.collection('CONTRACT_FORMS').where('uid', '==', a.uid).get().catch(() => ({ docs: [] }))).find((x) => x.companyId === b.id && x.code === 'C02');
+    return parse(f && f.json, {}) || {};
+  }
+  async function inspItemsOf(a, b) { return inspItemsFor(await planOf(a, b)); }
+  /* F1.8b 순회점검 때 같이 올리는 교육·비상대응훈련 사진 (한 날만) · 비상훈련 = 대피·CPR·소화기 → 종료 평가 11번 */
+  /* F1.9z2 감전 사고 대응 훈련(SHOCK) 추가 · 하루에 여러 훈련 (INSPECTIONS.drills 목록 · 예전 기록은 drill 하나) */
+  const DRILL_TYPES = { EVAC: '비상대피 훈련', CPR: '심폐소생술(CPR) 교육', FIRE: '소화기 사용 훈련', SHOCK: '감전 사고 대응 훈련', EDU: '기타 안전교육' }, DRILL_EMERGENCY = ['EVAC', 'CPR', 'FIRE', 'SHOCK'];
+  /* F1.9w 비상훈련은 참석자(attendees) · 그날 출근 인원(crew) · 훈련 내용 한 줄(memo)도 같이 (예전 기록은 attendees 없음 = null) */
+  const drillOne = (d) => { if (!(d && DRILL_TYPES[d.type] && photoIds(d.photos, 5).length)) return null;
+    const at = Array.isArray(d.attendees) ? d.attendees.map((w) => ({ id: String(w.id || ''), name: String(w.name || ''), role: String(w.role || ''), isNew: !!w.isNew })) : null;
+    return { type: d.type, label: DRILL_TYPES[d.type], photos: photoIds(d.photos, 5), memo: String(d.memo || ''), attendees: at, crew: Number(d.crew) || 0 }; };
+  const drillsOf = (x) => (Array.isArray(x && x.drills) ? x.drills : x && x.drill ? [x.drill] : []).map(drillOne).filter(Boolean);
+  const drillOf = (x) => drillsOf(x)[0] || null;
+  /* F1.9w 비상훈련 결과 (종료 평가 11번 · 비상훈련 실시 보고서 · 업체 공사 화면) — 중계 서버 drillSum_ 과 같은 규칙
+   *  필요한 훈련 = 계획서 6단계에서 체크한 대피·CPR·소화기 (비상대피는 늘 포함)
+   *  우수 = 필요한 훈련 모두 + 평균 참석률 80% 이상 · 보통 = 비상대피는 했지만 빠진 훈련 또는 80% 미만 · 미흡 = 비상대피 0회 */
+  const DRILL_SHORT = { EVAC: '비상대피', CPR: 'CPR', FIRE: '소화기', SHOCK: '감전' };
+  const DRILL_FIX = { EVAC: '착공 첫 주 안에 비상대피 훈련을 실시하고 순회점검 때 사진·참석자를 기록', CPR: 'CPR 교육은 공사 첫 주 TBM 때 함께 실시', FIRE: '소화기 사용 훈련은 화기·전기 작업 시작 전에 실시', SHOCK: '감전 사고 대응 훈련(전원 차단 · 구조 · 신고)은 전기 작업 시작 전에 실시' };
+  function drillSum(plan, ins) {
+    const pd = (plan && plan.drill) || {}, it = Array.isArray(pd.items) ? pd.items : [];
+    const need = ['EVAC'].concat(['CPR', 'FIRE', 'SHOCK'].filter((k) => it.includes(k))), pct = (r) => Math.round(r * 100) + '%', md = (d) => String(d || '').slice(5);
+    const recs = [].concat(...ins.map((x) => drillsOf(x).map((d) => ({ date: x.date, d })))).filter((x) => x.d && DRILL_EMERGENCY.includes(x.d.type)).sort((p, q) => (p.date < q.date ? -1 : 1)).map((x) => {
+      const n = x.d.attendees ? x.d.attendees.length : null, c = n == null ? null : Math.max(n, x.d.crew || 0);
+      return { date: x.date, type: x.d.type, label: x.d.label, photos: x.d.photos, memo: x.d.memo, attendees: x.d.attendees || [], n, crew: c, rate: n == null || !c ? null : n / c }; });
+    const done = need.filter((k) => recs.some((r) => r.type === k)), miss = need.filter((k) => !done.includes(k));
+    const rated = recs.filter((r) => r.rate != null), avg = rated.length ? rated.reduce((s, r) => s + r.rate, 0) / rated.length : null;
+    const lv = !done.includes('EVAC') ? 'P' : !miss.length && (avg == null || avg >= 0.8) ? 'G' : 'N', LV = { G: '우수', N: '보통', P: '미흡' };
+    const did = done.map((k) => { const l = recs.filter((r) => r.type === k); return DRILL_SHORT[k] + ' ' + md(l[0].date) + (l.length > 1 ? ' 외 ' + (l.length - 1) + '회' : ''); });
+    const review = recs.length ? '계획한 훈련 ' + need.length + '종 중 ' + done.length + '종 실시 (' + did.join(' · ') + ').' + (avg != null ? ' 평균 참석률 ' + pct(avg) + '.' : '') + ' 판정: ' + LV[lv] + '.'
+      : '공사 기간 중 비상대응훈련 실시 기록 없음. 판정: ' + LV[lv] + '.';
+    const low = rated.filter((r) => r.rate < 0.8), few = recs.filter((r) => r.photos.length < 2), noAt = recs.filter((r) => r.n == null);
+    const problems = miss.map((k) => DRILL_TYPES[k] + ' 미실시').concat(low.map((r) => md(r.date) + ' ' + r.label + ' 참석률 ' + pct(r.rate) + ' (출근 ' + r.crew + '명 중 ' + r.n + '명)'),
+      few.map((r) => md(r.date) + ' ' + r.label + ' 증빙 사진 부족 (' + r.photos.length + '장)'), noAt.map((r) => md(r.date) + ' ' + r.label + ' 참석자 기록 없음'));
+    const improve = miss.map((k) => DRILL_FIX[k]).concat(low.length ? ['훈련 일정을 전날 공지하고 전원 참석 확인'] : [], few.length ? ['훈련 장면 사진을 2장 이상 (대피 이동 · 집결 확인) 남기기'] : [], noAt.length ? ['훈련 때 참석자를 체크해 기록'] : []);
+    const next = miss.map((k) => DRILL_TYPES[k] + ' 실시').concat(['다음 공사는 착공 첫 주 안에 비상대피 훈련 실시']);
+    return { lv, need, done, miss, avg, recs, plan: { route: String(pd.route || ''), assembly: String(pd.assembly || ''), equip: String(pd.equip || ''), manager: String(pd.manager || '') },
+      text: { review, problems: problems.length ? problems : ['특이사항 없음'], improve: improve.length ? improve : ['현재 수준 유지'], next } };
+  }
+  const inspLabels = (x) => (Array.isArray(x && x.labels) && x.labels.length ? x.labels : INSP_ITEMS);
+  const daysBetween = (x, y) => Math.round((new Date(y + 'T00:00:00Z') - new Date(x + 'T00:00:00Z')) / 86400000);
+  const rand8 = () => Array.from(crypto.getRandomValues(new Uint8Array(4)), (v) => v.toString(16).padStart(2, '0')).join('').toUpperCase();
+  const newToken = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), (v) => v.toString(16).padStart(2, '0')).join('');
+  const isDate = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
+  function jobEndInfo(j) {
+    if (j.status === 'ENDED') return { state: 'ENDED', endedAt: j.endedAt ? kst(j.endedAt) : '' };
+    if (!isDate(j.endDate)) return { state: 'OPEN' };
+    const left = daysBetween(today(), j.endDate); return { state: left < 0 ? 'OVER' : left <= 3 ? 'SOON' : 'OPEN', left };
+  }
+  const canSeeJob = (a, s, j) => !!j && (s.role === 'SAFETY' || lower(j.hostEmail) === a.email);
+  /** 공사 여러 개의 기록을 한꺼번에 (Firestore 'in'은 30개씩) */
+  async function byJobs(col, ids) {
+    const parts = []; for (let i = 0; i < ids.length; i += 30) parts.push(ids.slice(i, i + 30));
+    return (await Promise.all(parts.map((p) => db.collection(col).where('jobId', 'in', p).get().then(docs)))).flat();
+  }
+  /** 업체별 이행 현황 (작업일 = 인원·허가서·순회점검 기록이 있는 날) */
+  function vjStats(crew, pm, ins, fd) {
+    pm = pm || []; ins = ins || []; fd = fd || [];
+    const t = today(), wd = new Set([].concat(crew.map((x) => x.date), pm.map((x) => x.date), ins.map((x) => x.date)).filter(Boolean)).size, last = ins.map((x) => x.date).filter(Boolean).sort().pop() || '';
+    return { workDays: wd, crewDays: crew.length, permitDays: new Set(pm.map((x) => x.date)).size, insp: ins.length, inspNeed: wd ? Math.max(1, Math.ceil(wd / 2)) : 0,
+      openFindings: fd.filter((x) => x.status !== 'DONE').length, findTotal: fd.length, todayPermit: pm.some((p) => p.date === t), inspToday: last === t, inspDue: !last || daysBetween(last, t) >= 2, lastInsp: last };
+  }
+  /** 공사에 배정할 수 있는 업체 (재평가 중 포함 · 테스트 모드면 승인 전도) */
+  async function jobVendorChoices() {
+    const cs = docs(await db.collection('COMPANIES').where('status', '==', 'VERIFIED').get()).filter((x) => canExec(x) || CFG.TEST_SKIP_FILES);
+    /* F1.9b 계약 전 평가(승인된 마지막 회차) 총점 · 우수가 아닌 항목 → 공사 배정 때 70점 미만 경고 */
+    const evs = await Promise.all(cs.map((x) => db.collection('EVALUATIONS').where('companyId', '==', x.id).get().then(docs).catch(() => [])));
+    const pre = (l) => { const e = l.filter((x) => x.result === 'APPROVED').sort((p, q) => String(p.evaluatedAt).localeCompare(String(q.evaluatedAt))).pop(); if (!e) return null;
+      const lv = parse(e.items, {}), its = {}; Object.keys(lv).forEach((n) => { if (EVAL_LEVELS[lv[n]]) its[n] = { lv: lv[n] }; }); const sc = evalScore_(its);
+      return { total: sc.total, grade: sc.grade, limited: sc.limited, at: e.evaluatedAt || '', low: EVAL_ITEMS.filter(([n]) => its[n] && its[n].lv !== 'G').map(([n, , name]) => [n, name, EVAL_LEVELS[its[n].lv]]) }; };
+    return cs.map((x, i) => {
+      const v = contractValid(x);
+      return { id: x.id, uid: x.uid, company: x.company, industry: x.industry, approved: canExec(x),
+        contact: x.contact || '', phone: x.phone || '', dup: cs.filter((y) => y.regNo && y.regNo === x.regNo).length, /* F1.9x 현장대리인 · 같은 사업자 계정 수 */ renewing: !!x.renewAt, renewStatus: x.renewAt ? x.submissionStatus : '', valid: v, expired: !!(v && v.expired), lastEval: null, preEval: pre(evs[i]) };
+    });
+  }
+  function jobView(j, jvs, wks, crews, pms, inss, fds, mts, ats, evs) {
+    const of = (l) => (l || []).filter((x) => x.jobId === j.id), vs = of(jvs).sort((x, y) => String(x.addedAt).localeCompare(String(y.addedAt))), cr = of(crews), pm = of(pms), ins = of(inss), fd = of(fds);
+    const by = (l, v) => l.filter((x) => x.companyId === v.companyId);
+    return { id: j.id, title: j.title, storeName: j.storeName, storeCode: j.storeCode, address: j.address, kind: j.kind, kindLabel: JOB_KINDS[j.kind] || j.kind, startDate: j.startDate, endDate: j.endDate,
+      delegations: j.delegations || {}, hostName: j.hostName, hostEmail: j.hostEmail, status: j.status,
+      vendors: vs.map((v) => ({ companyId: v.companyId, company: v.company, trade: v.trade })),
+      workerCount: wks.filter((w) => w.jobId === j.id).length, permitWaiting: pm.filter((p) => p.status === 'ISSUED').length, permitTotal: pm.length,
+      inspTotal: ins.length, inspUnchecked: ins.filter((x) => !x.checkedAt).length, findOpen: fd.filter((f) => f.status !== 'DONE').length,
+      // F1.8g 도급인 메인 '지적사항 · 시정조치' 목록
+      findings: fd.map((f) => ({ id: f.id, inspId: f.inspId, company: f.company, companyId: f.companyId, no: Number(f.no), item: f.item, memo: f.memo, foundDate: f.foundDate, status: f.status, actionDate: f.actionDate || '' })),
+      vstats: vs.map((v) => Object.assign({ company: v.company, companyId: v.companyId, noPermit: j.kind === 'OPEN' /* F2.1 오픈지원은 작업허가서 없음 */ }, vjStats(by(cr, v), by(pm, v), by(ins, v), by(fd, v)))),
+      end: jobEndInfo(j), evalDone: of(evs).filter((e) => e.status === 'DONE').length, evalTotal: of(evs).length, crewDays: cr.length,
+      meetings: of(mts).sort((x, y) => String(x.createdAt).localeCompare(String(y.createdAt))).map((m) => meetSummary(m, of(ats))) };
+  }
+  async function staffOnly(a) { const s = await staffOf(a); if (!s) fail('아성다이소 직원 계정만 사용할 수 있습니다.'); return s; }
+  /** [직원] 공사 목록 + 배정 가능한 업체 */
+  API.jobBoard = async (a, noAuto) => {
+    const s = await staffOnly(a);
+    const [choices, all] = await Promise.all([jobVendorChoices(), db.collection('JOBS').get().then(docs)]);
+    const jobs = all.filter((j) => canSeeJob(a, s, j)).sort((x, y) => String(y.createdAt).localeCompare(String(x.createdAt))), ids = jobs.map((j) => j.id);
+    const L = await Promise.all(['JOB_VENDORS', 'WORKERS', 'CREW', 'PERMITS', 'INSPECTIONS', 'FINDINGS', 'MEETINGS', 'ATTEND', 'JOB_EVALS'].map((n) => byJobs(n, ids)));
+    // F1.8l 착수 미팅 · 법정 주기 미팅 자동 생성 → 만들었으면 한 번 더 읽음
+    if (noAuto !== true && await autoMeetings(a, s, jobs, L[6])) return API.jobBoard(a, true);
+    // 업체 고를 때 지난 종료 평가 (C·D등급 경고)
+    const [ev0, jvAll] = await Promise.all([db.collection('JOB_EVALS').where('status', '==', 'DONE').get().then(docs), db.collection('JOB_VENDORS').get().then(docs).catch(() => [])]);
+    const le = lastEvals(ev0, all);
+    /* F1.9x 업체 고를 때 구분: 현장대리인 · 지금 진행 중인 공사 (같은 업체가 현장대리인마다 계정을 따로 쓰는 경우) */
+    const openJ = {}, jm = {}; all.forEach((j) => { jm[j.id] = j; });
+    jvAll.forEach((v) => { const j = jm[v.jobId]; if (j && j.status !== 'ENDED') (openJ[v.companyId] = openJ[v.companyId] || []).push({ id: j.id, title: j.title, storeName: j.storeName, startDate: j.startDate, endDate: j.endDate }); });
+    const cm = {}; choices.forEach((c) => { cm[c.id] = { contact: c.contact, phone: c.phone }; });
+    const jv2 = (x) => ({ ...x, vendors: x.vendors.map((v) => ({ ...v, contact: (cm[v.companyId] || {}).contact || '' })) });
+    return { me: { name: s.name, role: s.role }, principal: await principal().catch(() => null), kinds: JOB_KINDS, meetKinds: MEET_KINDS, vendors: choices.map(({ uid, ...v }) => ({ ...v, lastEval: le[v.id] || null, openJobs: openJ[v.id] || [] })), testMode: CFG.TEST_SKIP_FILES, jobs: jobs.map((j) => jv2(jobView(j, ...L))) };
+  };
+  /** [직원] 공사 만들기·수정 (참여 업체·위임장 정보 포함) */
+  API.saveJob = async (a, d) => {
+    const s = await staffOnly(a);
+    const title = tidy(d?.title, 120), storeName = tidy(d?.storeName, 80), storeCode = tidy(d?.storeCode, 30), address = tidy(d?.address, 200), kind = JOB_KINDS[d?.kind] ? d.kind : 'WORK', sd = tidy(d?.startDate, 10), ed = tidy(d?.endDate, 10);
+    const bad = []; if (!title) bad.push('공사명'); if (!storeName) bad.push('매장명(또는 계약명)'); if (!isDate(sd)) bad.push('시작일'); if (ed && !isDate(ed)) bad.push('종료일'); if (ed && sd && ed < sd) bad.push('종료일이 시작일보다 빠름');
+    if (bad.length) fail('다음 항목을 확인해 주세요:\n- ' + bad.join('\n- '));
+    const dl = {}; ['COUNCIL', 'JOINT'].forEach((k) => { const x = (d?.delegations || {})[k] || {}; dl[k] = { delegator: tidy(x.delegator, 60), delegatee: tidy(x.delegatee, 60), date: tidy(x.date, 10) }; });
+    const choices = await jobVendorChoices(), want = [...new Set((d?.vendorIds || []).map(String))], pick = want.filter((id) => choices.some((c) => c.id === id));
+    let id = tidy(d?.id, 40); const cur = id ? await db.collection('JOBS').doc(id).get() : null;
+    if (id && (!cur.exists || !canSeeJob(a, s, cur.data()))) fail('수정할 수 없는 공사입니다.');
+    const oldSd = cur ? String(cur.data().startDate || '') : '';  // F1.8l 시작일이 바뀌었는지 (착수 미팅 날짜 따라가기)
+    const have = id ? docs(await db.collection('JOB_VENDORS').where('jobId', '==', id).get()) : [];
+    // 계약 전 평가 유효기간(1년)이 지난 업체는 새로 배정하지 않음 (이미 배정된 업체는 그대로)
+    const add = pick.filter((c) => !have.some((h) => h.companyId === c)).map((c) => choices.find((x) => x.id === c));
+    const exp = add.filter((v) => v.expired && !CFG.TEST_SKIP_FILES);
+    /* F2.1 오픈지원 매장에는 오픈지원 업체만 · 매장 공사·계약 단위에는 오픈지원 업체를 새로 배정하지 않음 (이미 배정된 업체는 그대로) */
+    const mis = add.filter((v) => (kind === 'OPEN') !== isOpenInd(v.industry));
+    if (mis.length) fail(kind === 'OPEN' ? '오픈지원 매장에는 업종이 「오픈지원」인 업체만 배정할 수 있습니다:\n- ' + mis.map((v) => v.company + ' (' + v.industry + ')').join('\n- ') : '업종이 「오픈지원」인 업체는 구분을 「오픈지원 (매장 오픈)」으로 골라야 배정할 수 있습니다:\n- ' + mis.map((v) => v.company).join('\n- '));
+    if (exp.length) fail('계약 전 평가 유효기간(1년)이 지난 업체는 새로 배정할 수 없습니다.\n업체가 계약 전 서류를 고쳐 다시 제출하고 승인받으면 배정할 수 있습니다:\n- ' + exp.map((v) => v.company + ' (유효기간 ~' + v.valid.until + ')').join('\n- '));
+    // 체크 해제한 업체 배정 취소 (그 업체의 작업자·작업 기록이 있으면 취소 불가)
+    const drop = have.filter((v) => !want.includes(v.companyId));
+    if (drop.length) {
+      const [w, c] = await Promise.all(['WORKERS', 'CREW'].map((n) => db.collection(n).where('jobId', '==', id).get().then(docs)));
+      const busy = drop.filter((v) => w.some((x) => x.companyId === v.companyId) || c.some((x) => x.companyId === v.companyId));
+      if (busy.length) fail('작업자·작업 기록이 있는 업체는 배정을 취소할 수 없습니다:\n- ' + busy.map((v) => v.company).join('\n- '));
+    }
+    if (!id) id = 'JOB-' + rand8();
+    const vendorUids = [...new Set(have.filter((v) => want.includes(v.companyId)).map((v) => v.vendorUid).concat(add.map((v) => v.uid)).filter(Boolean))];
+    const o = { title, storeName, storeCode, address, kind, startDate: sd, endDate: ed, delegations: dl, vendorUids }, b = db.batch(), ref = db.collection('JOBS').doc(id);
+    if (cur) b.update(ref, o); else b.set(ref, { id, ...o, hostEmail: a.email, hostName: s.name, status: 'OPEN', createdAt: now(), extensions: [], endedAt: '', endedBy: '' });
+    add.forEach((v) => b.set(db.collection('JOB_VENDORS').doc(id + '_' + v.id), { jobId: id, companyId: v.id, company: v.company, trade: v.industry, vendorUid: v.uid, addedBy: a.email, addedAt: now(), workerToken: '' }));
+    drop.forEach((v) => b.delete(db.collection('JOB_VENDORS').doc(v.id)));
+    /* F2.2 배정 취소한 업체의 인력관리자 배정도 같이 지움 (그 인력관리자에게 이 오픈 매장이 안 보이게) */
+    if (drop.length) docs(await db.collection('JOB_MGRS').where('jobId', '==', id).get().catch(() => ({ docs: [] }))).filter((x) => drop.some((v) => v.companyId === x.companyId)).forEach((x) => b.delete(db.collection('JOB_MGRS').doc(x.id)));
+    await b.commit();
+    if (drop.length) audit(a, '', 'JOB_VENDOR_REMOVE', id + ' ' + drop.map((v) => v.company).join(', '));
+    audit(a, '', cur ? 'JOB_EDIT' : 'JOB_ADD', id + ' ' + title + ' 업체 ' + pick.length);
+    // F1.8l 시작일을 고치면 아직 시작 안 한 착수 미팅 날짜도 따라감 (새 공사의 착수 미팅은 jobBoard가 자동으로 만듦)
+    if (cur) { try { const ms = await db.collection('MEETINGS').doc('MT-' + id + '-START').get(); const m = ms.exists ? ms.data() : null, nd = sd >= today() ? sd : today();
+      if (m && !m.doneAt && m.open !== 'Y' && m.date !== nd && oldSd !== sd) await API.setMeetingDate(a, m.id, nd); } catch (e) { console.warn('착수 미팅 날짜 변경 실패', e && e.message); } }
+    return API.jobBoard(a);
+  };
+  /** [직원] 공사 삭제 — 업체 배정·작업자·작업 인원 기록까지 함께 (삭제 내역은 접근및작업이력에) */
+  API.deleteJob = async (a, jobId) => {
+    const s = await staffOnly(a), id = tidy(jobId, 40), js = await db.collection('JOBS').doc(id).get(), j = js.exists ? js.data() : null;
+    if (!j || !canSeeJob(a, s, j)) fail('삭제할 수 없는 공사입니다.');
+    const COLS = ['JOB_VENDORS', 'WORKERS', 'CREW', 'PERMITS', 'INSPECTIONS', 'FINDINGS', 'MEETINGS', 'ATTEND', 'JOB_EVALS', 'JOB_MGRS', 'OPEN_DRILLS', 'DRILL_ATTEND'], lists = await Promise.all(COLS.map((n) => db.collection(n).where('jobId', '==', id).get().catch((e) => { if (['JOB_MGRS', 'OPEN_DRILLS', 'DRILL_ATTEND'].includes(n)) return { docs: [] }; throw e; })));  // F2.4 비상훈련  // F2.2 JOB_MGRS (규칙을 아직 안 올렸으면 건너뜀)
+    const b = db.batch(), cnt = {};
+    COLS.forEach((n, i) => { cnt[n] = lists[i].docs.length; lists[i].docs.forEach((d) => b.delete(d.ref)); });
+    lists[COLS.indexOf('MEETINGS')].docs.forEach((d) => { if (d.data().token) b.delete(db.collection('MEET_LINKS').doc(d.data().token)); });  // 참석 QR도 무효
+    b.delete(js.ref); await b.commit();
+    audit(a, '', 'JOB_DELETE', id + ' ' + j.title + ' ' + JSON.stringify(cnt));
+    return API.jobBoard(a);
+  };
+
+  /* 업체: 내 공사 · 작업자 · 오늘 인원 */
+  async function execVendor(a) {
+    if (a.mode === 'STAFF') fail('다이소 담당자로 접속했습니다. 업체 업무는 로그인 화면에서 [협력업체]로 다시 로그인해 주세요.');
+    const b = await myCompany(a);
+    if (!b || b.status !== 'VERIFIED' || !(canExec(b) || CFG.TEST_SKIP_FILES)) fail('계약 전 검토가 승인된 업체 대표 계정만 사용할 수 있습니다.');
+    return b;
+  }
+  const myAssign = async (a, b) => docs(await db.collection('JOB_VENDORS').where('vendorUid', '==', a.uid).get()).filter((v) => v.companyId === b.id);
+  const mineOf = (col, a, jobId) => db.collection(col).where('vendorUid', '==', a.uid).where('jobId', '==', jobId).get().then(docs);
+  async function vendorJobOf(a, b, jobId, write) {
+    const id = tidy(jobId, 40), jv = (await myAssign(a, b)).find((v) => v.jobId === id);
+    if (!jv) fail('이 공사에 배정된 업체가 아닙니다.');
+    const js = await db.collection('JOBS').doc(id).get(); if (!js.exists) fail('이 공사에 배정된 업체가 아닙니다.');
+    const j = js.data(); if (write && j.status === 'ENDED') fail('종료된 공사입니다. 지난 기록은 볼 수만 있습니다.');
+    return { jv, j };
+  }
+  async function siteManagerOf(a, b) { const p = docs(await db.collection('PROFILES').where('uid', '==', a.uid).get()).find((x) => x.id === b.id + '_1'); return String(((p && p.data) || {}).siteManager || ''); }
+  /** 그날 수칙 서명 방식: 처음 등록한 날 본인 계정으로 서명 → SELF, 그 외(소장 체크·소장 등록) → MANAGER */
+  const crewSnap = (w, date) => ({ id: w.id, name: w.name, role: w.role, trade: w.trade || '', sign: (w.method === 'SELF' && kst(w.rulesAt) === date) ? 'SELF' : 'MANAGER' });
+  async function crewWrite(a, b, j, date, list, sm) {
+    const id = j.id + '_' + b.id + '_' + date;
+    await db.collection('CREW').doc(id).set({ id, jobId: j.id, companyId: b.id, vendorUid: a.uid, date, workers: list.map((w) => crewSnap(w, date)), count: list.length, siteManager: sm, savedBy: a.email, savedAt: now() });
+  }
+  /** 새로 등록한 작업자를 오늘 인원에 추가 (처음 온 날 = 그날 작업자) */
+  async function crewAppend(a, b, j, w, ws) {
+    const t = today(), cur = (await mineOf('CREW', a, j.id)).find((x) => x.date === t && x.companyId === b.id), ids = cur ? (cur.workers || []).map((x) => x.id) : [];
+    if (ids.includes(w.id)) return;
+    const act = ws.filter((x) => x.companyId === b.id && x.active !== 'N'), list = ids.map((id) => act.find((x) => x.id === id)).filter(Boolean).concat([w]);
+    await crewWrite(a, b, j, t, list, cur ? cur.siteManager : await siteManagerOf(a, b));
+  }
+  /** F1.8a 허가서 발행·순회점검 제출 때 같이 보낸 오늘 인원 → 오늘 작업 안전 수칙 서명으로 저장 (인원 저장 버튼을 따로 누르지 않아도 됨)
+   *  crew = { ids: [작업자ID…], sm: 현장책임자 } · 비었으면 건너뜀 */
+  async function crewWith(a, b, j, crew) {
+    if (!crew || !Array.isArray(crew.ids) || !crew.ids.length) return;
+    const ws = (await mineOf('WORKERS', a, j.id)).filter((w) => w.companyId === b.id && w.active !== 'N'), pick = [...new Set(crew.ids.map(String))].map((id) => ws.find((w) => w.id === id)).filter(Boolean);
+    if (!pick.length) return;
+    await crewWrite(a, b, j, today(), pick, tidy(crew.sm, 40) || await siteManagerOf(a, b)); audit(a, b.id, 'CREW_SAVE', j.id + ' ' + today() + ' ' + pick.length + '명 (자동)');
+  }
+  /** [업체] 내 공사 목록 */
+  API.myJobs = async (a) => {
+    const b = await execVendor(a), t = today(), jvs = (await myAssign(a, b)).sort((x, y) => String(y.addedAt).localeCompare(String(x.addedAt)));
+    const mineAll = (col) => db.collection(col).where('vendorUid', '==', a.uid).get().then(docs);
+    const op = isOpenInd(b.industry), opQ = (col, f) => (op ? (f ? db.collection(col).where('vendorUids', 'array-contains', a.uid) : db.collection(col).where('vendorUid', '==', a.uid)).get().then(docs).catch(() => []) : []);
+    const [jobs, wks, crews, pms, inss, fds, nts, ats, jma, osm, otb, odr] = await Promise.all([
+      Promise.all(jvs.map((v) => db.collection('JOBS').doc(v.jobId).get().then((s) => (s.exists ? s.data() : null)).catch(() => null))), mineAll('WORKERS'), mineAll('CREW'), mineAll('PERMITS'), mineAll('INSPECTIONS'), mineAll('FINDINGS'),
+      // F1.8f 메인 화면 📢 미팅 알림 (도급인이 만든 협의체·합동점검) · 보안 규칙을 아직 안 올렸으면 알림만 빠짐
+      db.collection('MEET_NOTICES').where('v.' + a.uid, '==', true).get().then(docs).catch(() => []),
+      db.collection('ATTEND').where('uid', '==', a.uid).get().then(docs).catch(() => []),
+      isOpenInd(b.industry) ? db.collection('JOB_MGRS').where('vendorUid', '==', a.uid).get().then(docs).catch(() => []) : [],  // F2.2 오픈 매장별 인력관리자 배정
+      opQ('SITE_MGRS'), opQ('TBMS'), opQ('OPEN_DRILLS', true)]);  // F2.7 계약담당자 대시보드: 관리감독자 · 오늘 TBM · 비상훈련
+    const jobIds = new Set(jvs.map((v) => v.jobId)), went = new Set(ats.filter((x) => x.status !== 'REJECTED').map((x) => x.meetingId));
+    const meets = nts.filter((m) => m.done !== 'Y' && m.date >= t && jobIds.has(m.jobId)).sort((x, y) => (x.date + x.time < y.date + y.time ? -1 : 1))
+      .map((m) => ({ id: m.id, jobId: m.jobId, title: m.title, store: m.store, date: m.date, time: m.time || '', place: m.place || '', kinds: (m.kinds || []).map((k) => MEET_KINDS[k]).filter(Boolean), attended: went.has(m.id) }));
+    return { today: t, company: b.company, meets, jobs: jvs.map((v, i) => {
+      const j = jobs[i]; if (!j) return null;
+      const cr = crews.filter((c) => c.jobId === j.id && c.companyId === b.id), c = cr.find((x) => x.date === t);
+      return { id: j.id, title: j.title, storeName: j.storeName, startDate: j.startDate, endDate: j.endDate, hostName: j.hostName, trade: v.trade, status: j.status,
+        mgrs: isOpenInd(b.industry) ? jma.filter((x) => x.jobId === j.id && x.companyId === b.id).map((x) => x.name) : null,  // F2.2 배정된 인력관리자 이름
+        ...(op ? { siteMgr: (osm.find((x) => x.jobId === j.id && x.companyId === b.id && x.status === 'ACTIVE') || {}).name || '',
+          tbmToday: otb.some((x) => x.jobId === j.id && x.companyId === b.id && x.date === t), drillDone: odr.some((x) => x.jobId === j.id && !!x.doneAt), drills: odr.filter((x) => x.jobId === j.id).length } : {}),  // F2.7
+        workers: wks.filter((w) => w.jobId === j.id && w.companyId === b.id && w.active !== 'N').length, todayCount: c ? Number(c.count) : 0, todayDone: !!c, end: jobEndInfo(j),
+        stats: vjStats(cr, ...[pms, inss, fds].map((l) => l.filter((x) => x.jobId === j.id && x.companyId === b.id))),
+        // F1.8f 메인 화면 '지적사항 조치' 목록 (미조치 + 조치 완료)
+        findings: fds.filter((f) => f.jobId === j.id && f.companyId === b.id).map((f) => ({ id: f.id, no: Number(f.no), item: f.item, memo: f.memo, foundDate: f.foundDate, status: f.status, actionDate: f.actionDate || '' })) };
+    }).filter(Boolean) };
+  };
+  async function jobPack(a, b, j, jv) {
+    const t = today(), [wks, crews, sm0, pms, inss, fds, evs, LB] = await Promise.all([mineOf('WORKERS', a, j.id), mineOf('CREW', a, j.id), siteManagerOf(a, b), mineOf('PERMITS', a, j.id), mineOf('INSPECTIONS', a, j.id), mineOf('FINDINGS', a, j.id),
+      j.status === 'ENDED' ? mineOf('JOB_EVALS', a, j.id).catch(() => []) : [], planOf(a, b)]);
+    const PL = LB, LBI = inspItemsFor(PL);  // F1.8s 계획서 하나로 점검 항목 + 작업자 등록 공종 목록
+    const ev = evs.find((e) => e.companyId === b.id && e.status === 'DONE');
+    const ws = wks.filter((w) => w.companyId === b.id && w.active !== 'N'), cr = crews.filter((c) => c.companyId === b.id).sort((x, y) => (x.date < y.date ? 1 : -1));
+    const day = (c) => ({ date: c.date, count: Number(c.count) || (c.workers || []).length, siteManager: c.siteManager, savedAt: c.savedAt, workers: c.workers || [] }), tc = cr.find((x) => x.date === t);
+    return { today: t, job: { id: j.id, title: j.title, storeName: j.storeName, address: j.address, startDate: j.startDate, endDate: j.endDate, hostName: j.hostName },
+      company: { id: b.id, company: b.company, trade: jv.trade }, link: location.origin + location.pathname + '?review=WRK-' + jv.workerToken,
+      workers: ws.map((w) => ({ id: w.id, name: w.name, role: w.role, trade: w.trade, tradeKey: w.tradeKey || '', special: w.special || [], eduHours: Number(w.eduHours) || 1, method: w.method, eduAt: w.eduAt, email: w.email, certDoc: w.certDoc || '', certAt: w.certAt || '', confirmBy: w.confirmBy || '' })),  // F2.3 confirmBy = 현장관리자 직접 등록
+      /* F2.1 오픈지원: 특별교육·이수증 없음 · 근로자는 모두 보통인부 · 작업허가서·업체 순회점검 작성 없음 */
+      open: isOpenInd(b.industry) || j.kind === 'OPEN', trades: (isOpenInd(b.industry) || j.kind === 'OPEN') ? [] : eduTrades(PL),
+      /* F2.3 오픈지원: 이 오픈 매장 현장관리자 · TBM 날짜 (계약담당자 화면에서 보기) · 규칙을 아직 안 올렸으면 빈 목록 */
+      ...((isOpenInd(b.industry) || j.kind === 'OPEN') ? await Promise.all([
+        db.collection('SITE_MGRS').where('vendorUid', '==', a.uid).get().then(docs).then((l) => l.filter((x) => x.jobId === j.id && x.companyId === b.id)).catch(() => []),
+        db.collection('TBMS').where('vendorUid', '==', a.uid).get().then(docs).then((l) => l.filter((x) => x.jobId === j.id && x.companyId === b.id)).catch(() => []),
+        db.collection('OPEN_DRILLS').where('vendorUids', 'array-contains', a.uid).get().then(docs).then((l) => l.filter((x) => x.jobId === j.id)).catch(() => []),  // F2.4 도급인 비상훈련
+        db.collection('DRILL_ATTEND').where('vendorUid', '==', a.uid).get().then(docs).then((l) => l.filter((x) => x.jobId === j.id)).catch(() => [])])
+        .then(([sm, tb, dr, da]) => ({ openDrills: dr.sort((p, q) => String(p.createdAt).localeCompare(String(q.createdAt))).map((d) => ({ label: d.label, date: d.date, done: !!d.doneAt, n: da.filter((x) => x.drillId === d.id).length })), siteMgrs: sm.sort((p, q) => String(q.designatedAt).localeCompare(String(p.designatedAt))).map(smView), tbms: tb.sort((p, q) => String(q.date).localeCompare(String(p.date))).map((x) => ({ date: x.date, n: (x.photos || []).length, by: x.by || '', photos: x.photos || [] })) })) : {}),
+      todayCrew: tc ? day(tc) : null, history: cr.slice(0, 30).map(day), siteManager: tc ? tc.siteManager : sm0,
+      // F1.8a 오늘 인원 기본 체크: 오늘 저장한 인원 → 없으면 가장 최근 날 인원 → 없으면 등록된 전원
+      crewDefault: ((tc || cr[0]) ? ((tc || cr[0]).workers || []).map((w) => w.id) : ws.map((w) => w.id)).filter((id) => ws.some((w) => w.id === id)),
+      rules: WORK_RULES, pledge: WORK_PLEDGE, roles: (isOpenInd(b.industry) || j.kind === 'OPEN') ? OPEN_ROLES : WORKER_ROLES,
+      edu: { type: EDU_TYPE, hire: EDU_HIRE, etc: EDU_ETC, special: EDU_SPECIAL },  // F1.8u 앱에서 교육일지 미리 보기 (ZIP PDF와 같은 내용)
+      permits: pms.filter((p) => p.companyId === b.id).sort((x, y) => (x.date < y.date ? 1 : -1)).slice(0, 30).map(permitSummary), insp: inspPack(inss.filter((x) => x.companyId === b.id), fds.filter((x) => x.companyId === b.id), LBI, planWorks(PL)),
+      drill: (() => { const S = drillSum(PL, inss.filter((x) => x.companyId === b.id)); return { lv: S.lv, need: S.need, miss: S.miss, recs: S.recs.map((r) => ({ date: r.date, type: r.type, label: r.label, n: r.n, crew: r.crew })) }; })(),  // F1.9w 공사 화면 비상훈련 현황
+      jobStatus: j.status, permitToday: null, principal: await principal().catch(() => null), evalResult: ev ? { total: Number(ev.total), grade: ev.grade, comment: ev.comment, date: ev.evaluatedAt ? kst(ev.evaluatedAt) : '' } : null };
+  }
+  /** [업체] 공사 화면 (처음 열 때 작업자 등록 QR 값 생성) */
+  API.vendorJob = async (a, jobId) => {
+    const b = await execVendor(a), { jv, j } = await vendorJobOf(a, b, jobId);
+    if (!jv.workerToken) { jv.workerToken = newToken(); await db.collection('JOB_VENDORS').doc(jv.id).update({ workerToken: jv.workerToken }); }
+    return jobPack(a, b, j, jv);
+  };
+  /* ---------- F2.2 오픈지원 인력관리자 (= 안전관리책임자 대리) ----------
+   *  계약담당자(업체 대표 계정): 초대 링크 · 직접 입력 · 사용 중지 · 오픈 매장 배정
+   *  인력관리자: 본인 Google 계정으로 초대 링크 → 이름 입력 (등록은 중계 서버) → 배정된 진행 중 오픈 매장만 보임
+   *  OPEN_MGRS/{업체ID_Gmail} · MGR_INVITES/{토큰} · JOB_MGRS/{공사ID_Gmail} · 연락처는 받지 않음 */
+  const MGR_INVITE_DAYS = 7;
+  const mgrLink = (token) => location.origin + location.pathname + '?review=MGR-' + token;
+  const isGmailLike = (e) => /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(e);
+  async function openOwner(a) {
+    const b = await execVendor(a);
+    if (!isOpenInd(b.industry)) fail('업종이 「오픈지원」인 업체만 쓰는 기능입니다.');
+    return b;
+  }
+  const mgrView = (m, jm) => ({ email: m.email, name: m.name, status: m.status, method: m.method, joinedAt: m.joinedAt || '', createdAt: m.createdAt || '', jobs: jm.filter((x) => x.email === m.email).map((x) => x.jobId) });
+  /** [계약담당자] 인력관리자 화면 (명단 · 초대 링크 · 진행 중 오픈 매장과 배정) */
+  API.mgrBoard = async (a) => {
+    const b = await openOwner(a), t = today();
+    const [ms, ivs, jm, jvs] = await Promise.all(['OPEN_MGRS', 'MGR_INVITES', 'JOB_MGRS'].map((c) => db.collection(c).where('vendorUid', '==', a.uid).get().then(docs).then((l) => l.filter((x) => x.companyId === b.id))).concat([myAssign(a, b)]));
+    const [js, roster] = await Promise.all([Promise.all(jvs.map((v) => db.collection('JOBS').doc(v.jobId).get().then((s) => (s.exists ? s.data() : null)).catch(() => null))),
+      db.collection('SITE_MGRS').where('vendorUid', '==', a.uid).get().then(docs).then((l) => l.filter((x) => x.companyId === b.id)).catch(() => [])]);  // F2.3 인력 명부
+    const now0 = now();
+    return { company: b.company, today: t, days: MGR_INVITE_DAYS,
+      roster: roster.sort((p, q) => String(q.designatedAt).localeCompare(String(p.designatedAt))).map(smView),
+      mgrs: ms.sort((p, q) => (p.status === q.status ? String(p.name).localeCompare(String(q.name)) : p.status === 'ACTIVE' ? -1 : 1)).map((m) => mgrView(m, jm)),
+      invites: ivs.filter((x) => !x.usedAt && String(x.expAt || '') > now0).sort((p, q) => String(q.createdAt).localeCompare(String(p.createdAt))).map((x) => ({ token: x.token, link: mgrLink(x.token), createdAt: x.createdAt, expAt: x.expAt })),
+      used: ivs.filter((x) => x.usedAt).length,
+      jobs: jvs.map((v, i) => { const j = js[i]; return j && j.status !== 'ENDED' ? { id: j.id, title: j.title, storeName: j.storeName, startDate: j.startDate, endDate: j.endDate, hostName: j.hostName, mgrs: jm.filter((x) => x.jobId === j.id).map((x) => x.email) } : null; })
+        .filter(Boolean).sort((p, q) => String(p.startDate).localeCompare(String(q.startDate))) };
+  };
+  /** [계약담당자] 초대 링크 만들기 (1명 1번 · 7일) */
+  API.mgrInvite = async (a) => {
+    const b = await openOwner(a), token = newToken(), t = now();
+    await db.collection('MGR_INVITES').doc(token).set({ token, companyId: b.id, company: b.company, vendorUid: a.uid, createdBy: a.email, createdAt: t,
+      expAt: new Date(Date.now() + MGR_INVITE_DAYS * 86400000).toISOString(), usedAt: '', usedBy: '', usedName: '' });
+    audit(a, b.id, 'MGR_INVITE', token.slice(0, 8));
+    return Object.assign(await API.mgrBoard(a), { newLink: mgrLink(token) });
+  };
+  /** [계약담당자] 아직 안 쓴 초대 링크 취소 */
+  API.mgrInviteCancel = async (a, token) => {
+    const b = await openOwner(a), id = tidy(token, 40).toLowerCase(), s = await db.collection('MGR_INVITES').doc(id).get();
+    if (!s.exists || s.data().vendorUid !== a.uid || s.data().companyId !== b.id) fail('취소할 초대 링크를 찾을 수 없습니다.');
+    if (s.data().usedAt) fail('이미 사용한 초대 링크입니다.');
+    await db.collection('MGR_INVITES').doc(id).delete(); audit(a, b.id, 'MGR_INVITE_CANCEL', id.slice(0, 8));
+    return API.mgrBoard(a);
+  };
+  /** [계약담당자] 이름 · Gmail 직접 입력 (초대 링크를 못 쓸 때) */
+  API.mgrAdd = async (a, name, email) => {
+    const b = await openOwner(a), nm = tidy(name, 30), em = lower(email);
+    if (!nm) fail('이름을 입력해 주세요.'); if (!isGmailLike(em)) fail('Google 계정(Gmail) 주소를 정확히 입력해 주세요. 예: hong123@gmail.com');
+    if (em === a.email) fail('계약담당자 본인 계정은 인력관리자로 등록할 수 없습니다.');
+    const id = b.id + '_' + em, ref = db.collection('OPEN_MGRS').doc(id);
+    const cur = await ref.get().catch(() => null);
+    if (cur && cur.exists) fail(cur.data().status === 'STOPPED' ? '사용 중지된 인력관리자입니다. 명단에서 [다시 사용]을 눌러 주세요.' : '이미 등록된 인력관리자입니다.');
+    const t = now();
+    await ref.set({ id, companyId: b.id, company: b.company, vendorUid: a.uid, email: em, uid: '', name: nm, method: 'MANUAL', status: 'ACTIVE', createdAt: t, createdBy: a.email, joinedAt: '', updatedAt: t, updatedBy: a.email });
+    audit(a, b.id, 'MGR_ADD', nm + ' ' + em);
+    return API.mgrBoard(a);
+  };
+  /** [계약담당자] 사용 중지 · 다시 사용 (기록은 남김 · 중지하면 배정된 오픈 매장도 안 보임) */
+  API.mgrSetStatus = async (a, email, on) => {
+    const b = await openOwner(a), em = lower(email), ref = db.collection('OPEN_MGRS').doc(b.id + '_' + em), s = await ref.get().catch(() => null);
+    if (!s || !s.exists || s.data().vendorUid !== a.uid) fail('인력관리자를 찾을 수 없습니다.');
+    await ref.update({ status: on ? 'ACTIVE' : 'STOPPED', updatedAt: now(), updatedBy: a.email });
+    audit(a, b.id, on ? 'MGR_RESUME' : 'MGR_STOP', s.data().name + ' ' + em);
+    return API.mgrBoard(a);
+  };
+  /** [계약담당자] 오픈 매장에 인력관리자 배정 (체크한 사람만 남김 · 종료된 오픈 매장은 못 바꿈) */
+  API.mgrAssign = async (a, jobId, emails) => {
+    const b = await openOwner(a), { j, jv } = await vendorJobOf(a, b, jobId, true);
+    const ms = docs(await db.collection('OPEN_MGRS').where('vendorUid', '==', a.uid).get()).filter((m) => m.companyId === b.id);
+    const want = [...new Set((emails || []).map(lower))].slice(0, 5), bad = want.filter((e) => !ms.some((m) => m.email === e && m.status === 'ACTIVE'));
+    if (bad.length) fail('사용 중인 인력관리자만 배정할 수 있습니다:\n- ' + bad.join('\n- '));
+    const have = docs(await db.collection('JOB_MGRS').where('vendorUid', '==', a.uid).get()).filter((x) => x.jobId === j.id && x.companyId === b.id);
+    const bt = db.batch(), t = now();
+    want.filter((e) => !have.some((h) => h.email === e)).forEach((e) => { const m = ms.find((x) => x.email === e);
+      bt.set(db.collection('JOB_MGRS').doc(j.id + '_' + e), { id: j.id + '_' + e, jobId: j.id, companyId: b.id, company: b.company, vendorUid: a.uid, email: e, name: m.name, assignedAt: t, assignedBy: a.email }); });
+    have.filter((h) => !want.includes(h.email)).forEach((h) => bt.delete(db.collection('JOB_MGRS').doc(h.id)));
+    await bt.commit();
+    audit(a, b.id, 'MGR_ASSIGN', j.id + ' ' + (want.join(', ') || '없음'));
+    return API.mgrBoard(a);
+  };
+  /** 내가 인력관리자로 등록된 업체 (portalData · 인력관리자 화면) · 보안 규칙을 아직 안 올렸으면 빈 목록 */
+  const myMgrs = (a) => db.collection('OPEN_MGRS').where('email', '==', a.email).get().then(docs).catch(() => []);
+  /** [인력관리자] 내 화면: 배정된 진행 중 오픈 매장 (끝난 오픈 매장은 안 보임) */
+  API.mgrHome = async (a) => {
+    const ms = await myMgrs(a), act = ms.filter((m) => m.status === 'ACTIVE');
+    const jm = act.length ? docs(await db.collection('JOB_MGRS').where('email', '==', a.email).get()).filter((x) => act.some((m) => m.companyId === x.companyId)) : [];
+    const [js, sms, ivs, ats, mf] = await Promise.all([Promise.all(jm.map((x) => db.collection('JOBS').doc(x.jobId).get().then((s) => (s.exists ? s.data() : null)).catch(() => null))),
+      db.collection('SITE_MGRS').where('designatedBy', '==', a.email).get().then(docs).catch(() => []),  // F2.3 내가 지정한 현장관리자
+      db.collection('SM_INVITES').where('createdBy', '==', a.email).get().then(docs).catch(() => []),
+      db.collection('ATTEND').where('uid', '==', a.uid).get().then(docs).catch(() => []),  // F2.7 협의체 · 합동점검 참석
+      jm.length ? relay('mgrFind', {}, true).catch(() => null) : null]);  // F2.7 지적사항 (중계 서버가 권한 확인)
+    const n0 = now(), fOf = (id) => ((mf && mf.jobs) || []).find((x) => x.id === id) || null;
+    return { today: today(), email: a.email, mgrs: ms.map((m) => ({ companyId: m.companyId, company: m.company, name: m.name, status: m.status })),
+      jobs: jm.map((x, i) => { const j = js[i]; return j && j.status !== 'ENDED' ? { id: j.id, title: j.title, storeName: j.storeName, address: j.address || '', startDate: j.startDate, endDate: j.endDate, hostName: j.hostName, company: x.company, companyId: x.companyId,
+        siteMgrs: sms.filter((s) => s.jobId === j.id).sort((p, q) => String(q.designatedAt).localeCompare(String(p.designatedAt))).map(smView),
+        attended: ats.filter((r) => r.jobId === j.id && r.status !== 'REJECTED').map((r) => String(r.checkedAt || '')).sort().reverse(),
+        open: fOf(j.id) ? fOf(j.id).open : null, done: fOf(j.id) ? fOf(j.id).done : [],
+        invite: (ivs.filter((v) => v.jobId === j.id && !v.usedAt && String(v.expAt || '') > n0).sort((p, q) => String(q.createdAt).localeCompare(String(p.createdAt)))[0] || null) } : null; })
+        .filter(Boolean).map((j) => (j.invite ? Object.assign(j, { invite: { link: smLink(j.invite.token), token: j.invite.token, expAt: j.invite.expAt } }) : j))
+        .sort((p, q) => String(p.startDate).localeCompare(String(q.startDate))), rules: WORK_RULES.length };
+  };
+  /** [로그인한 누구나] 초대 링크 정보 (업체명 · 사용 여부) */
+  API.mgrInviteInfo = async (a, token) => {
+    const id = String(token || '').toLowerCase(); if (!/^[a-f0-9]{32}$/.test(id)) fail('잘못된 초대 링크입니다.');
+    const s = await db.collection('MGR_INVITES').doc(id).get().catch(() => null); if (!s || !s.exists) fail('초대 링크를 찾을 수 없습니다. 이미 취소됐을 수 있습니다. 계약담당자에게 새 링크를 요청해 주세요.');
+    const x = s.data(), mine = (await myMgrs(a)).find((m) => m.companyId === x.companyId);
+    return { company: x.company, used: !!x.usedAt, usedByMe: !!x.usedAt && x.usedBy === a.email, expired: !x.usedAt && String(x.expAt || '') < now(), owner: x.vendorUid === a.uid,
+      already: mine ? { name: mine.name, status: mine.status } : null };
+  };
+  /** [인력관리자] 초대 링크로 등록 (이름만 · 중계 서버가 확인하고 기록) */
+  API.mgrJoin = async (a, token, name) => {
+    if (a.mode === 'STAFF') fail('다이소 담당자로 접속했습니다. 로그인 화면에서 [협력업체]를 고르고 다시 로그인해 주세요.');
+    const r = await relay('mgrJoin', { token: String(token || '').toLowerCase(), name: tidy(name, 30) });
+    return Object.assign(await API.portalData(a), { joined: r });
+  };
+  /* ---------- F2.3 오픈지원 현장관리자 (= 관리감독자 · 대표 근로자) ----------
+   *  인력관리자: 배정된 오픈 매장에서 [현장관리자 지정 QR] (SM_INVITES · 1번 · 2일) → 대표 근로자가 찍고 등록
+   *  현장관리자: 등록·화면·TBM·직접 등록·조치는 모두 중계 서버 (Relay.gs sm*_)
+   *  인력 명부 = SITE_MGRS (계약담당자 · 지정한 인력관리자 · 본인이 봄) */
+  const SM_INVITE_HOURS = 48;
+  const smLink = (token) => location.origin + location.pathname + '?review=SMG-' + token;
+  const smView = (x) => ({ jobId: x.jobId, name: x.name, email: x.email, status: x.status, designatedAt: x.designatedAt || '', designatedBy: x.designatedBy || '', designatedName: x.designatedName || '',
+    storeName: x.storeName || '', jobTitle: x.jobTitle || '', startDate: x.startDate || '', endDate: x.endDate || '', replacedAt: x.replacedAt || '', company: x.company || '' });
+  /** [인력관리자] 현장관리자 지정 QR 만들기 (배정된 진행 중 오픈 매장만) */
+  API.smInvite = async (a, jobId) => {
+    const id = tidy(jobId, 40), jm = await db.collection('JOB_MGRS').doc(id + '_' + a.email).get().catch(() => null);
+    if (!jm || !jm.exists) fail('이 오픈 매장에 배정된 인력관리자가 아닙니다.');
+    const x = jm.data(), m = (await myMgrs(a)).find((y) => y.companyId === x.companyId && y.status === 'ACTIVE'); if (!m) fail('사용 중지된 인력관리자입니다. 계약담당자에게 문의해 주세요.');
+    const js = await db.collection('JOBS').doc(id).get(); if (!js.exists || js.data().status === 'ENDED') fail('끝난 오픈 매장입니다.');
+    const j = js.data(), token = newToken(), t = now();
+    await db.collection('SM_INVITES').doc(token).set({ token, jobId: id, companyId: x.companyId, company: x.company || m.company, vendorUid: x.vendorUid, storeName: j.storeName || '', jobTitle: j.title || '',
+      createdBy: a.email, createdName: m.name, createdAt: t, expAt: new Date(Date.now() + SM_INVITE_HOURS * 3600000).toISOString(), usedAt: '', usedBy: '', usedName: '' });
+    audit(a, x.companyId, 'SITE_MGR_INVITE', id + ' ' + token.slice(0, 8));
+    return { link: smLink(token), token, expAt: new Date(Date.now() + SM_INVITE_HOURS * 3600000).toISOString() };
+  };
+  /** [로그인한 누구나] 지정 QR 정보 (매장 · 업체 · 사용 여부 · 작업 안전 수칙) */
+  API.smInviteInfo = async (a, token) => {
+    const id = String(token || '').toLowerCase(); if (!/^[a-f0-9]{32}$/.test(id)) fail('잘못된 지정 QR입니다.');
+    const s = await db.collection('SM_INVITES').doc(id).get().catch(() => null); if (!s || !s.exists) fail('지정 QR을 찾을 수 없습니다. 인력관리자에게 새 QR을 요청해 주세요.');
+    const x = s.data(), mine = await db.collection('SITE_MGRS').doc(x.jobId + '_' + a.email).get().catch(() => null);
+    return { company: x.company, storeName: x.storeName, jobTitle: x.jobTitle, by: x.createdName || '', used: !!x.usedAt, usedByMe: !!x.usedAt && x.usedBy === a.email, expired: !x.usedAt && String(x.expAt || '') < now(),
+      self: x.createdBy === a.email, owner: x.vendorUid === a.uid, already: mine && mine.exists && mine.data().status === 'ACTIVE' ? { name: mine.data().name } : null, rules: WORK_RULES, pledge: WORK_PLEDGE };
+  };
+  /** [현장관리자] 지정 QR로 등록 (이름 · 수칙 서약) */
+  API.smJoin = async (a, token, info) => {
+    if (a.mode === 'STAFF') fail('다이소 담당자로 접속했습니다. 로그인 화면에서 [협력업체]를 고르고 다시 로그인해 주세요.');
+    const r = await relay('smJoin', { token: String(token || '').toLowerCase(), info: { name: tidy(info?.name, 30), agree: !!info?.agree } });
+    return Object.assign(await API.portalData(a), { smJoined: r });
+  };
+  /** [현장관리자] 내 화면 · 사진 · TBM · 직접 등록 · 조치 (중계 서버가 권한 확인) */
+  API.smHome = async (a) => relay('smHome', {}, true);
+  API.smPhoto = async (a, jobId, f) => { if (!isPhoto(f)) fail('사진(JPG·PNG)만 올릴 수 있습니다.'); return relay('smPhoto', { jobId: tidy(jobId, 40), f }); };
+  API.smTbm = async (a, jobId, photos) => relay('smTbm', { jobId: tidy(jobId, 40), photos: photoIds(photos, 10) });
+  API.smAddWorker = async (a, jobId, info, rid) => relay('smWorker', { jobId: tidy(jobId, 40), info: { name: tidy(info?.name, 40), agree: !!info?.agree }, rid: String(rid || '') });
+  API.smResolve = async (a, findingId, d) => relay('smResolve', { findingId: tidy(findingId, 40), d: { memo: tidy(d?.memo, 500), date: tidy(d?.date, 10), photos: photoIds(d?.photos, 5) } });
+  /** 내가 현장관리자인 오픈 매장 (portalData) · 보안 규칙을 아직 안 올렸으면 빈 목록 */
+  const mySms = (a) => db.collection('SITE_MGRS').where('email', '==', a.email).get().then(docs).catch(() => []);
+  /* ---------- F2.4 오픈지원 도급인 업무: 순회점검 작성 (매일) · 비상훈련 주최 (사진 · 근로자 QR 참석) ----------
+   *  순회점검 저장 · 지적사항 만들기 = 중계 서버 (업체 계정 기록으로 남김 → 현장관리자 · 계약담당자 화면에 조치 요청)
+   *  비상훈련 = OPEN_DRILLS (도급인) · 참석 = DRILL_ATTEND (근로자 QR은 중계 서버 · 이름만 추가는 도급인) */
+  const OPEN_DRILL_TYPES = { EVAC: '비상대피 훈련', FIRE: '소화기 사용 훈련' };
+  const drlLink = (token) => location.origin + location.pathname + '?review=DRL-' + token;
+  const badN = (it) => Object.values(it || {}).filter((v) => v === 'BAD').length;
+  /** [도급인] 오픈 매장 도급인 업무 화면 (업체별 점검표 · 오늘 TBM · 현장관리자 · 미조치 · 비상훈련) */
+  API.openStaffPack = async (a, jobId) => {
+    const s = await staffOnly(a), j = await staffJob(a, s, jobId), t = today();
+    const jvs = docs(await db.collection('JOB_VENDORS').where('jobId', '==', j.id).get());
+    const [ins, fds, tbs, sms, drs, ats] = await Promise.all(['INSPECTIONS', 'FINDINGS', 'TBMS', 'SITE_MGRS', 'OPEN_DRILLS', 'DRILL_ATTEND'].map((c) => db.collection(c).where('jobId', '==', j.id).get().then(docs).catch(() => [])));
+    const vendors = await Promise.all(jvs.map(async (v) => {
+      const fm = docs(await db.collection('CONTRACT_FORMS').where('companyId', '==', v.companyId).get().catch(() => ({ docs: [] }))).filter((x) => x.code === 'C02').sort((p, q) => String(q.updatedAt).localeCompare(String(p.updatedAt)))[0];
+      let qs = planRisks(parse(fm && fm.json, {}) || {}).filter((r) => OPEN_TRADES.includes(r.t)).map((r) => r.q);
+      if (!qs.length) qs = RISK_ALL.filter((r) => OPEN_TRADES.includes(r.t)).map((r) => r.q);  // 계획서에 고른 위험요인이 없으면 오픈지원 공종 전체
+      const mine = ins.filter((x) => x.companyId === v.companyId).sort((p, q) => String(q.date).localeCompare(String(p.date))), ti = mine.find((x) => x.date === t);
+      const tb = tbs.filter((x) => x.companyId === v.companyId), sm = sms.find((x) => x.companyId === v.companyId && x.status === 'ACTIVE');
+      return { companyId: v.companyId, company: v.company, items: INSP_BASE.concat(qs),
+        todayInsp: ti ? { id: ti.id, bad: badN(ti.items), by: ti.submittedName || '' } : null,
+        recent: mine.slice(0, 10).map((x) => ({ id: x.id, date: x.date, bad: badN(x.items), by: x.submittedName || '', byStaff: x.byStaff === 'Y' })),
+        tbm: ((tb.find((x) => x.date === t) || {}).photos) || [], tbmDays: tb.length, siteMgr: sm ? sm.name : '',
+        open: fds.filter((f) => f.companyId === v.companyId && f.status !== 'DONE').sort((p, q) => String(q.foundDate).localeCompare(String(p.foundDate))).map((f) => ({ id: f.id, no: Number(f.no), item: f.item, memo: f.memo, foundDate: f.foundDate, before: f.before || [] })) };
+    }));
+    return { today: t, me: s.name, job: { id: j.id, title: j.title, storeName: j.storeName, startDate: j.startDate, endDate: j.endDate, status: j.status, kind: j.kind }, vendors, types: OPEN_DRILL_TYPES,
+      drills: drs.sort((p, q) => String(q.createdAt).localeCompare(String(p.createdAt))).map((d) => ({ id: d.id, type: d.type, label: d.label, date: d.date, open: d.open === 'Y', done: !!d.doneAt, doneAt: d.doneAt || '', photos: d.photos || [], memo: d.memo || '', hostName: d.hostName || '', link: drlLink(d.token),
+        attendees: ats.filter((x) => x.drillId === d.id).sort((p, q) => String(p.at).localeCompare(String(q.at))).map((x) => ({ id: x.id, name: x.name, company: x.company, role: x.role, method: x.method, at: x.at })) })) };
+  };
+  /** [도급인] 오늘 순회점검 저장 (중계 서버가 일지 · 지적사항을 업체 기록으로 만듦) */
+  API.staffOpenInsp = async (a, jobId, companyId, d) => {
+    await staffOnly(a);
+    const items = {}; Object.keys(d?.items || {}).slice(0, 40).forEach((k) => { const v = String(d.items[k]); if (['OK', 'BAD', 'NA'].includes(v)) items[String(Number(k))] = v; });
+    const notes = {}; Object.keys(d?.notes || {}).slice(0, 40).forEach((k) => { const n = d.notes[k] || {}; notes[String(Number(k))] = { memo: tidy(n.memo, 500), photos: photoIds(n.photos, 5) }; });
+    await relay('staffInsp', { jobId: tidy(jobId, 40), companyId: tidy(companyId, 40), items, notes, labels: (Array.isArray(d?.labels) ? d.labels : []).slice(0, 40).map((x) => tidy(x, 200)), photos: photoIds(d?.photos, 5), memo: tidy(d?.memo, 300) });
+    return API.openStaffPack(a, jobId);
+  };
+  async function openDrillOf(a, id) {
+    const s = await staffOnly(a), ds = await db.collection('OPEN_DRILLS').doc(tidy(id, 40)).get().catch(() => null), d = ds && ds.exists ? ds.data() : null;
+    if (!d) fail('비상훈련 기록을 찾을 수 없습니다.'); const j = await staffJob(a, s, d.jobId); return { s, d, j };
+  }
+  /** [도급인] 비상훈련 시작 (참석 QR 열림) · 같은 날 같은 훈련이 열려 있으면 그대로 */
+  API.drillOpen = async (a, jobId, type) => {
+    const s = await staffOnly(a), j = await staffJob(a, s, jobId), t = today();
+    if (j.status === 'ENDED') fail('끝난 오픈 매장입니다.'); if (!OPEN_DRILL_TYPES[type]) fail('훈련 종류를 골라 주세요.');
+    const cur = docs(await db.collection('OPEN_DRILLS').where('jobId', '==', j.id).get().catch(() => ({ docs: [] }))).find((x) => x.type === type && x.date === t && x.open === 'Y');
+    if (!cur) {
+      const id = 'DR-' + rand8(), token = newToken();
+      await db.collection('OPEN_DRILLS').doc(id).set({ id, jobId: j.id, type, label: OPEN_DRILL_TYPES[type], date: t, token, open: 'Y', photos: [], memo: '', store: j.storeName || '', vendorUids: j.vendorUids || [],
+        hostEmail: a.email, hostName: s.name, createdAt: now(), doneAt: '', doneBy: '' });
+      audit(a, '', 'DRILL_OPEN', j.id + ' ' + type);
+    }
+    return API.openStaffPack(a, jobId);
+  };
+  /** [도급인] 훈련 사진 · 메모 저장 */
+  API.drillSave = async (a, id, photos, memo) => {
+    const { d, j } = await openDrillOf(a, id);
+    await db.collection('OPEN_DRILLS').doc(d.id).update({ photos: photoIds(photos, 10), memo: tidy(memo, 300) });
+    return API.openStaffPack(a, j.id);
+  };
+  /** [도급인] 휴대폰·Google 계정이 없는 근로자 → 이름만 참석 기록 */
+  API.drillAddName = async (a, id, name, companyId) => {
+    const { d, j } = await openDrillOf(a, id), nm = tidy(name, 30); if (!nm) fail('이름을 입력해 주세요.');
+    const jvs = docs(await db.collection('JOB_VENDORS').where('jobId', '==', j.id).get()), v = jvs.find((x) => x.companyId === companyId) || jvs[0];
+    if (!v) fail('이 오픈 매장에 배정된 업체가 없습니다.');
+    const aid = d.id + '_S' + rand8();
+    await db.collection('DRILL_ATTEND').doc(aid).set({ id: aid, drillId: d.id, jobId: j.id, name: nm, companyId: v.companyId, company: v.company, role: '근로자 (이름만)', method: 'STAFF', uid: '', email: '', vendorUid: v.vendorUid || '', at: now(), by: a.email });
+    return API.openStaffPack(a, j.id);
+  };
+  /** [도급인] 잘못 들어간 참석 기록 빼기 */
+  API.drillDelAtt = async (a, attId) => {
+    const s = await staffOnly(a), x = await db.collection('DRILL_ATTEND').doc(tidy(attId, 60)).get().catch(() => null); if (!x || !x.exists) fail('참석 기록을 찾을 수 없습니다.');
+    const j = await staffJob(a, s, x.data().jobId); await db.collection('DRILL_ATTEND').doc(x.id).delete(); audit(a, '', 'DRILL_ATT_DEL', x.id);
+    return API.openStaffPack(a, j.id);
+  };
+  /** [도급인] 훈련 마치기 (사진 1장 · 참석 1명 이상) / 다시 열기 */
+  API.drillClose = async (a, id, close) => {
+    const { s, d, j } = await openDrillOf(a, id);
+    if (close) {
+      const n = docs(await db.collection('DRILL_ATTEND').where('jobId', '==', j.id).get()).filter((x) => x.drillId === d.id).length, bad = [];
+      if (!(d.photos || []).length) bad.push('훈련 사진'); if (!n) bad.push('참석자 (QR 또는 이름 추가)');
+      if (bad.length) fail('훈련을 마치기 전에 확인해 주세요:\n- ' + bad.join('\n- '));
+      await db.collection('OPEN_DRILLS').doc(d.id).update({ open: 'N', doneAt: now(), doneBy: s.name }); audit(a, '', 'DRILL_DONE', d.id + ' ' + n + '명');
+    } else await db.collection('OPEN_DRILLS').doc(d.id).update({ open: 'Y', doneAt: '', doneBy: '' });
+    return API.openStaffPack(a, j.id);
+  };
+  /* ---------- F2.5 오픈 매장 자동 집계 · 반기 평가 (6월 · 12월) ----------
+   *  집계 = 기록에서 바로 계산 (도급인이 할 일 없음) · 반기 평가 = 그 반기에 끝난 오픈 매장 집계를 모아 자동 계산 · 도급인은 재해만 고르고 확정
+   *  HALF_EVALS/{업체ID_2026H2} · 우수 = 배점 · 보통 = 절반 · 미흡 = 1점 · 이행 항목 95% / 80% · S90 A80 B70 C60 D */
+  const HE_ITEMS = [[1, '안전보건 관리체계', 10, '계약 시', '최초 평가 1~3번 (방침 · 목표 · 조직)'], [2, '산재 확인서', 5, '계약 시', '산재요양승인 반려여부 확인증 제출'],
+    [3, 'TBM 실시율', 15, '이행', '작업일 중 현장관리자 TBM 사진 저장한 날'], [4, '신규자 교육', 15, '이행', '오픈 매장마다 근로자 교육일지 · 서약 등록'],
+    [5, '지적사항 조치', 15, '이행', '도급인 지적 → 다음 날까지 조치'], [6, '협의체 · 합동점검 참석', 10, '이행', '실시한 협의체 · 합동점검에 업체(인력관리자 · 현장관리자) 참석'],
+    [7, '현장관리자 지정', 5, '이행', '오픈 첫날 현장관리자 지정'], [8, '순회점검 양호율', 10, '이행', '도급인 순회점검 항목 중 양호'], [9, '재해', 15, '결과', '도급인 선택 (무재해 · 경미 · 중대)']];
+  const HE_LV = { G: '우수', N: '보통', P: '미흡' }, HE_ACC = { NONE: ['무재해', 'G'], MINOR: ['경미한 사고 (치료)', 'N'], MAJOR: ['휴업 이상 재해', 'P'] };
+  const hePts = (n, lv) => { const m = (HE_ITEMS.find((x) => x[0] === n) || [])[2] || 0; return lv === 'G' ? m : lv === 'N' ? m / 2 : lv === 'P' ? 1 : 0; };
+  const heGrade = (t) => (t >= 90 ? 'S' : t >= 80 ? 'A' : t >= 70 ? 'B' : t >= 60 ? 'C' : 'D');
+  const rateLv = (r) => (r == null ? null : r >= 0.95 ? 'G' : r >= 0.8 ? 'N' : 'P');
+  const pctS = (r) => (r == null ? '-' : Math.round(r * 100) + '%');
+  /** 오픈 매장 1곳 · 업체 1곳 집계 (D = 그 공사의 기록 목록) */
+  function openAgg(j, cid, D) {
+    const of = (l) => (l || []).filter((x) => x.companyId === cid), cr = of(D.CREW), tb = of(D.TBMS), ins = of(D.INSPECTIONS), fd = of(D.FINDINGS), wk = of(D.WORKERS).filter((w) => w.active !== 'N');
+    const days = new Set([].concat(cr.map((x) => x.date), tb.map((x) => x.date), ins.map((x) => x.date)).filter(Boolean)), wd = days.size, tbd = new Set(tb.map((x) => x.date)).size;
+    const fixed = fd.filter((f) => f.status === 'DONE' && f.actionDate && daysBetween(f.foundDate, f.actionDate) <= 1).length;
+    const mts = (D.MEETINGS || []).filter((m) => m.doneAt), att = mts.filter((m) => (D.ATTEND || []).some((x) => x.meetingId === m.id && x.companyId === cid && x.status === 'OK')).length;
+    const sm = (D.SITE_MGRS || []).filter((s) => s.companyId === cid).sort((p, q) => String(p.designatedAt).localeCompare(String(q.designatedAt)))[0], smDay = sm ? kst(sm.designatedAt) : '';
+    let ok = 0, bad = 0; ins.forEach((x) => Object.values(x.items || {}).forEach((v) => { if (v === 'OK') ok++; else if (v === 'BAD') bad++; }));
+    const dr = (D.OPEN_DRILLS || []).filter((d) => d.doneAt);
+    return { jobId: j.id, title: j.title, store: j.storeName, start: j.startDate, end: j.endDate, status: j.status, workDays: wd, tbmDays: tbd, tbmRate: wd ? Math.min(1, tbd / wd) : null,
+      workers: wk.length, findTotal: fd.length, findFixed: fixed, findOpen: fd.filter((f) => f.status !== 'DONE').length, fixRate: fd.length ? fixed / fd.length : null,
+      meetDone: mts.length, meetAtt: att, attRate: mts.length ? att / mts.length : null, smName: sm ? sm.name : '', smDay, smFirst: !!sm && smDay <= String(j.startDate || ''),
+      inspN: ins.length, inspOk: ok, inspBad: bad, goodRate: ok + bad ? ok / (ok + bad) : null, drills: dr.length };
+  }
+  const AGG_COLS = ['CREW', 'TBMS', 'INSPECTIONS', 'FINDINGS', 'WORKERS', 'SITE_MGRS', 'MEETINGS', 'ATTEND', 'OPEN_DRILLS'];
+  async function jobLists(jobId) { const L = await Promise.all(AGG_COLS.map((c) => db.collection(c).where('jobId', '==', jobId).get().then(docs).catch(() => []))); const D = {}; AGG_COLS.forEach((c, i) => { D[c] = L[i]; }); return D; }
+  /** [도급인] 오픈 매장 집계 (공사 화면 ③ 집계) */
+  API.openAggPack = async (a, jobId) => {
+    const s = await staffOnly(a), j = await staffJob(a, s, jobId), D = await jobLists(j.id), jvs = docs(await db.collection('JOB_VENDORS').where('jobId', '==', j.id).get());
+    return { today: today(), job: { id: j.id, title: j.title, storeName: j.storeName, startDate: j.startDate, endDate: j.endDate, status: j.status }, vendors: jvs.map((v) => Object.assign({ company: v.company, companyId: v.companyId }, openAgg(j, v.companyId, D))) };
+  };
+  const halfRange = (p) => { const m = /^(\d{4})H([12])$/.exec(String(p || '')); if (!m) fail('반기를 골라 주세요.'); return m[2] === '1' ? [m[1] + '-01-01', m[1] + '-06-30'] : [m[1] + '-07-01', m[1] + '-12-31']; };
+  /** 반기 평가 계산 (저장된 재해 · 의견 · 확정 여부 포함) */
+  async function halfCalc(a, s, cid, period) {
+    const [from, to] = halfRange(period), cs = await db.collection('COMPANIES').doc(tidy(cid, 40)).get(); if (!cs.exists) fail('업체를 찾을 수 없습니다.');
+    const b = { ...cs.data(), id: cs.id }; if (!isOpenInd(b.industry)) fail('반기 평가는 업종이 「오픈지원」인 업체만 합니다.');
+    const jvs = docs(await db.collection('JOB_VENDORS').where('companyId', '==', b.id).get());
+    const js = (await Promise.all(jvs.map((v) => db.collection('JOBS').doc(v.jobId).get().then((x) => (x.exists ? x.data() : null)).catch(() => null)))).filter(Boolean);
+    const inP = (j) => { const d = String(j.endDate || j.startDate || ''); return d >= from && d <= to; };
+    const done = js.filter((j) => inP(j) && j.status === 'ENDED'), going = js.filter((j) => inP(j) && j.status !== 'ENDED');
+    const aggs = [];
+    for (const j of done) aggs.push(openAgg(j, b.id, await jobLists(j.id)));
+    const sum = (k) => aggs.reduce((x, g) => x + (Number(g[k]) || 0), 0), R = (n, d) => (d ? n / d : null);
+    /* 1 · 2 계약 시 */
+    const evs = docs(await db.collection('EVALUATIONS').where('companyId', '==', b.id).get().catch(() => ({ docs: [] }))).filter((e) => e.result === 'APPROVED').sort((p, q) => String(q.evaluatedAt).localeCompare(String(p.evaluatedAt)));
+    const ev = evs[0] ? parse(evs[0].items, {}) || {} : null, e3 = ev ? ['1', '2', '3'].map((k) => ev[k]) : [];
+    const fm = docs(await db.collection('CONTRACT_FORMS').where('companyId', '==', b.id).get().catch(() => ({ docs: [] }))).filter((x) => x.code === 'C02').sort((p, q) => String(q.updatedAt).localeCompare(String(p.updatedAt)))[0];
+    const acc = (parse(b.accCerts, []) || []).length + (((parse(fm && fm.json, {}) || {}).evidence) || []).length;
+    const it = {};
+    it[1] = !ev ? { lv: 'P', why: '승인된 최초 평가 기록 없음' } : e3.every((x) => x === 'G') ? { lv: 'G', why: '최초 평가 1~3번 모두 우수' } : e3.includes('P') ? { lv: 'P', why: '최초 평가 1~3번 중 미흡 있음' } : { lv: 'N', why: '최초 평가 1~3번 중 보통 있음' };
+    it[2] = acc ? { lv: 'G', why: '확인증 ' + acc + '건 제출' } : { lv: 'P', why: '확인증 미제출' };
+    const tb = R(sum('tbmDays'), sum('workDays')), wkJobs = aggs.filter((g) => g.workers > 0).length, fx = R(sum('findFixed'), sum('findTotal')), at = R(sum('meetAtt'), sum('meetDone'));
+    const smf = aggs.length ? aggs.filter((g) => g.smFirst).length / aggs.length : null, gd = R(sum('inspOk'), sum('inspOk') + sum('inspBad'));
+    const lvOr = (r, none) => rateLv(r) || none;
+    it[3] = { lv: lvOr(tb, 'N'), why: 'TBM ' + sum('tbmDays') + ' / 작업일 ' + sum('workDays') + '일 = ' + pctS(tb) };
+    it[4] = { lv: aggs.length ? rateLv(wkJobs / aggs.length) : 'N', why: aggs.length ? '교육일지 등록 오픈 매장 ' + wkJobs + ' / ' + aggs.length + '곳 · 근로자 ' + sum('workers') + '명' : '끝난 오픈 매장 없음' };
+    it[5] = { lv: lvOr(fx, 'G'), why: sum('findTotal') ? '다음 날까지 조치 ' + sum('findFixed') + ' / 지적 ' + sum('findTotal') + '건 = ' + pctS(fx) + (sum('findOpen') ? ' · 미조치 ' + sum('findOpen') + '건' : '') : '지적사항 없음' };
+    it[6] = { lv: lvOr(at, 'G'), why: sum('meetDone') ? '참석 ' + sum('meetAtt') + ' / 실시 ' + sum('meetDone') + '회 = ' + pctS(at) : '실시한 협의체 · 합동점검 없음' };
+    it[7] = { lv: aggs.length ? rateLv(smf) : 'N', why: aggs.length ? '첫날 지정 ' + aggs.filter((g) => g.smFirst).length + ' / ' + aggs.length + '곳' : '끝난 오픈 매장 없음' };
+    it[8] = { lv: lvOr(gd, 'N'), why: '양호 ' + sum('inspOk') + ' / 점검 항목 ' + (sum('inspOk') + sum('inspBad')) + '개 = ' + pctS(gd) + ' · 순회점검 ' + sum('inspN') + '회' };
+    const id = b.id + '_' + period, hs = await db.collection('HALF_EVALS').doc(id).get().catch(() => null), h = hs && hs.exists ? hs.data() : null;
+    const accK = h && HE_ACC[h.accident] ? h.accident : '';
+    it[9] = accK ? { lv: HE_ACC[accK][1], why: HE_ACC[accK][0] + ' (도급인 선택)' } : { lv: '', why: '도급인이 골라 주세요' };
+    const total = Math.round(HE_ITEMS.reduce((x, [n]) => x + hePts(n, it[n].lv), 0) * 10) / 10;
+    return { id, period, from, to, company: { id: b.id, company: b.company, regNo: b.regNo || '', representative: b.representative || '', contact: b.contact || '' }, vendorUid: b.uid || '',
+      items: HE_ITEMS.map(([n, name, max, sec, basis]) => ({ n, name, max, sec, basis, lv: it[n].lv, lvLabel: HE_LV[it[n].lv] || '-', pts: hePts(n, it[n].lv), why: it[n].why })),
+      total, grade: accK ? heGrade(total) : '', accident: accK, accOpts: HE_ACC, comment: h ? h.comment || '' : '', status: h ? h.status : 'NEW', evaluator: h ? h.evaluator || '' : '', evaluatedAt: h ? h.evaluatedAt || '' : '',
+      jobs: aggs, going: going.map((j) => ({ title: j.title, store: j.storeName, start: j.startDate, end: j.endDate })), me: s.name };
+  }
+  /** [도급인] 반기 평가 목록 (오픈지원 업체 · 반기) */
+  API.halfEvalList = async (a, period) => {
+    await staffOnly(a); halfRange(period);
+    const cs = docs(await db.collection('COMPANIES').where('status', '==', 'VERIFIED').get()).filter((b) => isOpenInd(b.industry));
+    const hs = docs(await db.collection('HALF_EVALS').where('period', '==', period).get().catch(() => ({ docs: [] })));
+    return { period, list: cs.map((b) => { const h = hs.find((x) => x.companyId === b.id); return { companyId: b.id, company: b.company, contact: b.contact || '', status: h ? h.status : 'NEW', total: h ? h.total : '', grade: h ? h.grade : '' }; }) };
+  };
+  API.halfEvalPack = async (a, cid, period) => { const s = await staffOnly(a); return halfCalc(a, s, cid, period); };
+  /** [도급인] 저장 · 확정 (재해 선택 필수) */
+  API.halfEvalSave = async (a, cid, period, accident, comment, final) => {
+    const s = await staffOnly(a), acc = HE_ACC[accident] ? accident : '';
+    if (final && !acc) fail('9번 재해를 골라 주세요.');
+    const cur = await halfCalc(a, s, cid, period); if (cur.status === 'DONE') fail('확정된 평가입니다. [다시 수정]을 눌러 주세요.');
+    const ref = db.collection('HALF_EVALS').doc(cur.id), t = now();
+    await ref.set({ id: cur.id, companyId: cur.company.id, company: cur.company.company, period, from: cur.from, to: cur.to, vendorUid: cur.vendorUid, accident: acc, comment: tidy(comment, 500), status: final ? 'DONE' : 'DRAFT',
+      items: JSON.stringify(cur.items.map((x) => ({ n: x.n, lv: x.n === 9 ? (acc ? HE_ACC[acc][1] : '') : x.lv, why: x.why }))), jobs: cur.jobs.map((g) => g.jobId), updatedAt: t, updatedBy: a.email,
+      total: '', grade: '', evaluator: final ? (s.dept ? s.dept + ' ' : '') + s.name : '', evaluatedAt: final ? t : '' });
+    const fin = await halfCalc(a, s, cid, period);
+    if (final) { await ref.update({ total: fin.total, grade: fin.grade }); audit(a, cid, 'HALF_EVAL_DONE', cur.id + ' ' + fin.total + '점 ' + fin.grade); fin.status = 'DONE'; }
+    return halfCalc(a, s, cid, period);
+  };
+  API.halfEvalReopen = async (a, cid, period) => {
+    const s = await staffOnly(a), id = tidy(cid, 40) + '_' + period; halfRange(period);
+    await db.collection('HALF_EVALS').doc(id).update({ status: 'DRAFT', total: '', grade: '' }); audit(a, cid, 'HALF_EVAL_REOPEN', id);
+    return halfCalc(a, s, cid, period);
+  };
+  /** [계약담당자] 확정된 우리 업체 반기 평가 결과 */
+  API.myHalfEvals = async (a) => {
+    const b = await openOwner(a);
+    const L = docs(await db.collection('HALF_EVALS').where('vendorUid', '==', a.uid).where('status', '==', 'DONE').get().catch(() => ({ docs: [] }))).filter((x) => x.companyId === b.id);
+    return L.sort((p, q) => String(q.period).localeCompare(String(p.period))).map((h) => ({ period: h.period, from: h.from || '', to: h.to || '', total: h.total, grade: h.grade, comment: h.comment || '', evaluatedAt: h.evaluatedAt || '', evaluator: h.evaluator || '',
+      items: (parse(h.items, []) || []).map((x) => { const d = HE_ITEMS.find((y) => y[0] === x.n) || []; return { n: x.n, name: d[1] || '', max: d[2] || 0, lv: x.lv, lvLabel: HE_LV[x.lv] || '-', pts: hePts(x.n, x.lv), why: x.why }; }) }));
+  };
+  /** [근로자] 비상훈련 QR 참석 (등록된 근로자 · 현장관리자 · 인력관리자 = 바로 / 아니면 이름만) */
+  API.drillCheckIn = async (a, token, name) => relay('drillIn', { token: String(token || '').toLowerCase(), name: tidy(name, 30) }, !name);
+  /** [업체] QR 새로 만들기 (링크가 외부로 퍼졌을 때) — 이전 QR은 바로 사용 불가 */
+  API.renewWorkerQr = async (a, jobId) => {
+    const b = await execVendor(a), { jv, j } = await vendorJobOf(a, b, jobId, true);
+    await db.collection('JOB_VENDORS').doc(jv.id).update({ workerToken: newToken() }); audit(a, b.id, 'WORKER_QR_RENEW', j.id);
+    return API.vendorJob(a, jobId);
+  };
+  /** [업체] Google 계정이 없는 작업자를 소장이 직접 등록 (교육 실시 확인 필수) */
+  API.addWorker = async (a, jobId, info, requestId) => {
+    const b = await execVendor(a), { j, jv } = await vendorJobOf(a, b, jobId, true);
+    const op = isOpenInd(b.industry) || j.kind === 'OPEN';  // F2.1 오픈지원 = 보통인부 · 특별교육 없음
+    const E = eduOf(op ? '' : tidy(info?.tradeKey, 20));  // F1.8s 공종 고르면 특별교육 → 2시간
+    const name = tidy(info?.name, 40), role = op ? OPEN_ROLES[0] : WORKER_ROLES.includes(info?.role) ? info.role : '', trade = E.tradeName || tidy(info?.trade, 40) || jv.trade;
+    const bad = []; if (!name) bad.push('이름'); if (!role) bad.push('구분(관리자/근로자)'); if (!info?.agree) bad.push('교육 실시·수칙 설명 확인 체크');
+    if (bad.length) fail('다음 항목을 확인해 주세요:\n- ' + bad.join('\n- '));
+    const rid = String(requestId || '').toLowerCase(); if (rid && !/^[a-f0-9]{32}$/.test(rid)) fail('잘못된 요청 식별값입니다.');
+    const workerId = rid ? 'WK-' + rid.slice(0, 16).toUpperCase() : 'WK-' + rand8(), ws = await mineOf('WORKERS', a, j.id), ex = ws.find((x) => x.id === workerId);
+    if (ex) {  // 같은 요청을 다시 보낸 경우 (연결이 끊겼다 다시 보냄)
+      if (ex.companyId !== b.id || ex.name !== name || ex.role !== role || ex.trade !== trade) fail('등록 요청이 충돌했습니다. 화면을 새로고침해 주세요.');
+      await crewAppend(a, b, j, ex, ws);
+    } else {
+      const t = now(), w = { id: workerId, jobId: j.id, companyId: b.id, company: b.company, name, role, trade, email: '', uid: '', vendorUid: a.uid, method: 'MANUAL', eduType: EDU_TYPE + (E.special.length ? ' · 특별교육' : ''),
+        tradeKey: E.tradeKey, special: E.special, eduHours: E.eduHours,
+        eduContent: '채용 시 교육 ' + EDU_HIRE.length + '개 항목 · 작업 안전 수칙 ' + WORK_RULES.length + '개 항목' + (E.special.length ? ' · 특별교육 ' + E.special.join(',') + '번' : ''), eduAt: t, rulesAt: t, addedBy: a.email, addedAt: t, active: 'Y' };
+      await db.collection('WORKERS').doc(workerId).set(w); await crewAppend(a, b, j, w, ws.concat([w]));
+      audit(a, b.id, 'WORKER_ADD_MANUAL', j.id + ' ' + name);
+    }
+    return { saved: true, workerId, jobId: j.id, companyId: b.id, name, role, trade, tradeKey: E.tradeKey, special: E.special, eduHours: E.eduHours, date: today() };
+  };
+  /** [업체] 작업자 명단에서 빼기 (기록은 남김) */
+  API.removeWorker = async (a, jobId, workerId) => {
+    const b = await execVendor(a), { j } = await vendorJobOf(a, b, jobId, true), w = (await mineOf('WORKERS', a, j.id)).find((x) => x.id === tidy(workerId, 40) && x.companyId === b.id);
+    if (!w) fail('작업자를 찾을 수 없습니다.');
+    await db.collection('WORKERS').doc(w.id).update({ active: 'N' }); audit(a, b.id, 'WORKER_REMOVE', j.id + ' ' + w.name);
+    return API.vendorJob(a, jobId);
+  };
+  /** [업체] 오늘 작업 인원 저장 = 그날 작업안전수칙 서명 (같은 날 다시 저장하면 덮어씀) */
+  API.saveCrew = async (a, jobId, ids, siteManager) => {
+    const b = await execVendor(a), { j } = await vendorJobOf(a, b, jobId, true), sm = tidy(siteManager, 40);
+    if (!sm) fail('현장책임자 이름을 입력해 주세요.');
+    const ws = (await mineOf('WORKERS', a, j.id)).filter((w) => w.companyId === b.id && w.active !== 'N'), pick = [...new Set((ids || []).map(String))].map((id) => ws.find((w) => w.id === id)).filter(Boolean);
+    if (!pick.length) fail('오늘 작업하는 사람을 한 명 이상 체크해 주세요.');
+    await crewWrite(a, b, j, today(), pick, sm); audit(a, b.id, 'CREW_SAVE', j.id + ' ' + today() + ' ' + pick.length + '명');
+    return API.vendorJob(a, jobId);
+  };
+  /** [작업자] QR 본인 등록 — QR 값 확인이 필요해 중계 서버가 처리. info 없이 부르면 입력 화면 정보 */
+  API.workerCheckIn = async (a, token, info) => relay('workerIn', { token: String(token || ''), info: info || null }, !info);
+  /** F1.8c [업체] 잘못 누른 것 되돌리기: 오늘 등록 취소 · 오늘 순회점검 제출 취소 (중계 서버가 확인 후 지움) */
+  API.undoWorker = async (a, jobId, workerId) => { await relay('workerUndo', { jobId: tidy(jobId, 40), workerId: tidy(workerId, 40) }); return API.vendorJob(a, jobId); };
+  API.cancelInspection = async (a, jobId) => { await relay('inspCancel', { jobId: tidy(jobId, 40) }); return API.vendorJob(a, jobId); };
+  /** F1.8b [업체] 작업자 기초안전보건교육 이수증 올리기 (직접 등록한 사람 · 나중에 가져온 사람) */
+  API.uploadWorkerCert = async (a, jobId, workerId, f) => {
+    if (!f || !/^(image\/(jpeg|png)|application\/pdf)$/.test(String(f.mime || ''))) fail('이수증은 사진(JPG·PNG) 또는 PDF만 올릴 수 있습니다.');
+    await relay('workerCert', { jobId: tidy(jobId, 40), workerId: tidy(workerId, 40), f }); return API.vendorJob(a, jobId);
+  };
+
+  /* ---------- F1.4 안전작업허가서 (매일 1회 · 업체 발행 → 바로 작업 · 도급인 나중 승인) ----------
+   *  PERMITS/{공사ID_업체ID_날짜}  data = 허가서 내용(JSON 글자) · progress = 발행 후 진행 기록(가스측정·완료·연장)
+   *  승인 뒤에는 data는 못 고치고 progress만 고칠 수 있음 (보안 규칙이 확인) */
+  const PERMIT_PROGRESS_KEYS = ['gas', 'gasNote', 'complete', 'extend'];  // F1.8p 작업중 확인(during) 없앰
+  /** 허가서 내용 정리: 글자 300자, 배열 10개, 키 60개, 깊이 5단계 */
+  function permitClean(v, depth) {
+    depth = depth || 0; if (depth > 5) return null;
+    if (typeof v === 'boolean') return v; if (typeof v === 'number') return isFinite(v) ? v : 0; if (typeof v === 'string') return tidy(v, 300);
+    if (Array.isArray(v)) return v.slice(0, 10).map((x) => permitClean(x, depth + 1));
+    if (v && typeof v === 'object') { const o = {}; Object.keys(v).slice(0, 60).forEach((k) => { if (/^[A-Za-z0-9_]{1,30}$/.test(k)) o[k] = permitClean(v[k], depth + 1); }); return o; }
+    return null;
+  }
+  const permitData = (p) => ({ ...parse(p.data, {}), ...parse(p.progress, {}) });
+  function permitSummary(p) {
+    const d = permitData(p);
+    return { id: p.id, no: p.no, date: p.date, status: p.status, company: p.company, workName: d.workName || '', place: d.place || '', start: (d.period || {}).start || '', end: (d.period || {}).end || '',
+      issuedAt: p.issuedAt, approvedBy: p.approvedBy, approvedAt: p.approvedAt, completed: !!(d.complete && d.complete.time) };
+  }
+  const permitFull = (p) => ({ ...permitSummary(p), companyId: p.companyId, jobId: p.jobId, data: permitData(p), issuedBy: p.issuedBy, updatedAt: p.updatedAt, approveNote: p.approveNote });
+  /** 발행 전 필수 확인 (화면에서도 같은 검사) */
+  function permitCheck(d) {
+    const bad = [], P = d.period || {};
+    if (!d.workName) bad.push('작업명(공정)'); if (!d.place) bad.push('작업지역(장소)'); if (!P.start || !P.end) bad.push('작업허가기간(시작·종료 시각)');
+    if (!(d.applicant || {}).name) bad.push('신청인 성명'); if (!(d.issuer || {}).name) bad.push('발급자 성명'); if (!(d.confirm || {}).manager) bad.push('안전조치 확인: 작업 부서 책임자');
+    Object.entries(d.safety || {}).forEach(([k, v]) => { if (v && v.need && !v.done) bad.push('안전조치 요구사항 \'' + k + '\' 조치 완료 체크'); });
+    Object.entries(d.supp || {}).forEach(([k, v]) => {
+      if (v && v.on) {
+        if (!v.from || !v.to) bad.push('보충작업(' + k + ') 허가기간'); if (!v.checker) bad.push('보충작업(' + k + ') 확인자');
+        Object.entries(v.checks || {}).forEach(([c, x]) => { if (x && x.need && !x.done) bad.push('보충작업(' + k + ') \'' + c + '\' 조치 완료 체크'); });
+      }
+    });
+    return bad;
+  }
+  /** 업체 허가서 한 장 (지정일) · 없으면 지난 허가서로 미리 채운 새 양식 */
+  async function permitPack(a, b, j, jv, dt) {
+    const list = (await mineOf('PERMITS', a, j.id)).filter((x) => x.companyId === b.id), p = list.find((x) => x.date === dt);
+    if (p) return { exists: true, today: today(), permit: permitFull(p) };
+    if (dt !== today()) fail('해당 날짜의 허가서가 없습니다.');
+    const last = list.sort((x, y) => (x.date < y.date ? 1 : -1))[0], ld = last ? permitData(last) : null, sm = await siteManagerOf(a, b);
+    const base = { applicant: { dept: b.company, title: '현장책임자', name: sm }, period: { start: '08:00', end: '17:00' }, place: '다이소 ' + j.storeName, device: '', workName: '', attach: {}, pre: { procChange: '무', workDiff: '무' }, safety: {}, supp: {},
+      gas: [], gasNote: '', confirm: { manager: sm, witness: '' }, complete: {}, etc: '', issuer: { dept: b.company, title: '현장책임자', name: sm }, extend: {} };
+    if (ld) {
+      ['applicant', 'period', 'place', 'device', 'workName', 'attach', 'pre', 'safety', 'supp', 'confirm', 'issuer'].forEach((k) => { if (ld[k] !== undefined) base[k] = ld[k]; });
+      // 보충작업 확인자·조치 완료 체크는 매일 새로 확인 (필요 체크만 이어받음)
+      Object.values(base.supp || {}).forEach((s) => { s.checker = ''; Object.values(s.checks || {}).forEach((c) => { c.done = false; }); }); Object.values(base.safety || {}).forEach((c) => { c.done = false; });
+    }
+    return { exists: false, today: today(), fromLast: last ? last.date : '', permit: { status: 'NEW', date: today(), company: b.company, trade: jv.trade, data: base } };
+  }
+  API.getPermit = async (a, jobId, date) => {
+    const b = await execVendor(a), { j, jv } = await vendorJobOf(a, b, jobId);
+    return permitPack(a, b, j, jv, isDate(date) ? date : today());
+  };
+  /** [업체] 발행 (매일 1회) → 바로 작업 가능 · 도급인에게 승인 요청 메일(중계 서버, 기다리지 않음) */
+  API.issuePermit = async (a, jobId, data, crew) => {
+    const b = await execVendor(a), { j, jv } = await vendorJobOf(a, b, jobId, true), d = permitClean(data || {}) || {}, bad = permitCheck(d);
+    if (bad.length) fail('발행 전에 확인해 주세요:\n- ' + bad.join('\n- '));
+    const raw = JSON.stringify(d); if (raw.length > 30000) fail('허가서 내용이 너무 깁니다.');
+    const t = today(), id = j.id + '_' + b.id + '_' + t;
+    if ((await mineOf('PERMITS', a, j.id)).some((x) => x.id === id)) fail('오늘 허가서는 이미 발행했습니다. 연장 작업은 허가서의 [작업허가 연장]에 적어 주세요.');
+    await crewWith(a, b, j, crew);  // F1.8a 오늘 인원(수칙 서명)도 같이 저장
+    const seq = Math.max(0, (j.vendorUids || []).indexOf(a.uid)) + 1;  // 같은 공사·같은 날 업체마다 다른 번호
+    const no = j.id.replace('JOB-', '') + '-' + t.replace(/-/g, '').slice(2) + '-' + ('0' + seq).slice(-2);
+    await db.collection('PERMITS').doc(id).set({ id, no, jobId: j.id, companyId: b.id, company: b.company, vendorUid: a.uid, date: t, data: raw, progress: '{}', status: 'ISSUED',
+      issuedBy: a.email, issuedAt: now(), updatedAt: now(), approvedBy: '', approvedAt: '', approveNote: '' });
+    audit(a, b.id, 'PERMIT_ISSUE', no + ' ' + j.id);
+    /* F1.9d 허가서 발행 메일 없음 · F1.9t 도급인 담당자 Teams (기다리지 않음 · 실패해도 발행은 그대로) */
+    relay('teams', { kind: 'PERMIT', id }).catch(() => {});
+    return permitPack(a, b, j, jv, t);
+  };
+  async function myPermit(a, b, permitId) {
+    const p = docs(await db.collection('PERMITS').where('vendorUid', '==', a.uid).get()).find((x) => x.id === tidy(permitId, 80) && x.companyId === b.id);
+    if (!p) fail('허가서를 찾을 수 없습니다.'); return p;
+  }
+  /** [업체] 발행 후 진행 기록 (가스농도 측정·작업중 확인·작업완료·연장만) — 승인 후에도 가능 */
+  API.updatePermitProgress = async (a, permitId, prog) => {
+    const b = await execVendor(a), p = await myPermit(a, b, permitId), x = permitClean(prog || {}) || {}, pr = parse(p.progress, {});
+    PERMIT_PROGRESS_KEYS.forEach((k) => { if (x[k] !== undefined) pr[k] = x[k]; });
+    await db.collection('PERMITS').doc(p.id).update({ progress: JSON.stringify(pr), updatedAt: now() }); audit(a, b.id, 'PERMIT_PROGRESS', p.no);
+    return API.getPermit(a, p.jobId, p.date);
+  };
+  /** [업체] 승인 전 수정 (허가번호 유지) */
+  API.editPermit = async (a, permitId, data) => {
+    const b = await execVendor(a), d = permitClean(data || {}) || {}, bad = permitCheck(d);
+    if (bad.length) fail('수정 제출 전에 확인해 주세요:\n- ' + bad.join('\n- '));
+    const raw = JSON.stringify(d); if (raw.length > 30000) fail('허가서 내용이 너무 깁니다.');
+    const p = await myPermit(a, b, permitId); if (p.status === 'APPROVED') fail('도급인이 이미 승인한 허가서는 고칠 수 없습니다.');
+    await vendorJobOf(a, b, p.jobId, true);
+    await db.collection('PERMITS').doc(p.id).update({ data: raw, progress: '{}', updatedAt: now() }); audit(a, b.id, 'PERMIT_EDIT', p.no);
+    return API.getPermit(a, p.jobId, p.date);
+  };
+  /** [업체] 제출 취소 = 삭제 (승인 전까지만 · 이력은 접근및작업이력에) */
+  API.withdrawPermit = async (a, permitId) => {
+    const b = await execVendor(a), p = await myPermit(a, b, permitId); if (p.status === 'APPROVED') fail('도급인이 이미 승인한 허가서는 취소할 수 없습니다.');
+    await vendorJobOf(a, b, p.jobId, true);
+    await db.collection('PERMITS').doc(p.id).delete(); audit(a, b.id, 'PERMIT_WITHDRAW', p.no + ' ' + p.date);
+    return API.vendorJob(a, p.jobId);
+  };
+  /* 직원: 공사별 허가서 · 보기 · 승인 */
+  async function staffJob(a, s, jobId) { const js = await db.collection('JOBS').doc(tidy(jobId, 40)).get().catch(() => null), j = js && js.exists ? js.data() : null; if (!canSeeJob(a, s, j)) fail('권한이 없는 공사입니다.'); return j; }
+  API.permitList = async (a, jobId) => {
+    const s = await staffOnly(a), j = await staffJob(a, s, jobId);
+    const list = docs(await db.collection('PERMITS').where('jobId', '==', j.id).get()).sort((x, y) => (x.date < y.date ? 1 : x.date > y.date ? -1 : (x.company < y.company ? -1 : 1)));
+    return { job: { id: j.id, title: j.title, storeName: j.storeName }, list: list.map(permitSummary) };
+  };
+  async function permitOf(a, s, id) {
+    const ps = await db.collection('PERMITS').doc(tidy(id, 80)).get().catch(() => null); if (!ps || !ps.exists) fail('허가서를 찾을 수 없거나 권한이 없습니다.');
+    const p = ps.data(), j = await staffJob(a, s, p.jobId).catch(() => fail('허가서를 찾을 수 없거나 권한이 없습니다.')); return { p, j };
+  }
+  const approverOf = (s) => ({ dept: s.dept || '아성다이소', title: STAFF_ROLES[s.role] || '', name: s.name });
+  API.permitDetail = async (a, id) => { const s = await staffOnly(a), { p, j } = await permitOf(a, s, id); return { ...permitFull(p), job: { id: j.id, title: j.title, storeName: j.storeName }, approver: approverOf(s) }; };
+  /** [직원] 승인 (승인자 부서·직책·성명 = 로그인한 직원) */
+  API.approvePermit = async (a, id, note) => {
+    const s = await staffOnly(a), { p } = await permitOf(a, s, id); if (p.status === 'APPROVED') fail('이미 승인된 허가서입니다.');
+    const ap = approverOf(s);
+    await db.collection('PERMITS').doc(p.id).update({ status: 'APPROVED', approvedBy: ap.dept + ' / ' + ap.title + ' / ' + ap.name, approvedAt: now(), approveNote: tidy(note, 300) });
+    audit(a, p.companyId, 'PERMIT_APPROVE', p.no);
+    return API.permitDetail(a, id);
+  };
+  /** [직원] 선택·일괄 승인 (승인 대기만 · '일괄 승인'으로 기록) */
+  API.approvePermits = async (a, jobId, ids, note) => {
+    const s = await staffOnly(a), j = await staffJob(a, s, jobId), pick = Array.isArray(ids) && ids.length ? new Set(ids.map(String)) : null, ap = approverOf(s);
+    const ps = docs(await db.collection('PERMITS').where('jobId', '==', j.id).get()).filter((p) => p.status === 'ISSUED' && (!pick || pick.has(p.id)));
+    for (let i = 0; i < ps.length; i += 400) {
+      const b = db.batch();
+      ps.slice(i, i + 400).forEach((p) => b.update(db.collection('PERMITS').doc(p.id), { status: 'APPROVED', approvedBy: ap.dept + ' / ' + ap.title + ' / ' + ap.name, approvedAt: now(), approveNote: tidy(note, 300) }));  // F1.9z 「일괄 승인」 자동 문구 안 넣음 (서류에 승인 여부만)
+      await b.commit();
+    }
+    audit(a, '', 'PERMIT_APPROVE_BULK', j.id + ' ' + ps.length + '건');
+    return API.permitList(a, jobId);
+  };
+
+  /* ---------- F1.5 순회점검일지 (2일 1회) ----------
+   *  업체가 점검: TBM 사진 + 11항목(양호/불량/해당없음) · 불량 = 지적사항(사진·메모) → 조치될 때까지 남음
+   *  지적사항 조치: 업체·도급인 누구나 (조치 내용·조치일·조치 후 사진) · 도급인이 일지를 [확인]
+   *  INSPECTIONS/{공사ID_업체ID_날짜} (하루 1장) · FINDINGS/{FD-…} · 사진은 구글 드라이브(중계 서버) */
+  const photoIds = (v, max) => (Array.isArray(v) ? v : []).map((x) => tidy(x, 60)).filter((x) => /^[A-Za-z0-9-]+$/.test(x)).slice(0, max || 5);
+  const inspView = (x) => ({ id: x.id, date: x.date, company: x.company, companyId: x.companyId, items: x.items || {}, labels: inspLabels(x), drill: drillOf(x), drills: drillsOf(x), tbm: photoIds(x.tbm, 5), submittedName: x.submittedName, submittedAt: x.submittedAt,
+    works: Array.isArray(x.works) ? x.works.map((w) => String((w && (w.tl || w.t)) || '')).filter(Boolean) : null, worksNone: !!x.worksNone,  // F1.9w 오늘 공정 (예전 기록 = null)
+    checkedBy: x.checkedBy || '', checkedAt: x.checkedAt || '', bad: Object.values(x.items || {}).filter((v) => v === 'BAD').length });
+  const findView = (f) => ({ id: f.id, inspId: f.inspId, company: f.company, companyId: f.companyId, no: Number(f.no), item: f.item, memo: f.memo, before: photoIds(f.before), foundDate: f.foundDate, status: f.status,
+    actionMemo: f.actionMemo || '', after: photoIds(f.after), actionDate: f.actionDate || '', actionBy: f.actionBy || '', actionAt: f.actionAt || '' });
+  /** 업체 화면용 요약: 마지막 점검일 · 2일 경과 여부 · 미조치 지적사항 · 최근 기록 */
+  function inspPack(ins, fs, items, works) {
+    const t = today(); ins = ins.slice().sort((p, q) => (p.date < q.date ? 1 : -1)); const last = ins[0] ? ins[0].date : '';
+    return { items: items || INSP_ITEMS, base: INSP_BASE, works: works || [], type: '순회점검일지', last, todayDone: last === t, due: !last || daysBetween(last, t) >= 2, since: last ? daysBetween(last, t) : null,
+      open: fs.filter((f) => f.status !== 'DONE').map(findView), recent: ins.slice(0, 30).map(inspView) };
+  }
+  const isPhoto = (f) => /^image\/(jpeg|png)$/.test(String(f && f.mime || ''));
+  /** [업체] 사진 올리기 (TBM·불량·조치 후 공용) → 문서ID */
+  API.uploadInspPhoto = async (a, jobId, f) => { if (!isPhoto(f)) fail('사진(JPG·PNG)만 올릴 수 있습니다.'); return relay('inspPhoto', { jobId: tidy(jobId, 40), f }); };
+  /** [직원] 조치 후 사진 올리기 */
+  API.uploadInspPhotoStaff = async (a, jobId, companyId, f) => { if (!isPhoto(f)) fail('사진(JPG·PNG)만 올릴 수 있습니다.'); return relay('inspPhoto', { jobId: tidy(jobId, 40), companyId: tidy(companyId, 40), f }); };
+  /** 점검 사진 보기 — 화면이 한꺼번에 부르면 8장씩 묶어 중계 서버에 한 번만 요청 (사진마다 왕복하지 않음) */
+  const PQ = {};
+  API.getInspPhoto = (a, jobId, docId) => new Promise((res, rej) => {
+    const jid = tidy(jobId, 40), q = PQ[jid] = PQ[jid] || { list: [], t: null };
+    q.list.push({ id: tidy(docId, 60), res, rej });
+    if (!q.t) q.t = setTimeout(async () => {
+      delete PQ[jid];
+      for (let i = 0; i < q.list.length; i += 8) {
+        const part = q.list.slice(i, i + 8);
+        try { const r = await relay('inspPhotos', { jobId: jid, ids: [...new Set(part.map((x) => x.id))] }, true); part.forEach((x) => (r && r[x.id] ? x.res(r[x.id]) : x.rej(Error('사진을 찾을 수 없습니다.')))); }
+        catch (e) { part.forEach((x) => x.rej(e)); }
+      }
+    }, 40);
+  });
+  /** [업체] 순회점검 제출 (하루 1회) · 불량 항목 → 지적사항 */
+  API.submitInspection = async (a, jobId, d) => {
+    const b = await execVendor(a), { j } = await vendorJobOf(a, b, jobId, true), t = today();
+    const tbm = photoIds(d?.tbm, 5); if (!tbm.length) fail('TBM 실시 사진을 1장 이상 올려 주세요.');
+    /* F1.9w 오늘 공정 고르기 → 점검표 = 공통 5항목 + 고른 공종의 위험요인 (계획서에 위험요인이 없으면 예전 11항목) */
+    const PLN = await planOf(a, b), W = planWorks(PLN), bad = [];
+    const wsel = W.length ? [...new Set((Array.isArray(d?.works) ? d.works : []).map(String))].filter((k) => W.some((w) => w.t === k)) : [], wnone = !!W.length && !wsel.length;
+    if (wnone && !d?.none) bad.push('오늘 공정 (또는 [공통 항목만])');
+    const LB = inspItemsPick(PLN, wsel), items = {};  // F1.8a 계획서 위험작업에 맞춘 점검표
+    LB.forEach((_, i) => { const v = String((d?.items || {})[i + 1] || ''); if (!['OK', 'BAD', 'NA'].includes(v)) bad.push((i + 1) + '번 결과'); items[i + 1] = v; });
+    LB.forEach((_, i) => { if (items[i + 1] === 'BAD' && !tidy(((d?.notes || {})[i + 1] || {}).memo, 500)) bad.push((i + 1) + '번 지적 내용'); });
+    const name = tidy(d?.name, 40); if (!name) bad.push('점검자 이름');
+    /* F1.8b 교육·훈련 (선택) · F1.9z2 하루에 여러 훈련 (종류마다 1번 · 예전 화면이 보낸 drill 하나도 받음) */
+    const dIn = (Array.isArray(d?.drills) ? d.drills : d?.drill ? [d.drill] : []).slice(0, 5), seenT = new Set(), pre = [];
+    dIn.forEach((x) => { const dp = photoIds(x?.photos, 5), dt = String(x?.type || ''), lab = DRILL_TYPES[dt] || '교육·훈련';
+      if (!dp.length && !dt) return; if (!DRILL_TYPES[dt]) { bad.push('교육·훈련 종류'); return; } if (seenT.has(dt)) return; seenT.add(dt);
+      if (!dp.length) { bad.push(lab + ' 사진'); return; } pre.push({ x, dp, dt, lab }); });
+    /* F1.9w 비상훈련 참석자 = 고른 작업자 · 그날 출근 인원 = 오늘 인원 ∪ 모든 훈련 참석자 (참석자는 오늘 인원에도 넣음) */
+    let crewIds = null; const drills = [];
+    if (pre.some((p) => DRILL_EMERGENCY.includes(p.dt))) {
+      const ws = (await mineOf('WORKERS', a, j.id)).filter((w) => w.companyId === b.id && w.active !== 'N');
+      const cur = (await mineOf('CREW', a, j.id)).find((x) => x.date === t && x.companyId === b.id), all = new Set(cur ? (cur.workers || []).map((x) => x.id) : []);
+      pre.forEach((p) => { if (!DRILL_EMERGENCY.includes(p.dt)) return;
+        p.att = [...new Set((Array.isArray(p.x.attendees) ? p.x.attendees : []).map(String))].map((wid) => ws.find((w) => w.id === wid)).filter(Boolean)
+          .map((w) => ({ id: w.id, name: w.name, role: w.role || '', isNew: !!w.eduAt && kst(w.eduAt) === t }));
+        if (!p.att.length) bad.push(p.lab + ' 참석자'); p.att.forEach((w) => all.add(w.id)); });
+      crewIds = [...all];
+    }
+    if (bad.length) fail('제출 전에 확인해 주세요:\n- ' + bad.join('\n- '));
+    pre.forEach((p) => drills.push({ type: p.dt, photos: p.dp, ...(p.att ? { attendees: p.att, crew: crewIds.length, memo: tidy(p.x.memo, 120) } : {}) }));
+    const drill = drills[0] || null;  // 예전 화면·서버가 읽는 첫 훈련
+    const id = j.id + '_' + b.id + '_' + t;
+    if ((await mineOf('INSPECTIONS', a, j.id)).some((x) => x.id === id)) fail('오늘 이행점검은 이미 제출했습니다.');
+    await crewWith(a, b, j, crewIds ? { ids: crewIds } : d?.crew);  // F1.8a 오늘 인원(수칙 서명)도 같이 저장
+    const B = db.batch(), at = now(), wk = W.length ? { works: wsel.map((k) => ({ t: k, tl: (W.find((w) => w.t === k) || {}).tl || k })), worksNone: wnone } : {};
+    B.set(db.collection('INSPECTIONS').doc(id), { id, jobId: j.id, companyId: b.id, company: b.company, vendorUid: a.uid, date: t, tbm, items, labels: LB, ...wk, ...(drill ? { drill, drills } : {}), submittedBy: a.email, submittedName: name, submittedAt: at, checkedBy: '', checkedAt: '' });
+    LB.forEach((it, i) => {
+      const n = i + 1; if (items[n] !== 'BAD') return; const nt = (d.notes || {})[n] || {}, fid = 'FD-' + rand8();
+      B.set(db.collection('FINDINGS').doc(fid), { id: fid, inspId: id, jobId: j.id, companyId: b.id, company: b.company, vendorUid: a.uid, no: n, item: it, memo: tidy(nt.memo, 500), before: photoIds(nt.photos, 5),
+        foundDate: t, status: 'OPEN', actionMemo: '', after: [], actionDate: '', actionBy: '', actionAt: '' });
+    });
+    await B.commit(); audit(a, b.id, 'INSP_SUBMIT', id);
+    relay('teams', { kind: 'INSP', id }).catch(() => {});  // F1.9t 도급인 담당자 Teams (기다리지 않음)
+    return API.vendorJob(a, jobId);
+  };
+  /** [업체·직원] 지적사항 조치 등록 (조치일은 지적일 ~ 오늘) — 종료된 공사도 가능 */
+  API.resolveFinding = async (a, findingId, d) => {
+    const st = await staffOf(a), fid = tidy(findingId, 40); let f, who;
+    if (st) {
+      const s = await db.collection('FINDINGS').doc(fid).get().catch(() => null); f = s && s.exists ? s.data() : null; if (!f) fail('지적사항을 찾을 수 없습니다.');
+      await staffJob(a, st, f.jobId).catch(() => fail('권한이 없습니다.')); who = '도급인 ' + st.name;
+    } else {
+      const b = await execVendor(a); f = docs(await db.collection('FINDINGS').where('vendorUid', '==', a.uid).get()).find((x) => x.id === fid && x.companyId === b.id);
+      if (!f) fail('지적사항을 찾을 수 없습니다.'); who = b.company + ' ' + tidy(d?.name, 40);
+    }
+    if (f.status === 'DONE') fail('이미 조치 완료된 지적사항입니다.');
+    const memo = tidy(d?.memo, 500), date = tidy(d?.date, 10), after = photoIds(d?.photos, 5), t = today(), bad = [];
+    if (!memo) bad.push('조치 내용'); if (!isDate(date)) bad.push('조치일'); else if (date < f.foundDate || date > t) bad.push('조치일 (' + f.foundDate + ' ~ ' + t + ' 사이)'); if (!after.length) bad.push('조치 후 사진');
+    if (bad.length) fail('다음 항목을 확인해 주세요:\n- ' + bad.join('\n- '));
+    await db.collection('FINDINGS').doc(f.id).update({ status: 'DONE', actionMemo: memo, after, actionDate: date, actionBy: who, actionAt: now() });
+    audit(a, f.companyId, 'FINDING_DONE', f.id);
+    return st ? API.inspList(a, f.jobId) : API.vendorJob(a, f.jobId);
+  };
+  /** [업체] 내 지적사항 전체 (조치 완료 포함 · 일지 보기용) */
+  API.inspMine = async (a, jobId) => { const b = await execVendor(a), { j } = await vendorJobOf(a, b, jobId); return (await mineOf('FINDINGS', a, j.id)).filter((f) => f.companyId === b.id).map(findView); };
+  /** [직원] 공사별 순회점검일지 + 지적사항 */
+  API.inspList = async (a, jobId) => {
+    const s = await staffOnly(a), j = await staffJob(a, s, jobId), t = today();
+    const [vs, ins, fs] = await Promise.all(['JOB_VENDORS', 'INSPECTIONS', 'FINDINGS'].map((n) => db.collection(n).where('jobId', '==', j.id).get().then(docs)));
+    return { job: { id: j.id, title: j.title, storeName: j.storeName }, items: INSP_ITEMS, type: '순회점검일지',
+      vendors: vs.map((v) => { const l = ins.filter((x) => x.companyId === v.companyId).map((x) => x.date).sort().pop() || ''; return { companyId: v.companyId, company: v.company, trade: v.trade, last: l, since: l ? daysBetween(l, t) : null }; }),
+      list: ins.sort((p, q) => (p.date < q.date ? 1 : p.date > q.date ? -1 : 0)).map(inspView), findings: fs.sort((p, q) => (p.foundDate < q.foundDate ? 1 : -1)).map(findView) };
+  };
+  /** [직원] 확인 (선택한 것 또는 확인 안 된 전체) → "도급인 확인: 부서 이름·일시" */
+  API.checkInspections = async (a, jobId, ids) => {
+    const s = await staffOnly(a), j = await staffJob(a, s, jobId), pick = Array.isArray(ids) && ids.length ? new Set(ids.map(String)) : null;
+    const xs = docs(await db.collection('INSPECTIONS').where('jobId', '==', j.id).get()).filter((x) => !x.checkedAt && (!pick || pick.has(x.id)));
+    for (let i = 0; i < xs.length; i += 400) { const B = db.batch(); xs.slice(i, i + 400).forEach((x) => B.update(db.collection('INSPECTIONS').doc(x.id), { checkedBy: (s.dept || '아성다이소') + ' ' + s.name, checkedAt: now() })); await B.commit(); }
+    audit(a, '', 'INSP_CHECK', j.id + ' ' + xs.length + '건');
+    return API.inspList(a, jobId);
+  };
+
+  /* ---------- F1.6 현장 미팅 (안전보건협의체 회의 · 합동안전보건점검) ----------
+   *  MEETINGS/{MT-…}       미팅 방 · 점검표(joint) · 회의록(minutes) — 직원(안전보건팀·공사 주관자)만
+   *  MEET_LINKS/{QR값}      QR로 들어온 사람이 보는 안내(방 열림 여부·참여 업체) — QR 값을 아는 사람만 열람
+   *  ATTEND/{미팅ID_계정}   참석 체크 = 본인 계정으로 Firestore에 바로 (여러 명이 동시에 찍어도 빠름)
+   *     직원·배정 업체 대표 계정 → 바로 참석 / 그 외 → 확인 대기(도급인이 확인)  ※ 보안 규칙이 다시 확인
+   *  사진(합동점검 불량)은 구글 드라이브(중계 서버) */
+  const ATTEND_ROLES = ['관리자', '근로자'];
+  const meetLink = (token) => location.origin + location.pathname + '?review=MEET-' + token;
+  /** 심의결과 자동: 합동점검 불량 항목 → 지적사례, 없으면 '특이사항 없음' */
+  function councilResults(joint) {
+    const bad = Object.entries((joint && joint.items) || {}).filter(([, v]) => v === 'BAD').map(([n]) => Number(n)).sort((p, q) => p - q);
+    if (!bad.length) return ['합동안전보건점검 결과 특이사항 없음 (종결)'];
+    return bad.map((n) => '[합동점검 지적] ' + n + '. ' + JOINT_ITEMS[n - 1][1] + ' → 불량' + ((((joint.notes || {})[n]) || {}).memo ? ': ' + joint.notes[n].memo : ''));
+  }
+  /** 화면에서 받은 점검표·회의록 정리 (불량 항목은 메모·사진 / 발의·심의는 자동) */
+  function meetDocs(d) {
+    const ji = (d && d.joint) || {}, items = {}, notes = {};
+    for (let i = 1; i <= JOINT_ITEMS.length; i++) {
+      const v = String((ji.items || {})[i] || ''); if (JOINT_MARKS.includes(v)) items[i] = v;
+      const nt = (ji.notes || {})[i]; if (v === 'BAD' && nt) notes[i] = { memo: tidy(nt.memo, 500), photos: photoIds(nt.photos, 5) };
+    }
+    const opinions = {};
+    Object.entries(ji.opinions || {}).slice(0, 15).forEach(([cid, o]) => { const k = tidy(cid, 40); if (/^[A-Za-z0-9-]+$/.test(k)) opinions[k] = { company: tidy(o && o.company, 80), text: tidy(o && o.text, 600) }; });
+    const mi = (d && d.minutes) || {}, joint = { items, notes, opinions };
+    return { joint, minutes: { type: mi.type === '정기' ? '정기' : '임시', start: tidy(mi.start, 5), end: tidy(mi.end, 5), proposals: COUNCIL_AGENDA.join('\n'), results: councilResults(joint).join('\n'), etc: tidy(mi.etc, 1000) } };
+  }
+  const meetSummary = (m, at) => {
+    const mine = at.filter((x) => x.meetingId === m.id);
+    return { id: m.id, title: m.title, date: m.date, time: m.time, place: m.place, kinds: m.kinds || [], open: m.open === 'Y', done: !!m.doneAt, doneAt: m.doneAt || '',
+      count: mine.filter((x) => x.status === 'OK').length, pending: mine.filter((x) => x.status === 'PENDING').length };
+  };
+  async function meetingOf(a, s, id) {
+    const ms = await db.collection('MEETINGS').doc(tidy(id, 40)).get().catch(() => null), m = ms && ms.exists ? ms.data() : null;
+    if (!m) fail('미팅을 찾을 수 없거나 권한이 없습니다.');
+    const j = await staffJob(a, s, m.jobId).catch(() => fail('미팅을 찾을 수 없거나 권한이 없습니다.'));
+    return { m, j };
+  }
+  const jobVendorsOf = async (jobId) => docs(await db.collection('JOB_VENDORS').where('jobId', '==', jobId).get()).map((v) => ({ companyId: v.companyId, company: v.company, trade: v.trade }));
+  /** F1.8f 협력업체 메인 화면 📢 알림용 미팅 요약 (QR 값은 넣지 않음 → 현장 QR로만 참석)
+   *  MEET_NOTICES/{미팅ID} · v = 공사에 배정된 업체 계정 {uid:true} · 만들기·방 열기·실시 완료·완료 취소 때 새로 씀 · 실패해도 미팅 기능은 그대로 */
+  const meetNotice = (m, store, done) => db.collection('JOB_VENDORS').where('jobId', '==', m.jobId).get().then(docs).then((vs) => {
+    const v = {}; vs.forEach((x) => { if (x.vendorUid) v[x.vendorUid] = true; });
+    return db.collection('MEET_NOTICES').doc(m.id).set({ id: m.id, jobId: m.jobId, title: m.title, store: store || '', date: m.date, time: m.time || '', place: m.place || '', kinds: m.kinds || [], done: done ? 'Y' : 'N', v, at: now() });
+  }).catch((e) => console.warn('미팅 알림 저장 실패 (firestore.rules 확인)', e && e.message));
+  /** [직원] 미팅 방 화면 (QR·참석자·점검표·회의록) */
+  API.meetingDetail = async (a, id) => {
+    const s = await staffOnly(a), { m, j } = await meetingOf(a, s, id);
+    const [vs0, at] = await Promise.all([jobVendorsOf(j.id), db.collection('ATTEND').where('meetingId', '==', m.id).get().then(docs)]);
+    /* F1.9x 업체마다 현장대리인 이름 (같은 업체명 구분) */
+    const vs = await Promise.all((vs0 || []).map((v) => db.collection('COMPANIES').doc(v.companyId).get().then((x) => ({ ...v, contact: x.exists ? x.data().contact || '' : '' })).catch(() => v)));
+    return { id: m.id, title: m.title, date: m.date, time: m.time, place: m.place, kinds: (m.kinds || []).map((k) => MEET_KINDS[k]), kindCodes: m.kinds || [], open: m.open === 'Y', link: meetLink(m.token),
+      joint: m.joint || null, minutes: m.minutes || null, done: !!m.doneAt, doneAt: m.doneAt || '', doneBy: m.doneBy || '', jointItems: JOINT_ITEMS, agenda: COUNCIL_AGENDA,
+      job: { id: j.id, title: j.title, storeName: j.storeName }, vendors: vs,
+      attendees: at.filter((x) => x.status !== 'REJECTED').sort((x, y) => String(x.checkedAt).localeCompare(String(y.checkedAt)))
+        .map((x) => ({ id: x.id, name: x.name, side: x.side, companyId: x.companyId, company: x.company, role: x.role, status: x.status, email: x.email, checkedAt: x.checkedAt })) };
+  };
+  /** [직원] 미팅 방 만들기 → 참여 업체 대표 계정에 안내 메일 (중계 서버 · 기다리지 않음) */
+  API.createMeeting = async (a, jobId, d) => {
+    const s = await staffOnly(a), j = await staffJob(a, s, jobId);
+    const kinds = ((d && d.kinds) || []).filter((k) => MEET_KINDS[k]); if (!kinds.length) fail('포함할 행사를 하나 이상 선택해 주세요.');
+    const date = tidy(d && d.date, 10); if (!isDate(date)) fail('미팅 일자를 입력해 주세요.');
+    const id = await meetMake(a, j, { title: tidy(d.title, 80) || '임시 미팅', date, place: tidy(d.place, 120), kinds });
+    return API.meetingDetail(a, id);
+  };
+  /** 미팅 만들기 공통 (시간 없이 날짜만) · key가 있으면 문서 ID = MT-공사ID-key → 같은 자동 미팅은 한 번만 */
+  async function meetMake(a, j, d) {
+    const id = d.key ? 'MT-' + j.id + '-' + d.key : 'MT-' + rand8();
+    if (d.key) { const ex = await db.collection('MEETINGS').doc(id).get().catch(() => null); if (ex && ex.exists) return null; }
+    const token = newToken(), vs = await jobVendorsOf(j.id);
+    const m = { id, jobId: j.id, title: d.title || '현장 미팅', date: d.date, time: '', place: d.place || j.storeName, kinds: d.kinds, token, open: 'N', openedAt: '', closedAt: '',
+      createdBy: a.email, createdAt: now(), joint: null, minutes: null, doneAt: '', doneBy: '', auto: d.key || '' };
+    const B = db.batch();
+    B.set(db.collection('MEETINGS').doc(id), m);
+    B.set(db.collection('MEET_LINKS').doc(token), { token, meetingId: id, jobId: j.id, title: m.title, store: j.storeName, date: m.date, place: m.place, open: 'N', vendors: vs });
+    await B.commit(); audit(a, '', d.key ? 'MEETING_AUTO' : 'MEETING_ADD', id + ' ' + j.id + ' ' + m.date);
+    await meetNotice(m, j.storeName, false);
+    /* F1.9d 미팅 안내 메일 없음 (업체 화면 📢 알림) */
+    return id;
+  }
+  /* ---------- F1.8l 미팅 자동 생성 ----------
+   *  착수 미팅(협의체 + 합동점검) = 공사 시작일 (이미 지났으면 오늘) · 미팅이 하나도 없는 진행 중 공사에 한 번
+   *  법정 주기: 협의체 매월 · 합동점검 분기마다 1회 — 그 기간에 같은 종류 미팅이 없으면 오늘 날짜로 추가
+   *  (공사를 시작한 달·분기는 착수 전에 한 미팅도 인정 → 30일 안쪽 공사는 착수 미팅 1번으로 끝)
+   *  공사 관리 화면을 열 때(공사 저장 포함) 실행 · 그 공사를 맡은 직원·안전보건팀만 */
+  const lastDayOf = (y, m) => new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10), pad2 = (n) => String(n).padStart(2, '0');
+  function lawNeed(j, t, M) {
+    const y = +t.slice(0, 4), mo = +t.slice(5, 7), qm = Math.floor((mo - 1) / 3) * 3 + 1, out = [];
+    if (j.status === 'ENDED' || j.startDate > lastDayOf(y, mo)) return out;
+    const chk = (kind, ps, pe) => { if (!(j.startDate <= pe && (!j.endDate || j.endDate >= ps))) return;
+      const has = M.some((m) => (m.kinds || []).includes(kind) && m.date >= ps && m.date <= pe) || (j.startDate >= ps && j.startDate <= pe && M.some((m) => (m.kinds || []).includes(kind) && m.date <= pe));
+      if (!has) out.push(kind); };
+    chk('COUNCIL', y + '-' + pad2(mo) + '-01', lastDayOf(y, mo)); chk('JOINT', y + '-' + pad2(qm) + '-01', lastDayOf(y, qm + 2));
+    return out;
+  }
+  async function autoMeetings(a, s, jobs, mts) {
+    const t = today(); let n = 0;
+    for (const j of jobs) {
+      if (j.status === 'ENDED' || !canSeeJob(a, s, j) || !isDate(j.startDate)) continue;
+      const M = mts.filter((m) => m.jobId === j.id);
+      try {
+        if (!M.length) { if (await meetMake(a, j, { key: 'START', title: '착수 미팅', date: j.startDate >= t ? j.startDate : t, kinds: ['COUNCIL', 'JOINT'] })) n++; continue; }
+        const need = lawNeed(j, t, M); if (!need.length) continue;
+        const label = (need.includes('COUNCIL') ? Number(t.slice(5, 7)) + '월 협의체' : '') + (need.length > 1 ? ' + ' : '') + (need.includes('JOINT') ? Math.ceil(Number(t.slice(5, 7)) / 3) + '분기 합동점검' : '');
+        if (await meetMake(a, j, { key: t.slice(0, 7).replace('-', ''), title: label, date: t, kinds: need })) n++;
+      } catch (e) { console.warn('미팅 자동 생성 실패 ' + j.id, e && e.message); }
+    }
+    return n;
+  }
+  /** [직원] 미팅 날짜만 바꾸기 (실시 전 · 방 열기 전) */
+  API.setMeetingDate = async (a, id, date) => {
+    const s = await staffOnly(a), { m, j } = await meetingOf(a, s, id); date = tidy(date, 10);
+    if (!isDate(date)) fail('날짜를 골라 주세요.'); if (m.doneAt) fail('실시 완료된 미팅입니다.'); if (m.open === 'Y') fail('진행 중인 미팅은 날짜를 바꿀 수 없습니다.');
+    const B = db.batch(); B.update(db.collection('MEETINGS').doc(m.id), { date }); B.update(db.collection('MEET_LINKS').doc(m.token), { date });
+    await B.commit(); audit(a, '', 'MEETING_DATE', m.id + ' ' + m.date + '→' + date);
+    await meetNotice({ ...m, date }, j.storeName, false);
+    return API.jobBoard(a);
+  };
+  /** [직원] 방 열기·닫기 — 열려 있는 동안만 참석 체크 (열 때 참여 업체 목록도 새로) */
+  API.setMeetingOpen = async (a, id, open) => {
+    const s = await staffOnly(a), { m, j } = await meetingOf(a, s, id);
+    if (open && m.doneAt) fail('실시 완료된 미팅은 방을 다시 열 수 없습니다.');
+    const B = db.batch(), vs = await jobVendorsOf(j.id);
+    B.update(db.collection('MEETINGS').doc(m.id), open ? { open: 'Y', openedAt: now() } : { open: 'N', closedAt: now() });
+    B.update(db.collection('MEET_LINKS').doc(m.token), { open: open ? 'Y' : 'N', vendors: vs });
+    await B.commit(); audit(a, '', open ? 'MEETING_OPEN' : 'MEETING_CLOSE', m.id);
+    /* F1.8m [▶ 미팅 시작]을 누른 도급인 담당자는 QR 없이 바로 참석으로 (방이 열린 뒤에 써야 보안 규칙 통과) */
+    if (open) await staffSelfIn(a, s, m, j);
+    await meetNotice(m, j.storeName, !!m.doneAt);  // 그 사이 배정된 업체도 알림을 받도록 다시 씀
+    return API.meetingDetail(a, id);
+  };
+  /** F1.8m 미팅을 연(들어간) 도급인 담당자 → 참석 기록 (이미 있으면 그대로) */
+  async function staffSelfIn(a, s, m, j) {
+    const aid = m.id + '_' + a.uid, ex = await db.collection('ATTEND').doc(aid).get().catch(() => null);
+    if (ex && ex.exists && ex.data().status !== 'REJECTED') return;
+    await db.collection('ATTEND').doc(aid).set({ id: aid, meetingId: m.id, jobId: j.id, token: m.token, email: a.email, uid: a.uid, checkedAt: now(), confirmedBy: '', confirmedAt: '',
+      name: s.name, side: 'STAFF', companyId: '', company: '아성다이소', role: '도급인(' + (STAFF_ROLES[s.role] || s.role) + ')', status: 'OK', auto: 'Y' }).catch((e) => console.warn('담당자 자동 참석 실패', e && e.message));
+  }
+  /** [직원] 이미 열린 미팅에 들어갈 때도 담당자 자동 참석 */
+  API.meetJoin = async (a, id) => { const s = await staffOnly(a), { m, j } = await meetingOf(a, s, id); if (m.open === 'Y' && !m.doneAt) await staffSelfIn(a, s, m, j); return API.meetingDetail(a, id); };
+  /** [직원] 확인 대기 참석자 확인/제외 */
+  API.confirmAttendee = async (a, meetingId, attendId, okk) => {
+    const s = await staffOnly(a), { m } = await meetingOf(a, s, meetingId);
+    const x = docs(await db.collection('ATTEND').where('meetingId', '==', m.id).get()).find((r) => r.id === tidy(attendId, 80)); if (!x) fail('참석 기록을 찾을 수 없습니다.');
+    await db.collection('ATTEND').doc(x.id).update({ status: okk ? 'OK' : 'REJECTED', confirmedBy: s.name + ' ' + a.email, confirmedAt: now() });
+    audit(a, x.companyId, okk ? 'ATTEND_CONFIRM' : 'ATTEND_REJECT', m.id + ' ' + x.email);
+    return API.meetingDetail(a, meetingId);
+  };
+  /** [직원] 미팅 방 삭제 (참석 기록 포함) */
+  API.deleteMeeting = async (a, meetingId) => {
+    const s = await staffOnly(a), { m } = await meetingOf(a, s, meetingId), at = await db.collection('ATTEND').where('meetingId', '==', m.id).get();
+    const B = db.batch(); at.docs.forEach((d) => B.delete(d.ref)); B.delete(db.collection('MEET_LINKS').doc(m.token)); B.delete(db.collection('MEETINGS').doc(m.id));
+    await B.commit(); audit(a, '', 'MEETING_DELETE', m.id + ' ' + m.jobId + ' 참석 ' + at.docs.length);
+    await db.collection('MEET_NOTICES').doc(m.id).delete().catch(() => {});
+    return API.jobBoard(a);
+  };
+  /** [직원] 점검표·회의록 임시 저장 */
+  API.saveMeetingDocs = async (a, id, d) => {
+    const s = await staffOnly(a), { m } = await meetingOf(a, s, id); if (m.doneAt) fail('실시 완료된 미팅입니다. 고치려면 [완료 취소]를 먼저 눌러 주세요.');
+    const x = meetDocs(d); await db.collection('MEETINGS').doc(m.id).update({ joint: x.joint, minutes: x.minutes }); audit(a, '', 'MEETING_DOCS_SAVE', m.id);
+    return API.meetingDetail(a, id);
+  };
+  /** [직원] 실시 완료: 협력업체 참석 · 확인 대기 없음 · 점검표 26항목 · 불량 메모 → 방 닫고 확정 */
+  API.completeMeeting = async (a, id, d) => {
+    const s = await staffOnly(a), { m, j } = await meetingOf(a, s, id); if (m.doneAt) fail('이미 실시 완료된 미팅입니다.');
+    const kinds = m.kinds || [], x = meetDocs(d), bad = [], at = docs(await db.collection('ATTEND').where('meetingId', '==', m.id).get()), okk = at.filter((r) => r.status === 'OK');
+    if (!okk.some((r) => r.side === 'VENDOR')) bad.push('참석한 협력업체가 없습니다 (QR 참석 체크 필요)');
+    if (at.some((r) => r.status === 'PENDING')) bad.push('확인 대기 참석자가 있습니다 ([확인] 또는 [제외])');
+    if (kinds.includes('JOINT')) {
+      const none = [], noMemo = [];
+      for (let i = 1; i <= JOINT_ITEMS.length; i++) { if (!x.joint.items[i]) none.push(i); if (x.joint.items[i] === 'BAD' && !((x.joint.notes[i] || {}).memo)) noMemo.push(i); }
+      if (none.length) bad.push('합동점검 미체크 항목: ' + none.join(', ') + '번'); if (noMemo.length) bad.push('불량 항목 메모(지적 내용·조치)를 적어 주세요: ' + noMemo.join(', ') + '번');
+    }
+    if (bad.length) fail('실시 완료 전에 확인해 주세요:\n- ' + bad.join('\n- '));
+    const B = db.batch();
+    B.update(db.collection('MEETINGS').doc(m.id), { joint: x.joint, minutes: x.minutes, open: 'N', closedAt: m.closedAt || now(), doneAt: now(), doneBy: s.name + ' ' + a.email });
+    B.update(db.collection('MEET_LINKS').doc(m.token), { open: 'N' });
+    await B.commit(); audit(a, '', 'MEETING_DONE', m.id + ' 참석 ' + okk.length);
+    await meetNotice(m, j.storeName, true);  // 실시 완료 → 업체 메인 화면 알림 사라짐
+    return API.meetingDetail(a, id);
+  };
+  /** [직원] 실시 완료 취소 (내용 수정용) */
+  API.reopenMeetingDocs = async (a, id) => {
+    const s = await staffOnly(a), { m, j } = await meetingOf(a, s, id); if (!m.doneAt) fail('실시 완료 상태가 아닙니다.');
+    await db.collection('MEETINGS').doc(m.id).update({ doneAt: '', doneBy: '' }); audit(a, '', 'MEETING_REOPEN', m.id);
+    await meetNotice(m, j.storeName, false);
+    return API.meetingDetail(a, id);
+  };
+  /** [직원] 합동점검 불량 항목 사진 → 문서ID (구글 드라이브) */
+  API.uploadMeetingPhoto = async (a, meetingId, no, f) => {
+    const n = Number(no); if (!(n >= 1 && n <= JOINT_ITEMS.length)) fail('점검 항목 번호가 올바르지 않습니다.'); if (!isPhoto(f)) fail('사진(JPG·PNG)만 올릴 수 있습니다.');
+    return relay('meetPhoto', { meetingId: tidy(meetingId, 40), no: n, f });
+  };
+  /** [직원] 미팅 사진 보기 — 한꺼번에 부르면 8장씩 묶어 한 번만 요청 */
+  const MQ = {};
+  API.getMeetingPhoto = (a, meetingId, docId) => new Promise((res, rej) => {
+    const mid = tidy(meetingId, 40), q = MQ[mid] = MQ[mid] || { list: [], t: null };
+    q.list.push({ id: tidy(docId, 60), res, rej });
+    if (!q.t) q.t = setTimeout(async () => {
+      delete MQ[mid];
+      for (let i = 0; i < q.list.length; i += 8) {
+        const part = q.list.slice(i, i + 8);
+        try { const r = await relay('meetPhotos', { meetingId: mid, ids: [...new Set(part.map((x) => x.id))] }, true); part.forEach((x) => (r && r[x.id] ? x.res(r[x.id]) : x.rej(Error('사진을 찾을 수 없습니다.')))); }
+        catch (e) { part.forEach((x) => x.rej(e)); }
+      }
+    }, 40);
+  });
+  /** [로그인한 누구나] QR/링크로 참석 체크. info 없이 부르면 필요한 입력을 알려 줌 */
+  API.meetCheckIn = async (a, token, info) => {
+    token = String(token || '').toLowerCase(); if (!/^[a-f0-9]{32}$/.test(token)) fail('잘못된 참여 링크입니다.');
+    const ls = await db.collection('MEET_LINKS').doc(token).get().catch(() => null); if (!ls || !ls.exists) fail('참여 링크를 찾을 수 없습니다.');
+    const L = ls.data(), base = { meeting: L.title, store: L.store, date: L.date, place: L.place }, id = L.meetingId + '_' + a.uid;
+    const done = (x) => ({ ...base, state: 'DONE', name: x.name, company: x.company, role: x.role, status: x.status, checkedAt: x.checkedAt });
+    const mine = docs(await db.collection('ATTEND').where('uid', '==', a.uid).get()).find((x) => x.id === id && x.status !== 'REJECTED');
+    if (mine) return done(mine);
+    if (L.open !== 'Y') return { ...base, state: 'CLOSED' };
+    const rec = async (o) => {
+      const r = { id, meetingId: L.meetingId, jobId: L.jobId, token, email: a.email, uid: a.uid, checkedAt: now(), confirmedBy: '', confirmedAt: '', ...o };
+      await db.collection('ATTEND').doc(id).set(r); audit(a, r.companyId, 'MEETING_CHECKIN', L.meetingId + ' ' + r.status);
+      return done(r);
+    };
+    const st = await staffOf(a);
+    if (st) return rec({ name: st.name, side: 'STAFF', companyId: '', company: '아성다이소', role: '도급인(' + (STAFF_ROLES[st.role] || st.role) + ')', status: 'OK' });
+    const vs = L.vendors || [], cs = await myCompanies(a), own = cs.find((x) => x.status === 'VERIFIED') || null, assigned = own && vs.find((v) => v.companyId === own.id);
+    if (!vs.length) return { ...base, state: 'NO_VENDOR' };
+    /* F1.8j QR만 찍으면 바로 참석 (입력 없음)
+     *  배정된 업체 대표 계정 → 업체명 + 현장대리인 이름(없으면 업체 담당자) · 관리자
+     *  이 공사에 등록된 작업자 본인 계정 → 등록한 이름 · 업체 · 근로자 */
+    if (!info && assigned) return rec({ name: (await siteManagerOf(a, own).catch(() => '')) || own.contact || own.representative || a.email, side: 'VENDOR', companyId: own.id, company: own.company, role: ATTEND_ROLES[0], status: 'OK' });
+    if (!info) {
+      const w = docs(await db.collection('WORKERS').where('uid', '==', a.uid).get().catch(() => ({ docs: [] }))).find((x) => x.jobId === L.jobId && x.active !== 'N' && vs.some((v) => v.companyId === x.companyId));
+      if (w) return rec({ name: w.name, side: 'VENDOR', companyId: w.companyId, company: w.company || (vs.find((v) => v.companyId === w.companyId) || {}).company || '', role: ATTEND_ROLES[1], status: 'OK', workerId: w.id });
+    }
+    /* F2.2 이 오픈 매장에 배정된 오픈지원 인력관리자 본인 계정 → 바로 참석 (역할 = 인력관리자) */
+    if (!info) {
+      const jms = await db.collection('JOB_MGRS').doc(L.jobId + '_' + a.email).get().catch(() => null), x = jms && jms.exists ? jms.data() : null;
+      const m = x && vs.some((v) => v.companyId === x.companyId) ? (await myMgrs(a)).find((y) => y.companyId === x.companyId && y.status === 'ACTIVE') : null;
+      if (m) return rec({ name: m.name, side: 'VENDOR', companyId: x.companyId, company: x.company || m.company, role: '인력관리자', status: 'OK', mgr: 'Y' });
+    }
+    /* F1.8p 승인된 업체 계정도 아니고 이 공사 작업자도 아니면 참석 불가 → 사업자 등록 안내 (승인 대기 중이면 대기 안내) */
+    if (!own) { const p = cs.find((x) => x.status === 'PENDING'); return { ...base, state: 'NO_COMPANY', pending: p ? p.company : '' }; }
+    if (!info) return { ...base, state: 'NEED_INFO', known: assigned ? { companyId: own.id, company: own.company, name: own.contact } : null, myCompany: own && !assigned ? own.company : '', vendors: vs, roles: ATTEND_ROLES };
+    const name = tidy(info.name, 40), role = ATTEND_ROLES.includes(info.role) ? info.role : '';
+    if (!name || !role) fail('이름과 역할(관리자/근로자)을 입력해 주세요.');
+    if (assigned) return rec({ name, side: 'VENDOR', companyId: own.id, company: own.company, role, status: 'OK' });
+    const v = vs.find((x) => x.companyId === String(info.companyId || '')); if (!v) fail('소속 업체를 선택해 주세요.');
+    return rec({ name, side: 'VENDOR', companyId: v.companyId, company: v.company, role, status: 'PENDING' });
+  };
+
+  /* ---------- F1.7 공사 연장 · 종료 · 종료 평가 ----------
+   *  종료 예정 3일 전부터 알림 → [연장](새 종료일·사유, 이력) 또는 [종료]
+   *  [종료] → 참여 업체마다 평가서(JOB_EVALS): 12항목을 수행 기록으로 자동 체크 → 담당자 확인·수정 → [평가 확정]
+   *  확정 후 [전체 활동내역 ZIP] → 중계 서버가 결과지 PDF·단계별 기록을 만들어 드라이브에 보관 (처음 한 번 1~2분)
+   *  참조 알림(연장·종료·평가 확정)은 중계 서버가 안전보건팀에 남김 */
+  const notice = (type, text, jobId, companyId) => relay('notice', { type, text: tidy(text, 500), jobId: jobId || '', companyId: companyId || '' }).catch(() => {});
+  /** 수행 기록 → 12항목 자동 체크 + 근거 (v5.27 jobEvalAuto_와 같은 기준) */
+  async function jobEvalAuto(j, cid) {
+    const by = (col) => db.collection(col).where('jobId', '==', j.id).get().then(docs).then((l) => l.filter((x) => x.companyId === cid));
+    const [crew, pm, ins, fd, wk, evs, mts, ats, cfs] = await Promise.all([by('CREW'), by('PERMITS'), by('INSPECTIONS'), by('FINDINGS'), by('WORKERS'), db.collection('EVALUATIONS').where('companyId', '==', cid).get().then(docs).catch(() => []),
+      db.collection('MEETINGS').where('jobId', '==', j.id).get().then(docs).catch(() => []), by('ATTEND').catch(() => []),
+      db.collection('CONTRACT_FORMS').where('companyId', '==', cid).get().then(docs).catch(() => [])]);  // F1.9w 계획서 (비상훈련 계획)
+    const cf = cfs.find((x) => x.code === 'C02'), plan = parse(cf && cf.json, {}) || {};
+    const wd = new Set([].concat(crew.map((x) => x.date), pm.map((x) => x.date), ins.map((x) => x.date)).filter(Boolean)).size;
+    const lvRate = (r) => (r >= EVAL_RULE.rateGood ? 'G' : r >= EVAL_RULE.rateNormal ? 'N' : 'P'), pct = (r) => Math.round(r * 100) + '%';
+    const ev = evs.filter((x) => x.result === 'APPROVED').sort((p, q) => String(p.evaluatedAt).localeCompare(String(q.evaluatedAt))).pop(), pre = ev ? parse(ev.items, {}) : {}, o = {};
+    const preOf = (n, why) => ({ lv: pre[n] || '', why: (why ? why + ' · ' : '') + (pre[n] ? '계약 전 평가 결과 (' + EVAL_LEVELS[pre[n]] + ')' : '계약 전 평가 기록 없음 · 직접 판단'), auto: !!pre[n] });
+    /* F1.9b 종료 평가 = 계약 전 계획을 공사 중에 지켰는가 (실행률) · 공사 중에 따로 잴 수 없는 1·2·3·10은 계약 전 결과 */
+    [1, 2, 3, 10].forEach((n) => { o[n] = preOf(n); });
+    { let ok = 0, bad = 0; ins.forEach((x) => Object.values(x.items || {}).forEach((v) => { if (v === 'OK') ok++; else if (v === 'BAD') bad++; }));
+      o[4] = ok + bad ? { lv: lvRate(ok / (ok + bad)), why: '계획서 위험요인 순회점검 ' + (ok + bad) + '건 중 양호 ' + ok + '건 = ' + pct(ok / (ok + bad)) + (bad ? ' · 불량 ' + bad + '건' : ''), auto: true } : preOf(4, '순회점검 기록 없음'); }
+    { const dm = mts.filter((m) => m.doneAt), went = new Set(ats.filter((x) => x.status !== 'REJECTED').map((x) => x.meetingId)), n = dm.filter((m) => went.has(m.id)).length;
+      o[9] = dm.length ? { lv: lvRate(n / dm.length), why: '협의체·합동점검 참석 ' + n + ' / 실시 ' + dm.length + '회 = ' + pct(n / dm.length), auto: true } : preOf(9, '실시한 협의체·합동점검 없음'); }
+    if (!wd) [5, 7, 8].forEach((n) => { o[n] = { lv: '', why: '작업 기록 없음 · 직접 판단', auto: false }; });
+    else {
+      const need = Math.max(1, Math.ceil(wd / 2)), r5 = ins.length / need; o[5] = { lv: lvRate(r5), why: '순회점검 ' + ins.length + '회 / 필요 ' + need + '회 (작업일 ' + wd + '일 ÷ 2) = ' + pct(r5), auto: true };
+      /* F1.8a 신규자 교육·작업 안전 수칙 서명은 등록 때 1회 → 등록 인원 기준 (F1.8b에서 이수증·교육훈련과 비교 예정) */
+      /* F1.8b 등록한 작업자 중 기초안전보건교육 이수증을 낸 비율 (안 낸 사람 = 교육 없이 투입된 증빙) · 우수 90% 이상 · 보통 60% 이상 */
+      const nc = wk.filter((w) => !w.certDoc), r7 = wk.length ? (wk.length - nc.length) / wk.length : 0;
+      o[7] = wk.length ? { lv: lvRate(r7), why: '기초안전보건교육 이수증 ' + (wk.length - nc.length) + ' / 등록 ' + wk.length + '명 = ' + pct(r7) + (nc.length ? ' · 미제출: ' + nc.slice(0, 10).map((w) => w.name).join(', ') + (nc.length > 10 ? ' 외 ' + (nc.length - 10) + '명' : '') : ''), auto: true }
+        : { lv: 'P', why: '등록한 작업자 없음 (신규자 교육·이수증 확인 기록 없음)', auto: true };
+      const r8 = pm.length / wd, ap = pm.filter((x) => x.status === 'APPROVED').length; o[8] = { lv: lvRate(r8), why: '작업허가서 ' + pm.length + '일 / 작업일 ' + wd + '일 = ' + pct(r8) + ' · 도급인 승인 ' + ap + '건', auto: true };
+    }
+    const done = fd.filter((f) => f.status === 'DONE'), open = fd.length - done.length, avg = done.length ? done.reduce((s, f) => s + Math.max(0, daysBetween(f.foundDate, f.actionDate)), 0) / done.length : 0;
+    o[6] = !fd.length ? { lv: 'G', why: '지적사항 없음', auto: true } : { lv: open ? 'P' : avg <= EVAL_RULE.fixDaysGood ? 'G' : 'N', why: '지적 ' + fd.length + '건 · 조치 ' + done.length + '건 · 미조치 ' + open + '건 · 평균 조치 ' + avg.toFixed(1) + '일', auto: true };
+    /* F1.9w 비상대책 = 비상훈련 실시 보고서와 같은 판정 (drillSum) · 계획서에서 필요한 훈련 + 참석률 */
+    const DS = drillSum(plan, ins);
+    o[11] = { lv: DS.lv, why: DS.text.review + (DS.miss.length ? ' · 미실시: ' + DS.miss.map((k) => DRILL_TYPES[k]).join(', ') : ''), auto: true };
+    /* F1.9x 재해 = 산재 확인서(계획서 증빙 + 나중에 추가 제출) + 공사 중 사고 (도급인이 고름: 없음 · 1건 · 2건 이상)
+     *  확인서 없음 = 미흡 · 확인서 + 사고 없음 = 우수 · 확인서 + 1건 = 보통 · 2건 이상 = 미흡 (최종 판정은 사고를 고른 뒤 · evAcc12) */
+    const co = await db.collection('COMPANIES').doc(cid).get().then((x) => (x.exists ? x.data() : {})).catch(() => ({})), late = parse(co.accCerts, []) || [];
+    const certN = (Array.isArray(plan.evidence) ? plan.evidence.length : 0) + (Array.isArray(late) ? late.length : 0);
+    o[12] = { lv: certN ? 'G' : 'P', why: '산재 확인서 ' + (certN ? '제출 ' + certN + '건' + (late.length ? ' (추가 제출 ' + late.length + '건 · ' + String((late[late.length - 1] || {}).at || '').slice(5, 10) + ')' : '') : '미제출 → 미흡') + ' · 공사 중 사고는 아래에서 고름', auto: true, cert: certN > 0 };
+    return { items: o, drill: DS, stats: { workDays: wd, crewDays: crew.length, permits: pm.length, inspections: ins.length, findings: fd.length, openFindings: open, workers: wk.length, from: j.startDate, to: (j.endedAt ? kst(j.endedAt) : '') || today() } };
+  }
+  const ACC12_TXT = { 0: '공사 중 사고 없음', 1: '공사 중 사고 1건', 2: '공사 중 사고 2건 이상' };
+  const evAcc12 = (cert, acc) => (acc === '2' || !cert ? 'P' : acc === '1' ? 'N' : 'G');
+  function jobEvalView(e, fresh) {
+    const items = parse(e.items, {}), au = fresh || parse(e.auto, {});
+    return { id: e.id, jobId: e.jobId, companyId: e.companyId, company: e.company, status: e.status, items, auto: au, total: e.total === '' || e.total == null ? null : Number(e.total), grade: e.grade, comment: e.comment,
+      drillText: parse(e.drillText, null),  // F1.9w 도급인이 고친 비상훈련 보고서 문장 (안 고쳤으면 null = 자동 문장)
+      evaluator: e.evaluator, evaluatedAt: e.evaluatedAt, hasFiles: !!(e.pdfId && e.zipId) };
+  }
+  async function jobEvalListOf(j, pre) {
+    const list = docs(await db.collection('JOB_EVALS').where('jobId', '==', j.id).get()).sort((x, y) => String(x.createdAt).localeCompare(String(y.createdAt)));
+    const fresh = await Promise.all(list.map((e) => (e.status === 'DRAFT' ? ((pre && pre[e.companyId]) || jobEvalAuto(j, e.companyId)) : null)));
+    return { job: { id: j.id, title: j.title, storeName: j.storeName, startDate: j.startDate, endDate: j.endDate, endedAt: j.endedAt ? kst(j.endedAt) : '', endedBy: j.endedBy || '', extensions: j.extensions || [] },
+      evalItems: EVAL_ITEMS, points: EVAL_POINTS, sections: EVAL_SECTIONS, list: list.map((e, i) => jobEvalView(e, fresh[i])) };
+  }
+  /** [직원] 공사 연장 (새 종료일 · 사유, 이력 남김) */
+  API.extendJob = async (a, jobId, newEnd, reason) => {
+    const s = await staffOnly(a), j = await staffJob(a, s, jobId); if (j.status === 'ENDED') fail('이미 종료된 공사입니다.');
+    const ne = tidy(newEnd, 10), rs = tidy(reason, 200);
+    if (!isDate(ne)) fail('새 종료일을 입력해 주세요.'); if (ne <= String(j.endDate || '') || ne < today()) fail('새 종료일은 기존 종료일·오늘보다 뒤여야 합니다.'); if (!rs) fail('연장 사유를 입력해 주세요.');
+    const h = (j.extensions || []).concat([{ from: j.endDate || '', to: ne, reason: rs, by: s.name, at: now() }]);
+    await db.collection('JOBS').doc(j.id).update({ endDate: ne, extensions: h }); audit(a, '', 'JOB_EXTEND', j.id + ' ' + j.endDate + '→' + ne);
+    notice('JOB_EXTENDED', j.title + ' (' + j.storeName + ') 종료일 ' + (j.endDate || '-') + ' → ' + ne + ' · 사유: ' + rs + ' · ' + s.name, j.id, '');
+    return API.jobBoard(a);
+  };
+  /** [직원] 공사 종료 → 참여 업체마다 종료 평가서 (수행 기록 자동 반영) */
+  API.endJob = async (a, jobId) => {
+    const s = await staffOnly(a), j = await staffJob(a, s, jobId); if (j.status === 'ENDED') fail('이미 종료된 공사입니다.');
+    const [vs, had] = await Promise.all([db.collection('JOB_VENDORS').where('jobId', '==', j.id).get().then(docs), db.collection('JOB_EVALS').where('jobId', '==', j.id).get().then(docs)]);
+    const at = now(), jj = { ...j, status: 'ENDED', endedAt: at, endedBy: s.name + ' ' + a.email }, pre = {}, B = db.batch();
+    B.update(db.collection('JOBS').doc(j.id), { status: 'ENDED', endedAt: at, endedBy: jj.endedBy });
+    for (const v of vs) {
+      if (had.some((e) => e.companyId === v.companyId)) continue;
+      const au = await jobEvalAuto(jj, v.companyId), items = {}, id = 'JE-' + rand8(); pre[v.companyId] = au;
+      Object.entries(au.items).forEach(([n, x]) => { items[n] = { lv: x.lv, memo: '' }; });
+      B.set(db.collection('JOB_EVALS').doc(id), { id, jobId: j.id, companyId: v.companyId, company: v.company, vendorUid: v.vendorUid || '', status: 'DRAFT', items: JSON.stringify(items), auto: JSON.stringify(au),
+        total: '', grade: '', comment: '', evaluator: '', evaluatedAt: '', pdfId: '', zipId: '', createdAt: at });
+    }
+    await B.commit(); audit(a, '', 'JOB_END', j.id + ' 업체 ' + vs.length);
+    notice('JOB_ENDED', j.title + ' (' + j.storeName + ') 공사 종료 · 참여 업체 ' + vs.length + '곳 종료 평가 시작 · ' + s.name, j.id, '');
+    return jobEvalListOf(jj, pre);
+  };
+  /** [직원] 공사의 종료 평가 목록 (작성 중인 평가는 근거를 최신 기록으로 다시 계산) */
+  API.jobEvalList = async (a, jobId) => { const s = await staffOnly(a), j = await staffJob(a, s, jobId); return jobEvalListOf(j, null); };
+  async function jobEvalOf(a, s, id) {
+    const es = await db.collection('JOB_EVALS').doc(tidy(id, 40)).get().catch(() => null), e = es && es.exists ? es.data() : null; if (!e) fail('평가를 찾을 수 없거나 권한이 없습니다.');
+    const j = await staffJob(a, s, e.jobId).catch(() => fail('평가를 찾을 수 없거나 권한이 없습니다.')); return { e, j };
+  }
+  /** [직원] 평가 저장 (final = 확정 · 안전보건팀 참조 알림) */
+  API.saveJobEval = async (a, id, d, final) => {
+    const s = await staffOnly(a), { e, j } = await jobEvalOf(a, s, id); if (e.status === 'DONE') fail('확정된 평가입니다. 고치려면 [다시 수정]을 눌러 주세요.');
+    const items = {}, miss = [];
+    EVAL_ITEMS.forEach(([no]) => { const x = ((d && d.items) || {})[no] || {}, lv = ['G', 'N', 'P'].includes(x.lv) ? x.lv : ''; items[no] = { lv, memo: tidy(x.memo, 300) }; if (!lv) miss.push(no + '번'); });
+    const au = await jobEvalAuto(j, e.companyId), comment = tidy(d && d.comment, 1000);
+    /* F1.9x 12번 = 확인서 + 공사 중 사고 (고른 값으로 서버가 다시 판정 · 의견이 비면 사고 여부를 적어 둠 → 평가서 PDF에 보임) */
+    const acc = ['0', '1', '2'].includes(String((((d && d.items) || {})[12] || {}).acc)) ? String(d.items[12].acc) : '';
+    if (acc) { items[12].acc = acc; items[12].lv = evAcc12(!!(au.items[12] || {}).cert, acc); if (!items[12].memo) items[12].memo = ACC12_TXT[acc]; const k = miss.indexOf('12번'); if (k >= 0) miss.splice(k, 1); }
+    if (final && !acc) fail('12번 재해: 공사 중 사고 여부(없음 · 1건 · 2건 이상)를 골라 주세요.');
+    if (final && miss.length) fail('체크하지 않은 항목이 있습니다: ' + miss.join(', '));
+    const sc = evalScore_(items);
+    /* F1.9w 비상훈련 보고서 문장 (고친 경우만 · null = 자동 문장으로 되돌림 · undefined = 그대로) · 바뀔 때만 저장 (규칙 drillText) */
+    let dtx = e.drillText || '';
+    if (d && d.drillText !== undefined) { const t = d.drillText, L = (v) => (Array.isArray(v) ? v : String(v || '').split('\n')).map((x) => tidy(x, 200)).filter(Boolean).slice(0, 8);
+      dtx = t ? JSON.stringify({ review: tidy(t.review, 600), problems: L(t.problems), improve: L(t.improve), next: L(t.next) }) : ''; }
+    await db.collection('JOB_EVALS').doc(e.id).update({ ...(dtx !== (e.drillText || '') ? { drillText: dtx } : {}), items: JSON.stringify(items), auto: JSON.stringify(au), comment, total: final ? sc.total : '', grade: final ? sc.grade : '', status: final ? 'DONE' : 'DRAFT',
+      pdfId: '', zipId: '', evaluator: final ? (s.dept || '아성다이소') + ' ' + s.name : '', evaluatedAt: final ? now() : '' });
+    audit(a, e.companyId, final ? 'JOB_EVAL_DONE' : 'JOB_EVAL_SAVE', e.id + ' ' + (final ? sc.total + '점 ' + sc.grade : ''));
+    if (final) notice('JOB_EVAL_DONE', j.title + ' (' + j.storeName + ') · ' + e.company + ' 종료 평가 ' + sc.total + '점 ' + sc.grade + '등급 · 평가 ' + s.name + ' (안전보건팀 사후 검토 대상)', j.id, e.companyId);
+    return jobEvalListOf(j, { [e.companyId]: au });
+  };
+  /** [직원] 확정 평가 다시 수정 */
+  API.reopenJobEval = async (a, id) => {
+    const s = await staffOnly(a), { e, j } = await jobEvalOf(a, s, id);
+    await db.collection('JOB_EVALS').doc(e.id).update({ status: 'DRAFT' }); audit(a, e.companyId, 'JOB_EVAL_REOPEN', e.id);
+    return jobEvalListOf(j, null);
+  };
+  /** [직원] 전체 활동내역 ZIP (결과지 PDF 포함) — 중계 서버가 만들고 드라이브 보기 권한 + 주소를 돌려줌 */
+  API.jobEvalFile = async (a, id) => { const s = await staffOnly(a), { e } = await jobEvalOf(a, s, id); if (e.status !== 'DONE') fail('평가를 확정한 뒤 받을 수 있습니다.'); return relay('evalZip', { evalId: e.id }, false, 330000); };
+  /** 업체별 최근 확정 종료 평가 (공사 배정 때 경고용) */
+  function lastEvals(evals, jobs) {
+    const m = {};
+    evals.filter((e) => e.status === 'DONE').sort((p, q) => String(p.evaluatedAt).localeCompare(String(q.evaluatedAt))).forEach((l) => {
+      const j = jobs.find((x) => x.id === l.jobId) || {}; m[l.companyId] = { grade: l.grade, total: Number(l.total), comment: l.comment, job: j.title || '', date: l.evaluatedAt ? kst(l.evaluatedAt) : '' };
+    });
+    return m;
+  }
+
+  /** F1.9e 평가 결과 (중계 서버가 근거까지 만들어 줌) · ref = CE | CE_업체ID | JE_평가ID */
+  API.evalResult = async (a, ref, jobId) => relay('evalResult', { ref: String(ref || '').slice(0, 60), jobId: String(jobId || '').slice(0, 40) }, true);
+  /* ---------- 화면에서 쓰는 창구 ---------- */
+  const NEXT = {};  // v5.27의 모든 기능을 옮김 (F1.7). 남은 것은 예전 '제출자료 검토' 화면(reviewList 등 · 메일 링크 검토로 대체)
+  async function call(fn, args) {
+    const f = Object.prototype.hasOwnProperty.call(API, fn) ? API[fn] : null;
+    if (!f) fail('아직 Firebase로 옮기지 않은 기능입니다 (' + fn + (NEXT[fn] ? ' · ' + NEXT[fn] + ' 예정' : '') + ').');
+    const a = await me();
+    try { return await f(a, ...(args || [])); } catch (e) { throw nice(e); }
+  }
+  /** 로그인 직후 (기존 op:'login'과 같은 모양으로 돌려줌) */
+  async function login(mode, boot) {
+    // F1.7f 작업자 QR 로그인은 접속 구분을 바꾸지 않음 (예전: 비워서 같은 기기의 업체 업무가 직원 기준으로 처리됨)
+    if (!/^WRK-/.test(boot || '')) { try { localStorage.setItem('fbMode', mode || ''); } catch (e) {} }
+    const a = await me(), data = { key: a.uid, email: a.email };
+    if (/^WRK-[a-f0-9]{32}$/.test(boot || '')) {  // 작업자 등록 QR로 로그인: 등록 화면을 같이 돌려줌
+      data.appVersion = VERSION;
+      try { data.wk = await API.workerCheckIn(a, boot.slice(4), null); } catch (e) { data.bootError = nice(e).message; }
+      return data;
+    }
+    try { data.portal = await API.portalData(a); } catch (e) { throw nice(e); }
+    // 미팅 참석 QR로 로그인: 참석 화면을 같이 돌려줌
+    if (/^MEET-[a-f0-9]{32}$/.test(boot || '')) { try { data.meet = await API.meetCheckIn(a, boot.slice(5), null); } catch (e) { data.bootError = nice(e).message; } }
+    return data;
+  }
+  /** 구글 로그인 창 (막히면 화면 이동 방식으로) */
+  async function signIn() {
+    const p = new firebase.auth.GoogleAuthProvider(); p.setCustomParameters({ prompt: 'select_account' });
+    try { await auth.signInWithPopup(p); }
+    catch (e) {
+      if (['auth/popup-blocked', 'auth/operation-not-supported-in-this-environment', 'auth/cancelled-popup-request'].includes(e.code)) { await auth.signInWithRedirect(p); return 'redirect'; }
+      throw e;
+    }
+    USER = auth.currentUser; return 'ok';
+  }
+  function loginError(e) {
+    const c = e && e.code || '';
+    if (c === 'auth/popup-closed-by-user') return '로그인 창을 닫았습니다. 다시 눌러 주세요.';
+    if (c === 'auth/unauthorized-domain') return '이 주소는 Firebase에 등록되지 않았습니다. (Authentication → 승인된 도메인)';
+    if (c === 'auth/network-request-failed') return '인터넷 연결을 확인해 주세요.';
+    if (c === 'auth/web-storage-unsupported' || c === 'auth/internal-error') return '이 브라우저에서는 로그인이 안 됩니다. 크롬·사파리로 열어 주세요.';
+    return '로그인 실패: ' + (e && e.message || e);
+  }
+  /** 화면 이동 방식으로 로그인하고 돌아온 경우 */
+  async function redirectResult() { try { const r = await auth.getRedirectResult(); if (r && r.user) { USER = r.user; return true; } } catch (e) { return loginError(e); } return false; }
+  window.FB = { ok: true, version: VERSION, ready, call, login, signIn, loginError, redirectResult, signOut: () => auth.signOut(), email: () => lower(USER && USER.email), _api: API };
 })();
-function localMissing(){const data=((state.steps||[]).find(x=>Number(x.step)===1)||{}).data||{},m=[];
- if(state.company&&state.company.renewAt&&!state.company.infoFresh)m.push({key:'bRep'});  // v5.17 처음부터 새로 작성: 사업자 정보 저장 필요
- (state.fields[1]||[]).forEach(([k])=>{if(k==='note')return;const el=$('f_'+k),v=el&&!el.disabled?el.value.trim():String(data[k]||'').trim();if(!v)m.push({key:k})});
- if(!state.testSkipFiles)renewRows((state.docBoard&&state.docBoard.rows)||[]).filter(r=>r.stage==='CONTRACT'&&r.vendorDoc&&r.required&&!r.uploads.length).forEach(r=>m.push({key:'doc'+r.code}));return m}
-async function submitAll(){const miss=localMissing();if(miss.length){markMissing(miss);msg(/^doc/.test(miss[0].key)?'제출 서류를 먼저 작성해 주세요':'빨간 칸을 채워 주세요');return}
- if(!confirm('제출할까요?\n제출하면 검토가 끝날 때까지 수정할 수 없습니다.'))return;if(dirty&&!await save(false))return;
- try{const r=await call('submitProfile');if(r.ok){display(r.portal||await call('portalData'));msg('제출했습니다. 본사 담당자가 검토합니다.')}/* v5.18 서버가 화면도 같이 줌 */else if(r.dGrade){showDGrade(r.dGrade)}else{markMissing(r.missing||[]);msg('빈 항목이 있습니다.')}}catch(e){}}
-/* F1.9b D등급(60점 미만 · 또는 관리체제·실행수준·운영관리 중 한 분야라도 배점 절반 미만)이면 제출 안 됨
- *  → 무엇을 보완할지 항목별 안내 + [바로 고치기] (계획서 그 단계 · 그 칸을 빨간 테두리로 흔들어 표시) */
-const DG_SEC={A:['A. 안전보건관리체제',20],B:['B. 실행수준',40],C:['C. 운영관리',20],D:['D. 재해발생 수준',20]};
-function showDGrade(g){$('dgDlg')?.remove();const L=g.gaps||[],LV={N:'보통',P:'미흡'},w=document.createElement('div');w.id='dgDlg';w.setAttribute('role','dialog');w.setAttribute('aria-modal','true');w.setAttribute('aria-labelledby','dgTitle');
- w.style.cssText='position:fixed;inset:0;z-index:95;background:rgba(15,23,42,.62);display:flex;align-items:flex-end;justify-content:center';
- const low=Object.entries(g.sec||{}).filter(([k,v])=>k!=='D'&&DG_SEC[k]&&v<DG_SEC[k][1]/2);
- w.innerHTML='<div style="background:#fff;width:100%;max-width:560px;max-height:88vh;overflow:auto;border-radius:18px 18px 0 0;padding:18px 16px 20px;border-top:4px solid #ed3155">'
-  +'<h2 id="dgTitle" style="margin:0 0 6px;color:#ce2a4b">⚠ D등급 · 지금은 제출할 수 없습니다</h2>'
-  +'<p class="desc" style="margin:0 0 10px">작성한 계획서로 자동 평가한 점수가 <b>'+g.total+'점 (D등급)</b>입니다. D등급은 공사 진행이 어렵습니다. 아래 항목을 보완해서 다시 작성해 주세요.</p>'
-  +(low.length?'<div class="note" style="margin:0 0 10px">배점의 절반이 안 되는 분야: '+low.map(([k,v])=>'<b>'+escapeText(DG_SEC[k][0])+'</b> '+v+' / '+DG_SEC[k][1]+'점').join(' · ')+'</div>':'')
-  +L.map((x,i)=>'<div class="card shake" style="margin:8px 0;padding:12px;border:2px solid #ed3155;background:#fff5f7;animation-delay:'+(i*80)+'ms"><div class="row" style="justify-content:space-between;gap:8px;align-items:flex-start"><div><b>'+escapeText(x.no+'. '+x.name)+'</b> <span class="pill '+(x.lv==='P'?'bad':'todo')+'">'+escapeText(LV[x.lv]||x.lv)+' · -'+x.lost+'점</span><div style="margin-top:4px;font-size:14px">'+escapeText(x.msg||x.why)+'</div></div>'
-   +(x.step?'<button class="button" type="button" style="flex:none;white-space:nowrap" onclick="dgGo('+Number(x.step)+',\''+escapeText(x.field)+'\',\''+escapeText(String(x.msg||'').replace(/'/g,''))+'\')">바로 고치기 ›</button>':'')+'</div></div>').join('')
-  +'<p class="muted" style="margin:12px 0">고친 뒤 계획서 마지막 단계에서 <b>[서명하고 작성 완료]</b>를 다시 누르고, 이 화면에서 <b>[누락 확인 후 제출하기]</b>를 눌러 주세요.</p>'
-  +'<button class="button ghost" type="button" id="dgClose" style="width:100%">닫기</button></div>';
- document.body.appendChild(w);document.body.style.overflow='hidden';const close=()=>{w.remove();document.body.style.overflow=''};$('dgClose').onclick=close;w.addEventListener('click',e=>{if(e.target===w)close()});
- w.addEventListener('keydown',e=>{if(e.key==='Escape')close()});setTimeout(()=>$('dgClose')?.focus(),50)}
-/** 보완 안내 → 계획서 그 단계로 가서 그 칸 표시 (접힌 칸이면 펼침) */
-function dgGo(step,field,text){$('dgDlg')?.remove();document.body.style.overflow='';openPlan();if(!pl)return;plCollect();plStep=Math.max(plFirst(),Math.min(PL_LAST,step));renderPlan();
- setTimeout(()=>{const el=$(field);if(!el)return;const d=el.closest('details');if(d)d.open=true;inspFlag([field],text||'빨간 칸을 보완해 주세요')},120)}
-async function loadAdmin(){try{const a=await fetcher('admin')('applications');$('admin').innerHTML=`<div class="card"><h2>사업자 등록 신청 관리</h2><p class="desc">업체가 본인을 승인 담당자로 지정한 신청이 표시됩니다(관리자는 전체). 승인하면 업체 화면이 바로 작성 단계로 넘어갑니다.</p>${a.map(b=>`<div class="item" id="biz-${escapeText(b.id)}"><b>${escapeText(b.company)}</b> <span class="badge">${escapeText(b.status)}</span> ${b.duplicate==='Y'?'<span class="badge">중복 검토</span>':''}${b.certMissing?'<span class="pill todo">등록증 미첨부</span>':''}<div class="desc">${escapeText(b.industry)} / ${escapeText(b.regNo)}<br>대표자 ${escapeText(b.representative)} / 담당자 ${escapeText(b.contact)}<br>주소 ${escapeText(b.address)}<br>업체 계정 ${escapeText(b.email||'')} · 지정 승인 담당자 ${escapeText(b.approverEmail||'(지정 없음)')}</div>${b.status==='PENDING'?`<div class="row">${b.certMissing?'':`<button class="button ghost" onclick="registrationDocs('${escapeText(b.id)}')">사업자등록증 확인</button>`}<button class="button" onclick="decide('${escapeText(b.id)}','APPROVE')">승인</button><button class="button ghost" onclick="decide('${escapeText(b.id)}','REJECT')">반려</button></div>`:''}</div>`).join('')||'<p>신청 내역이 없습니다.</p>'}</div>`;if(LINK_REVIEW){setTimeout(()=>$('biz-'+LINK_REVIEW)?.scrollIntoView({block:'center'}),100)}}catch(e){}}
-async function decide(id,decision){const reason=decision==='REJECT'?prompt('반려 사유를 입력하세요.'):'';if(decision==='REJECT'&&reason===null)return;if(!confirm(decision==='APPROVE'?'해당 업체를 승인할까요?\n승인하면 업체는 바로 안전보건정보 작성을 시작할 수 있습니다.':'해당 업체를 반려할까요?'))return;try{await call('decideBusiness',id,decision,reason);msg('처리했습니다.');loadAdmin()}catch(e){}}
-async function resend(id){if(!confirm('새 인증번호를 보내겠습니까?'))return;try{await call('resendOtp',id);msg('재발송했습니다.');loadAdmin()}catch(e){}}
-async function registrationDocs(id){try{const files=await call('getRegistrationDocs',id);if(!files.length){msg('첨부된 파일이 없습니다.');return;}for(const file of files)await downloadAdminFile(id,file.id)}catch(e){}}
-async function downloadAdminFile(id,doc){try{openFile(await call('getInternalFile',id,doc))}catch(e){}}
-async function loadReview(){try{const a=await fetcher('review')('reviewList');$('review').innerHTML=`<div class="card"><h2>안전보건정보 제출·검토</h2>${a.map(b=>`<div class="item"><b>${escapeText(b.company)}</b> · <span class="badge">${escapeText(b.submissionStatus)}</span><div class="desc">${escapeText(b.industry)}</div><button class="button ghost" onclick="openReview('${escapeText(b.id)}')">제출 정보 확인</button></div>`).join('')}</div><div id="reviewDetail"></div>`}catch(e){}}
-async function openReview(id){try{reviewing=await call('getReviewData',id);const b=reviewing.company;$('reviewDetail').innerHTML=`<div class="card"><h2>${escapeText(b.company)} · 제출 내용</h2>${reviewing.steps.map(s=>`<div class="item"><b>${escapeText(state.stepNames[Number(s.step)-1])}</b>${Object.entries(s.data).map(([k,v])=>`<p class="desc">${escapeText(k)}: ${escapeText(v)}</p>`).join('')}</div>`).join('')}<div class="line"></div><div class="desc">증빙: ${reviewing.documents.map(f=>`<a onclick="downloadAdminFile('${escapeText(b.id)}','${escapeText(f.id)}')">${escapeText(f.name)}</a>`).join(' / ')}</div><div class="line"></div><b>계약 단계 제출서류</b>${(reviewing.docSubmissions||[]).map(t=>`<div class="item"><b>${escapeText(t.name)}</b>${t.required?'<span class="badge" style="margin-left:6px">필수</span>':''}${t.uploads.length?`<span class="pill ok">v${escapeText(t.uploads[0].version)}</span>`:'<span class="pill todo">미등록</span>'} <span class="muted">보완키 4:doc${escapeText(t.code)}</span><div class="desc">${t.uploads.map(u=>`<a onclick="downloadAdminFile('${escapeText(b.id)}','${escapeText(u.id)}')">v${escapeText(u.version)} ${escapeText(u.name)}</a> <span class="muted">${escapeText(fmtTime(u.uploadedAt))}</span>`).join('<br>')||'등록된 파일 없음'}</div></div>`).join('')||'<p class="desc">설정된 제출서류가 없습니다.</p>'}<p>보완 요청(단계:항목명 형식, 예: 2:safetyManager, 서류는 4:docC01, 쉼표로 구분)</p><input id="corKeys" placeholder="2:safetyManager,3:riskFactors" style="padding:12px;width:100%"><textarea id="corReason" style="margin:9px 0;width:100%;min-height:70px;padding:10px" placeholder="보완 요청 사유"></textarea><div class="row"><button class="button ghost" onclick="reviewIt('${escapeText(b.id)}','CORRECT')">보완 요청</button><button class="button dark" onclick="reviewIt('${escapeText(b.id)}','CONTRACT_OK')">계약담당 1차 확인 완료</button><button class="button" onclick="reviewIt('${escapeText(b.id)}','SAFETY_OK')">안전보건팀 최종 승인</button></div><p class="desc">실제 법정 적격성 배점과 PDF 출력은 후속 모듈로 별도 개발됩니다. 이 버튼은 절차 상태 확인용입니다.</p></div>`}catch(e){}}
-async function reviewIt(id,decision){if(!confirm('검토 결과를 반영할까요?'))return;try{const reason=$('corReason')?.value||'',keys=($('corKeys')?.value||'').split(',').map(s=>s.trim()).filter(Boolean);await call('reviewAction',id,decision,reason,keys);msg('검토 결과 저장');loadReview()}catch(e){}}
-window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue=''}});async function bootApp(){try{if(/^WRK-[a-f0-9]{32}$/.test(LINK_REVIEW)){/* v5.20 내 정보(portalData) 없이 등록 화면만 바로 받음 (왕복 1번 줄임) */workerLinkMode=true;state={email:''};showVer(state);wkCheckIn();return}const mt=/^MEET-[a-f0-9]{32}$/.test(LINK_REVIEW);await bootPortal(mt);if(mt){meetCheckIn();return}if(LINK_REVIEW&&!/^(MGR|SMG|DRL)-/.test(LINK_REVIEW)&&(['ADMIN','SAFETY'].includes(state.role)||state.isApprover))switchTab('admin')}catch(e){}}
-
-/* ---------- v4.0 로그인 · 서버 연결 (GitHub 화면 → Apps Script Code.gs) ---------- */
-const CONF=window.APP_CONFIG||{};
-/* F1.0 Firebase: 서버 왕복 대신 fb.js가 Firestore를 직접 읽고 씀 */
-const EXEC_OK=!!(window.FB&&FB.ok);
-/** Apps Script로 요청 보내기 (text/plain = 브라우저 사전확인 없이 전송되는 방식) */
-/* v5.10 서버는 처리를 끝냈는데 응답이 중간에 사라지는 경우(구글 응답 전달 오류: 404·CORS)가 있음
- *  → 다시 해도 결과가 같은 요청(조회·임시저장·로그인)은 자동으로 2번까지 다시 보냄
- *  → 제출·발행·승인처럼 두 번 하면 안 되는 요청은 다시 보내지 않고 안내만 */
-const RETRY_OK=new Set(['portalData','myStatus','myJobs','vendorJob','jobBoard','meetingDetail','permitList','permitDetail','getPermit','inspList','inspMine','jobEvalList','noticeList','vendorList','staffList','templateAdminList','reviewList','applications','getReviewData','getMeetingPhoto','getInspPhoto','myBadges','saveStep','getMyFile','getInternalFile','getTemplate','saveMeetingDocs',/* v5.19 jobEvalFile은 다시 보내면 ZIP을 처음부터 또 만들어서 뺌 */'setMeetingOpen','confirmAttendee','checkInspections','readNotices','approvePermits','jobEvalList','startRenewal','cancelRenewal']);
-async function post_(body){const __pt=Date.now(),__name=body.op==='call'?String(body.fn||'call'):String(body.op||'request');let __ok=false;try{if(!EXEC_OK)throw Error('config.js에 Apps Script 주소(/exec)가 등록되지 않았습니다.');
- const again=body.op==='login'||RETRY_OK.has(body.fn);let o,last;
- for(let i=0;i<(again?2:1);i++){if(i)await new Promise(r=>setTimeout(r,800*i));
-  /* v5.20 다시 보내도 되는 요청은 45초 넘게 응답이 없으면 끊고 다시 보냄 (응답이 중간에 사라져 끝없이 기다리던 경우) */
-  const ac=again&&window.AbortController?new AbortController():null,tt=ac?setTimeout(()=>ac.abort(),35000):0;
-  try{const r=await fetch(CONF.APPS_SCRIPT_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body),cache:'no-store',signal:ac?ac.signal:undefined});o=await r.json();last=null;break}catch(e){last=e}finally{clearTimeout(tt)}}
- if(!last&&o&&o.ok&&body.op==='call')sessTouch();  // v5.18 쓰는 동안은 이 기기 로그인 유지
- if(last)throw Error(again?'서버 응답을 받지 못했습니다. 잠시 후 다시 시도해 주세요.':'서버 응답을 받지 못했습니다. 처리가 되었을 수 있으니, 화면을 새로 고쳐 결과를 먼저 확인한 뒤 다시 시도해 주세요.');
- if(!o||!o.ok)throw Error((o&&o.error)||'처리에 실패했습니다.'); __ok=true;return o.data}finally{perfRecord('network',__name,Date.now()-__pt,__ok)}}
-/** 로그인 후 서버 기능 호출 (이름은 Code.gs 허용 목록에 있어야 함) */
-async function api(fn,args){const __pt=Date.now();let __ok=false;try{if(!EXEC_OK)throw Error('config.js에 Firebase 설정값이 없습니다.');const r=await FB.call(fn,args||[]);__ok=true;sessTouch();return r}catch(e){if(/로그인이 만료|로그인 정보/.test(e.message))setTimeout(()=>logout('로그인이 만료되었습니다. 다시 로그인해 주세요.'),0);throw e}finally{perfRecord('network',fn,Date.now()-__pt,__ok)}}
-const LOGIN_HELP={VENDOR:'처음 방문한 업체는 로그인 후 사업자 등록을 신청합니다.',STAFF:'회사직원명단에 등록된 개인 Google 계정(Gmail)으로 로그인해 주세요.'};
-const isWorkerLink=()=>/^WRK-/.test(LINK_REVIEW);
-function loginMode(){const r=document.querySelector('input[name=loginMode]:checked');return r?r.value:'VENDOR'}
-function loginHelp(){/* F2.2 인력관리자 초대 링크 · F2.3 현장관리자 지정 QR → 접속 구분은 협력업체로 */if(/^(MGR|SMG|DRL)-/.test(LINK_REVIEW)){const r=document.querySelector('input[name=loginMode][value=VENDOR]');if(r&&!r.checked){r.checked=true}$('loginHelp').textContent=(/^DRL-/.test(LINK_REVIEW)?'비상훈련 참석 QR로':/^SMG-/.test(LINK_REVIEW)?'현장관리자 지정 QR로':'인력관리자 초대 링크로')+' 들어왔습니다. [협력업체]를 고르고 본인 Google 계정으로 로그인하세요.';return}
- $('loginHelp').textContent=isWorkerLink()?'소장님이 보여 준 QR로 들어왔습니다. 이 공사에서 처음 한 번만 등록하면 됩니다.':LOGIN_HELP[loginMode()]}
-function showLogin(note){$('appView').hidden=true;$('loginView').hidden=false;document.title='도급 안전관리 | 로그인';$('loginStatus').textContent=note||'';renderGoogleBtn()}
-function showApp(){$('loginView').hidden=true;$('appView').hidden=false;document.title='도급 안전관리';navInit()}
-let gsiDone=false;
-let gsiWait=0;
-/* F1.0 구글 로그인 버튼 = Firebase 로그인 (팝업 · 막히면 화면 이동 방식) */
-function renderGoogleBtn(){if(gsiDone||!EXEC_OK)return;gsiDone=true;
- $('googleBtn').innerHTML='<button class="gbtn" type="button" id="gLoginBtn"><svg viewBox="0 0 48 48" width="20" height="20" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.6l6.7-6.7C35.6 2.4 30.2 0 24 0 14.6 0 6.6 5.4 2.7 13.3l7.8 6C12.4 13.7 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.4c-.5 2.9-2.2 5.3-4.6 6.9l7.4 5.8c4.3-4 6.9-9.9 6.9-17.2z"/><path fill="#FBBC05" d="M10.5 28.7c-.5-1.4-.8-3-.8-4.7s.3-3.2.8-4.7l-7.8-6C1 16.6 0 20.2 0 24s1 7.4 2.7 10.7l7.8-6z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.4-5.8c-2.1 1.4-4.8 2.3-8.5 2.3-6.3 0-11.6-4.2-13.5-10l-7.8 6C6.6 42.6 14.6 48 24 48z"/></svg><span>Google 계정으로 로그인</span></button>';
- $('gLoginBtn').onclick=async()=>{const st=$('loginStatus'),b=$('gLoginBtn');b.disabled=true;st.textContent='구글 로그인 창을 여는 중…';
-  try{const r=await FB.signIn();if(r==='redirect'){st.textContent='구글 로그인 화면으로 이동합니다…';return}}catch(e){st.textContent=FB.loginError(e);b.disabled=false;return}
-  b.disabled=false;onGoogleLogin({credential:'firebase'})}}
-/* v5.20 로그인 = 왕복 1번에 내 정보(또는 QR 등록·참석 화면)까지 받음 → 이어서 공사·업무 화면 미리 받기 (체크리스트로 진행 표시) */
-async function onGoogleLogin(r){if(!r||!r.credential)return;const st=$('loginStatus'),wk=isWorkerLink(),mt=/^MEET-[a-f0-9]{32}$/.test(LINK_REVIEW);st.textContent='';
- bootUI(wk?['구글 계정 확인','서버 로그인 · 등록 화면 준비']:mt?['구글 계정 확인','서버 로그인 · 참석 화면 준비','화면 열기']:['구글 계정 확인','서버 로그인 · 내 정보 불러오기','공사 목록 준비','화면 열기']);
- bootSet(0,'done');bootSet(1,'run');bootSkip(()=>location.reload(),'처음부터 다시');
- let d;try{d=await FB.login(wk?'':loginMode(),wk||mt?LINK_REVIEW:'1')}catch(e){bootEnd();st.textContent='로그인 실패: '+e.message;return}
- SESSION=d.key;sessSave(SESSION);if(!wk)setCUser(String(d.email||'').toLowerCase()+'|'+loginMode());  // F1.7f 작업자 QR은 이 기기 저장 화면을 지우지 않음
- bootSet(1,'done');showApp();
- if(wk){bootEnd();if(d.wk||d.bootError)workerBoot(d);else bootApp();return}
- if(!d.portal){bootEnd();bootApp();return}  // 서버(Code.gs)가 아직 예전 버전이면 예전 방식
- try{await bootRest(d.portal,mt?-1:2)}catch(e){bootEnd();/* F1.7f 빈 화면 대신 안내 + 다시 시도 */$('my').innerHTML='<div class="card"><h2>화면을 열지 못했습니다</h2><p class="desc">'+escapeText(e.message||'')+'</p><button class="button" type="button" onclick="location.reload()">다시 시도</button></div>';if(mt){try{meetCheckIn()}catch(x){}}return}
- if(mt){try{if(d.meet)showCheckIn(d.meet);else await meetCheckIn()}catch(e){$('my').innerHTML='<div class="card"><h2>참석 화면을 열지 못했습니다</h2><p class="desc">'+escapeText(e.message||'')+'</p><button class="button" type="button" onclick="meetCheckIn()">다시 시도</button></div>'}switchTab('my');$('my').scrollIntoView();return}
- if(LINK_REVIEW&&!/^(MGR|SMG|DRL)-/.test(LINK_REVIEW)&&(['ADMIN','SAFETY'].includes(state.role)||state.isApprover))switchTab('admin')}
-/** 로그아웃: 저장된 로그인 정보 지우고 처음 화면으로 (주소창의 링크값도 정리) */
-const fbOut=()=>Promise.resolve(window.FB&&FB.ok?FB.signOut():0).catch(()=>{});
-function logout(note){cacheClear();try{localStorage.removeItem('fcUser')}catch(e){}sessClear();try{if(note)sessionStorage.setItem('loginNote',note)}catch(e){}dirty=false;fbOut().then(()=>{location.href=location.pathname})}
-/** QR·링크 화면에서 다른 계정으로 (주소의 링크값은 그대로 두고 로그인만 다시) */
-function relogin(){cacheClear();try{localStorage.removeItem('fcUser')}catch(e){}sessClear();dirty=false;fbOut().then(()=>location.reload())}
-/* ---------- v5.18 휴대폰 로그인: 앱 안 화면 확인 ----------
- *  카카오톡·네이버·밴드·인스타·페이스북·라인·회사 메일 앱 안에서 열린 화면은 구글이 로그인을 막음 (403 disallowed_useragent)
- *  → 크롬·사파리로 열기 안내 (카카오톡은 바로 바깥 브라우저로 넘김, 안드로이드는 크롬으로 열기 버튼) */
-const UA=navigator.userAgent||'',IS_IOS=/iPhone|iPad|iPod/i.test(UA),IS_AND=/Android/i.test(UA);
-function inAppName(){if(/KAKAOTALK/i.test(UA))return '카카오톡';if(/NAVER\(inapp|NAVER/.test(UA)&&/inapp/i.test(UA))return '네이버';if(/BAND\//i.test(UA))return '밴드';if(/Instagram/i.test(UA))return '인스타그램';if(/FBAN|FBAV|FB_IAB/i.test(UA))return '페이스북';if(/Line\//i.test(UA))return '라인';if(/DaumApps|DaumDevice/i.test(UA))return '다음';
- if(IS_AND&&/; wv\)/.test(UA))return '앱';if(IS_IOS&&!/Safari\//.test(UA))return '앱';return ''}
-function openOutside(){const u=location.href;
- if(/KAKAOTALK/i.test(UA)){location.href='kakaotalk://web/openExternal?url='+encodeURIComponent(u);return}
- if(IS_AND){location.href='intent://'+u.replace(/^https?:\/\//,'')+'#Intent;scheme=https;package=com.android.chrome;end';return}
- copyLoginLink()}
-function copyLoginLink(){const u=location.href;(navigator.clipboard?navigator.clipboard.writeText(u):Promise.reject()).then(()=>alert('주소를 복사했습니다.\nSafari(사파리)나 크롬을 열고 주소창에 붙여넣어 주세요.'),()=>prompt('아래 주소를 길게 눌러 복사한 뒤 Safari·크롬 주소창에 붙여넣어 주세요.',u))}
-function inAppBox(){const n=inAppName();if(!n)return;const box=document.createElement('div');box.className='note';box.id='inAppBox';box.style.cssText='margin:12px 0;border-left:3px solid var(--accent);text-align:left';
- box.innerHTML='<b>'+escapeText(n)+' 안에서 열린 화면입니다</b><br>구글이 이 화면에서는 로그인을 막는 경우가 많습니다. <b>'+(IS_IOS?'Safari(사파리)':'크롬')+'</b>로 열어 주세요.'
-  +'<div style="display:grid;gap:8px;margin-top:10px"><button class="button" type="button" onclick="openOutside()">'+(IS_IOS&&!/KAKAOTALK/i.test(UA)?'주소 복사하기':(IS_IOS?'Safari':'크롬')+'로 열기')+'</button>'
-  +(IS_IOS&&!/KAKAOTALK/i.test(UA)?'<span class="muted">또는 오른쪽 위·아래의 ··· / 공유 버튼 → "Safari로 열기"</span>':'<button class="button ghost" type="button" onclick="copyLoginLink()">주소 복사하기</button>')+'</div>';
- const g=$('googleBtn');g.parentNode.insertBefore(box,g)}
-/* ---------- v5.20 뒤로 가기 (화면 위 ‹ 버튼 + 휴대폰 뒤로 버튼·밀어서 뒤로) ----------
- *  예전: 휴대폰 뒤로 버튼 = 사이트를 벗어남(새로 고침처럼 처음부터). 이제 앱 안에서 한 단계씩 뒤로:
- *  안내 창 → 메뉴 → 허가서·규정·계획서 작성 화면 → 화면 안 [← …] 버튼 → 입력 양식 → 대시보드
- *  대시보드에서 한 번 더 누르면 "한 번 더 누르면 나갑니다" 안내 후 2.5초 안에 다시 누를 때만 나감 */
-function backAction(){
- if(BOOT)return null;
- if(typeof tour!=='undefined'&&tour)return ()=>endTour();
- if($('certDlg'))return closeCert;  // F1.8g 이수증 보기 창
- if($('alDlg'))return closeAlerts;  // F1.8h 도급인 알림 창
- if($('pickSheet'))return closePick;  // F1.8c 사진 넣기 창  // F1.8a 사용 가이드 중이면 가이드만 끝냄
- const md=$('modal');if(md&&md.style.display==='flex')return ()=>{const c=$('modalCancel');(c&&!c.hidden?c:$('modalBtn')).click()};
- const nc=$('ncDlg');if(nc&&nc.style.display==='flex')return closeNewContract;
- const ds=$('dsDlg');if(ds&&ds.style.display==='flex')return closeDayStart;  // F1.8f 공사 고르기 창
- if(typeof rs!=='undefined'&&rs&&rs.from==='dash'&&$('f_rsMemo'))return ()=>{const st=rs.who==='staff';rs=null;st?sgo('dash'):vgo('dash')};  // F1.8f·g 메인에서 연 조치 등록 → 메인으로
- if(loadCount)return ()=>msg('처리 중입니다. 잠시만 기다려 주세요.');
- if($('drawer')&&$('drawer').classList.contains('open'))return ()=>toggleMenu(false);
- const ps=$('psheet');if(ps&&!ps.hidden&&ps.innerHTML)return ()=>{if(typeof pm==='undefined'||!pm){hideSheet();return}if(pm.paper){pfPaper(false);return}/* F1.8a 미리보기 → 입력 화면 */if(pm.mode==='edit'){cancelEditPermit();return}
-  if(pm.mode==='new'&&pmTouched&&!confirm('작성 중인 허가서를 닫을까요?\n입력한 내용은 저장되지 않습니다.'))return;if(pm.mode==='staff')backPermitList();else closePermit()};
- const cs=$('csheet');if(cs&&cs.style.display==='block')return ()=>{if(!/계획서/.test(cs.getAttribute('aria-label')||'')){/* F1.8c 규정만 쓰는 화면일 때만 규정 닫기 (합친 화면은 계획서 닫기 = 임시 보관) */if(confirm('규정 작성을 닫을까요?\n입력한 내용은 저장되지 않습니다.'))closeRule()}else closePlan()};
- const sec=document.querySelector('.main > section:not(.hidden)');if(sec){const b=[...sec.querySelectorAll('button')].find(x=>/^\s*←/.test(x.textContent)&&x.offsetParent!==null);if(b)return ()=>b.click()}
- if(tab==='jobs'&&jobsMode==='form')return ()=>renderJobs();
- if(state&&isVendorApproved()&&(tab!=='my'||vmenu!=='dash'||!$('execArea')))return ()=>vgo('dash');
- if(state&&isStaffUI()&&(smenu!=='dash'||tab!=='jobs'))return ()=>sgo('dash');
- return null}
-function goBack(){const f=backAction();if(f)f();updBack()}
-let backT=0;function updBack(){clearTimeout(backT);backT=setTimeout(()=>{const b=$('backBtn');if(b)b.hidden=!backAction()},60)}
-let navGuard=false,exitAt=0;
-function navInit(){if(navGuard)return;navGuard=true;try{history.replaceState({dsr:1},'');history.pushState({dsg:1},'')}catch(e){}
- const m=document.querySelector('.main');if(m&&window.MutationObserver)new MutationObserver(updBack).observe(m,{childList:true,subtree:true});
- document.addEventListener('click',updBack,true);updBack()}
-window.addEventListener('popstate',e=>{if(!navGuard||(e.state&&e.state.dsg))return;const f=backAction();
- if(f){f();try{history.pushState({dsg:1},'')}catch(x){}updBack();return}
- if(Date.now()-exitAt<2500){navGuard=false;history.back();return}
- exitAt=Date.now();msg('뒤로 버튼을 한 번 더 누르면 나갑니다.');try{history.pushState({dsg:1},'')}catch(x){}});
-function initLogin(){
- // 접속 구분: 마지막 선택 기억
- const radios=[...document.querySelectorAll('input[name=loginMode]')];
- try{const s=localStorage.getItem('loginMode');const r=radios.find(x=>x.value===s);if(r)r.checked=true}catch(e){}
- radios.forEach(x=>x.addEventListener('change',()=>{try{localStorage.setItem('loginMode',loginMode())}catch(e){}loginHelp()}));
- if(isWorkerLink()){$('modeBox').hidden=true;$('loginSub').textContent='작업자 등록 · 본인 Google 계정으로 로그인하세요.'}
- /* F1.9i 메일의 평가 결과 링크로 들어왔으면 접속 구분을 미리 골라 둠 */
- {let p=null;try{p=JSON.parse(localStorage.getItem('evresGo')||'null')}catch(e){}if(p&&p.f&&Date.now()-Number(p.t||0)<7200000){const v=p.f==='staff'?'STAFF':'VENDOR',r=radios.find(x=>x.value===v);if(r)r.checked=true;$('loginSub').innerHTML='📊 평가 결과 링크로 들어왔습니다. <b>'+(v==='STAFF'?'다이소 담당자':'협력업체')+'</b>로 로그인하면 바로 열립니다.'}}
- loginHelp();inAppBox();
- // 버전 표시: 위쪽 UI_VERSION
- $('loginVer').textContent=UI_VERSION;
- /* F1.7f 휴대폰이 예전 파일을 기억하고 있어 화면 파일 버전이 섞인 경우 → 한 번만 자동 새로 고침, 그래도 다르면 안내 */
- if(window.FB&&FB.version&&FB.version!==UI_VERSION){$('loginVer').textContent=UI_VERSION+' / '+FB.version+' (버전이 섞여 있음)';
-  let tried=false;try{tried=sessionStorage.getItem('verReload')===UI_VERSION+FB.version;sessionStorage.setItem('verReload',UI_VERSION+FB.version)}catch(e){tried=true}
-  if(!tried){location.reload();return}}
- /* F1.8z 예전 index.html이 남아 있으면 (예전 메뉴·예전 버튼) 한 번 새로 받음 */
- if(HTML_VER!==UI_VERSION){let t2=false;try{t2=sessionStorage.getItem('htmlReload')===UI_VERSION;sessionStorage.setItem('htmlReload',UI_VERSION)}catch(e){t2=true}
-  if(!t2){location.reload();return}$('loginVer').textContent=UI_VERSION+' (화면 파일이 예전 것 · 위 ⟳ 또는 브라우저 새로 고침)'}
- let note='';try{note=sessionStorage.getItem('loginNote')||'';sessionStorage.removeItem('loginNote')}catch(e){}
- if(!EXEC_OK){showLogin('config.js의 Firebase 설정값 또는 Firebase 연결을 불러오지 못했습니다. 새로 고침해 주세요.');return}
- /* F1.7f 로그인 확인이 끝나지 않으면 빈 화면으로 멈춰 있던 문제 → 15초 지나도 아무 화면이 없으면 로그인 화면 + 안내 */
- setTimeout(()=>{if($('loginView').hidden&&$('appView').hidden&&!BOOT){sessClear();SESSION='';showLogin('로그인 확인이 늦어지고 있습니다. 아래 버튼으로 다시 로그인해 주세요.\n계속 안 되면 크롬·사파리 앱으로 이 주소를 열어 주세요.')}},15000);
- /* F1.0 구글 로그인 화면 이동 방식으로 돌아온 경우 → 이어서 로그인 처리 */
- FB.redirectResult().then(r=>{if(r===true){showLogin('');onGoogleLogin({credential:'firebase'});return}
-  if(typeof r==='string')note=r;
-  if(SESSION)FB.ready.then(u=>{if(u&&u.uid===SESSION){showApp();bootApp()}else{sessClear();SESSION='';showLogin(note||'로그인이 만료되었습니다. 다시 로그인해 주세요.')}});else showLogin(note)});
-}
-initLogin();
