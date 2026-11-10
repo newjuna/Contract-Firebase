@@ -37,7 +37,7 @@ async function renderSmHome(quiet){const el=$('my');if(!quiet)$('pageTitle').tex
  smDraw()}
 /* F2.7 시안 v3: 메인 = ① TBM ② 신규자 등록 ③ 지적사항 조치 · 끝낸 칸은 인테리어처럼 어둡게 + '✔ 오늘 완료' (눌러서 열기)
  *  비상훈련 참석 · 협의체 참석 · 근로자 명단 · TBM 기록 = ☰ 메뉴 화면 (smGo) · 설명 글은 위쪽 [❔ 가이드] */
-let smPage='home';
+let smPage='home';const SM_ROLE='현장관리자';
 const smNoNewKey=j=>'smNoNew:'+j.id+':'+(j.today||smToday());
 function smNoNew(j){try{return localStorage.getItem(smNoNewKey(j))==='1'}catch(e){return false}}
 function smSetNoNew(on){const j=smJob();if(!j)return;try{if(on)localStorage.setItem(smNoNewKey(j),'1');else localStorage.removeItem(smNoNewKey(j))}catch(e){}smDraw()}
@@ -55,7 +55,7 @@ function smDraw(){const el=$('my'),d=smData;if(!el||!d)return;if(smRs){smResolve
  window.__wkCo=j.company||'';
  if(smPage==='drill')return smDrillDraw(d,j);if(smPage==='edu')return smEduDraw(d,j);if(smPage==='tbm')return smTbmDraw(d,j);
  $('pageTitle').textContent='현장관리자(관리감독자)';
- const t=j.today||smToday(),tt=j.tbmToday,todayW=j.workers.filter(w=>mgrDay(w.eduAt)===t),link=location.origin+location.pathname+'?review=WRK-'+j.workerToken,noNew=smNoNew(j);
+ const t=j.today||smToday(),tt=j.tbmToday,todayW=j.workers.filter(w=>mgrDay(w.eduAt)===t&&w.role!==SM_ROLE),/* F2.8a 관리감독자 본인 등록은 '오늘 신규자'로 안 셈 */link=location.origin+location.pathname+'?review=WRK-'+j.workerToken,noNew=smNoNew(j);
  const sb='padding:8px 10px;font-size:13px',tbmDone=!!tt&&!smTbmNew.length,regDone=(todayW.length>0||noNew)&&!smShow;
  el.innerHTML=roleSwitchHtml('sm')+smHeadHtml(d,j)
   /* ① TBM */

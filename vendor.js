@@ -47,7 +47,7 @@ async function vEnsureJob(){const el=$('execArea');if(!el)return;
 function pickJob(id){vSel=id;showQr=false;showAdd=false;openVJob(id)}
 /** 업무 화면 머리: 메뉴 이름 + 공사 선택 */
 function vJobHead(v){const jobs=(vjobs&&vjobs.jobs)||[];if(!['today','edu'].includes(vmenu)){vmenu='today';markVMenu()}
- return '<div class="card vjhead"><div class="vh-top"><h2 style="margin:0">'+escapeText(VMENU[vmenu]||'')+'</h2>'+(vmenu==='today'&&v.jobStatus!=='ENDED'?'<button class="button ghost" type="button" id="gdDay" style="padding:4px 8px;font-size:12px" onclick="dayGuide(true)">▶ 전체 사용 가이드</button>':'')+'</div>'
+ return '<div class="card vjhead"><div class="vh-top"><h2 style="margin:0">'+escapeText(VMENU[vmenu]||'')+'</h2>'+(vmenu==='today'&&v.jobStatus!=='ENDED'&&!v.open?'<button class="button ghost" type="button" id="gdDay" style="padding:4px 8px;font-size:12px" onclick="dayGuide(true)">▶ 전체 사용 가이드</button>':'')+'</div>'
   +(jobs.length>1?'<label class="muted" for="vjSel" style="display:block;margin-top:10px">공사 선택</label><select id="vjSel" class="vjsel" onchange="pickJob(this.value)">'+jobs.map(j=>'<option value="'+escapeText(j.id)+'" '+(j.id===v.job.id?'selected':'')+'>'+escapeText(j.title)+' ('+escapeText(j.storeName)+')'+(j.status==='ENDED'?' · 종료':'')+'</option>').join('')+'</select>':'')
   +'<div class="muted" style="margin-top:6px">'+(jobs.length>1?'':escapeText(v.job.title)+' · ')+escapeText(v.job.storeName)+' · '+escapeText(v.company.trade)+' · 도급인 '+escapeText(v.job.hostName)+'</div></div>'}
 /* ---------- 대시보드 ---------- */
