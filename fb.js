@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.28 F2.4';
+  const VERSION = '26.10.29 F2.5';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   /* F2.1 업종 '오픈지원' 추가 (매장 오픈 인력 · 인력사무소형) · 인테리어(마감) = 지금까지의 공사 흐름 그대로 */
   const CFG = {
@@ -1366,6 +1366,110 @@
       await db.collection('OPEN_DRILLS').doc(d.id).update({ open: 'N', doneAt: now(), doneBy: s.name }); audit(a, '', 'DRILL_DONE', d.id + ' ' + n + '명');
     } else await db.collection('OPEN_DRILLS').doc(d.id).update({ open: 'Y', doneAt: '', doneBy: '' });
     return API.openStaffPack(a, j.id);
+  };
+  /* ---------- F2.5 오픈 매장 자동 집계 · 반기 평가 (6월 · 12월) ----------
+   *  집계 = 기록에서 바로 계산 (도급인이 할 일 없음) · 반기 평가 = 그 반기에 끝난 오픈 매장 집계를 모아 자동 계산 · 도급인은 재해만 고르고 확정
+   *  HALF_EVALS/{업체ID_2026H2} · 우수 = 배점 · 보통 = 절반 · 미흡 = 1점 · 이행 항목 95% / 80% · S90 A80 B70 C60 D */
+  const HE_ITEMS = [[1, '안전보건 관리체계', 10, '계약 시', '최초 평가 1~3번 (방침 · 목표 · 조직)'], [2, '산재 확인서', 5, '계약 시', '산재요양승인 반려여부 확인증 제출'],
+    [3, 'TBM 실시율', 15, '이행', '작업일 중 현장관리자 TBM 사진 저장한 날'], [4, '신규자 교육', 15, '이행', '오픈 매장마다 근로자 교육일지 · 서약 등록'],
+    [5, '지적사항 조치', 15, '이행', '도급인 지적 → 다음 날까지 조치'], [6, '협의체 · 합동점검 참석', 10, '이행', '실시한 협의체 · 합동점검에 업체(인력관리자 · 현장관리자) 참석'],
+    [7, '현장관리자 지정', 5, '이행', '오픈 첫날 현장관리자 지정'], [8, '순회점검 양호율', 10, '이행', '도급인 순회점검 항목 중 양호'], [9, '재해', 15, '결과', '도급인 선택 (무재해 · 경미 · 중대)']];
+  const HE_LV = { G: '우수', N: '보통', P: '미흡' }, HE_ACC = { NONE: ['무재해', 'G'], MINOR: ['경미한 사고 (치료)', 'N'], MAJOR: ['휴업 이상 재해', 'P'] };
+  const hePts = (n, lv) => { const m = (HE_ITEMS.find((x) => x[0] === n) || [])[2] || 0; return lv === 'G' ? m : lv === 'N' ? m / 2 : lv === 'P' ? 1 : 0; };
+  const heGrade = (t) => (t >= 90 ? 'S' : t >= 80 ? 'A' : t >= 70 ? 'B' : t >= 60 ? 'C' : 'D');
+  const rateLv = (r) => (r == null ? null : r >= 0.95 ? 'G' : r >= 0.8 ? 'N' : 'P');
+  const pctS = (r) => (r == null ? '-' : Math.round(r * 100) + '%');
+  /** 오픈 매장 1곳 · 업체 1곳 집계 (D = 그 공사의 기록 목록) */
+  function openAgg(j, cid, D) {
+    const of = (l) => (l || []).filter((x) => x.companyId === cid), cr = of(D.CREW), tb = of(D.TBMS), ins = of(D.INSPECTIONS), fd = of(D.FINDINGS), wk = of(D.WORKERS).filter((w) => w.active !== 'N');
+    const days = new Set([].concat(cr.map((x) => x.date), tb.map((x) => x.date), ins.map((x) => x.date)).filter(Boolean)), wd = days.size, tbd = new Set(tb.map((x) => x.date)).size;
+    const fixed = fd.filter((f) => f.status === 'DONE' && f.actionDate && daysBetween(f.foundDate, f.actionDate) <= 1).length;
+    const mts = (D.MEETINGS || []).filter((m) => m.doneAt), att = mts.filter((m) => (D.ATTEND || []).some((x) => x.meetingId === m.id && x.companyId === cid && x.status === 'OK')).length;
+    const sm = (D.SITE_MGRS || []).filter((s) => s.companyId === cid).sort((p, q) => String(p.designatedAt).localeCompare(String(q.designatedAt)))[0], smDay = sm ? kst(sm.designatedAt) : '';
+    let ok = 0, bad = 0; ins.forEach((x) => Object.values(x.items || {}).forEach((v) => { if (v === 'OK') ok++; else if (v === 'BAD') bad++; }));
+    const dr = (D.OPEN_DRILLS || []).filter((d) => d.doneAt);
+    return { jobId: j.id, title: j.title, store: j.storeName, start: j.startDate, end: j.endDate, status: j.status, workDays: wd, tbmDays: tbd, tbmRate: wd ? Math.min(1, tbd / wd) : null,
+      workers: wk.length, findTotal: fd.length, findFixed: fixed, findOpen: fd.filter((f) => f.status !== 'DONE').length, fixRate: fd.length ? fixed / fd.length : null,
+      meetDone: mts.length, meetAtt: att, attRate: mts.length ? att / mts.length : null, smName: sm ? sm.name : '', smDay, smFirst: !!sm && smDay <= String(j.startDate || ''),
+      inspN: ins.length, inspOk: ok, inspBad: bad, goodRate: ok + bad ? ok / (ok + bad) : null, drills: dr.length };
+  }
+  const AGG_COLS = ['CREW', 'TBMS', 'INSPECTIONS', 'FINDINGS', 'WORKERS', 'SITE_MGRS', 'MEETINGS', 'ATTEND', 'OPEN_DRILLS'];
+  async function jobLists(jobId) { const L = await Promise.all(AGG_COLS.map((c) => db.collection(c).where('jobId', '==', jobId).get().then(docs).catch(() => []))); const D = {}; AGG_COLS.forEach((c, i) => { D[c] = L[i]; }); return D; }
+  /** [도급인] 오픈 매장 집계 (공사 화면 ③ 집계) */
+  API.openAggPack = async (a, jobId) => {
+    const s = await staffOnly(a), j = await staffJob(a, s, jobId), D = await jobLists(j.id), jvs = docs(await db.collection('JOB_VENDORS').where('jobId', '==', j.id).get());
+    return { today: today(), job: { id: j.id, title: j.title, storeName: j.storeName, startDate: j.startDate, endDate: j.endDate, status: j.status }, vendors: jvs.map((v) => Object.assign({ company: v.company, companyId: v.companyId }, openAgg(j, v.companyId, D))) };
+  };
+  const halfRange = (p) => { const m = /^(\d{4})H([12])$/.exec(String(p || '')); if (!m) fail('반기를 골라 주세요.'); return m[2] === '1' ? [m[1] + '-01-01', m[1] + '-06-30'] : [m[1] + '-07-01', m[1] + '-12-31']; };
+  /** 반기 평가 계산 (저장된 재해 · 의견 · 확정 여부 포함) */
+  async function halfCalc(a, s, cid, period) {
+    const [from, to] = halfRange(period), cs = await db.collection('COMPANIES').doc(tidy(cid, 40)).get(); if (!cs.exists) fail('업체를 찾을 수 없습니다.');
+    const b = { ...cs.data(), id: cs.id }; if (!isOpenInd(b.industry)) fail('반기 평가는 업종이 「오픈지원」인 업체만 합니다.');
+    const jvs = docs(await db.collection('JOB_VENDORS').where('companyId', '==', b.id).get());
+    const js = (await Promise.all(jvs.map((v) => db.collection('JOBS').doc(v.jobId).get().then((x) => (x.exists ? x.data() : null)).catch(() => null)))).filter(Boolean);
+    const inP = (j) => { const d = String(j.endDate || j.startDate || ''); return d >= from && d <= to; };
+    const done = js.filter((j) => inP(j) && j.status === 'ENDED'), going = js.filter((j) => inP(j) && j.status !== 'ENDED');
+    const aggs = [];
+    for (const j of done) aggs.push(openAgg(j, b.id, await jobLists(j.id)));
+    const sum = (k) => aggs.reduce((x, g) => x + (Number(g[k]) || 0), 0), R = (n, d) => (d ? n / d : null);
+    /* 1 · 2 계약 시 */
+    const evs = docs(await db.collection('EVALUATIONS').where('companyId', '==', b.id).get().catch(() => ({ docs: [] }))).filter((e) => e.result === 'APPROVED').sort((p, q) => String(q.evaluatedAt).localeCompare(String(p.evaluatedAt)));
+    const ev = evs[0] ? parse(evs[0].items, {}) || {} : null, e3 = ev ? ['1', '2', '3'].map((k) => ev[k]) : [];
+    const fm = docs(await db.collection('CONTRACT_FORMS').where('companyId', '==', b.id).get().catch(() => ({ docs: [] }))).filter((x) => x.code === 'C02').sort((p, q) => String(q.updatedAt).localeCompare(String(p.updatedAt)))[0];
+    const acc = (parse(b.accCerts, []) || []).length + (((parse(fm && fm.json, {}) || {}).evidence) || []).length;
+    const it = {};
+    it[1] = !ev ? { lv: 'P', why: '승인된 최초 평가 기록 없음' } : e3.every((x) => x === 'G') ? { lv: 'G', why: '최초 평가 1~3번 모두 우수' } : e3.includes('P') ? { lv: 'P', why: '최초 평가 1~3번 중 미흡 있음' } : { lv: 'N', why: '최초 평가 1~3번 중 보통 있음' };
+    it[2] = acc ? { lv: 'G', why: '확인증 ' + acc + '건 제출' } : { lv: 'P', why: '확인증 미제출' };
+    const tb = R(sum('tbmDays'), sum('workDays')), wkJobs = aggs.filter((g) => g.workers > 0).length, fx = R(sum('findFixed'), sum('findTotal')), at = R(sum('meetAtt'), sum('meetDone'));
+    const smf = aggs.length ? aggs.filter((g) => g.smFirst).length / aggs.length : null, gd = R(sum('inspOk'), sum('inspOk') + sum('inspBad'));
+    const lvOr = (r, none) => rateLv(r) || none;
+    it[3] = { lv: lvOr(tb, 'N'), why: 'TBM ' + sum('tbmDays') + ' / 작업일 ' + sum('workDays') + '일 = ' + pctS(tb) };
+    it[4] = { lv: aggs.length ? rateLv(wkJobs / aggs.length) : 'N', why: aggs.length ? '교육일지 등록 오픈 매장 ' + wkJobs + ' / ' + aggs.length + '곳 · 근로자 ' + sum('workers') + '명' : '끝난 오픈 매장 없음' };
+    it[5] = { lv: lvOr(fx, 'G'), why: sum('findTotal') ? '다음 날까지 조치 ' + sum('findFixed') + ' / 지적 ' + sum('findTotal') + '건 = ' + pctS(fx) + (sum('findOpen') ? ' · 미조치 ' + sum('findOpen') + '건' : '') : '지적사항 없음' };
+    it[6] = { lv: lvOr(at, 'G'), why: sum('meetDone') ? '참석 ' + sum('meetAtt') + ' / 실시 ' + sum('meetDone') + '회 = ' + pctS(at) : '실시한 협의체 · 합동점검 없음' };
+    it[7] = { lv: aggs.length ? rateLv(smf) : 'N', why: aggs.length ? '첫날 지정 ' + aggs.filter((g) => g.smFirst).length + ' / ' + aggs.length + '곳' : '끝난 오픈 매장 없음' };
+    it[8] = { lv: lvOr(gd, 'N'), why: '양호 ' + sum('inspOk') + ' / 점검 항목 ' + (sum('inspOk') + sum('inspBad')) + '개 = ' + pctS(gd) + ' · 순회점검 ' + sum('inspN') + '회' };
+    const id = b.id + '_' + period, hs = await db.collection('HALF_EVALS').doc(id).get().catch(() => null), h = hs && hs.exists ? hs.data() : null;
+    const accK = h && HE_ACC[h.accident] ? h.accident : '';
+    it[9] = accK ? { lv: HE_ACC[accK][1], why: HE_ACC[accK][0] + ' (도급인 선택)' } : { lv: '', why: '도급인이 골라 주세요' };
+    const total = Math.round(HE_ITEMS.reduce((x, [n]) => x + hePts(n, it[n].lv), 0) * 10) / 10;
+    return { id, period, from, to, company: { id: b.id, company: b.company, regNo: b.regNo || '', representative: b.representative || '', contact: b.contact || '' }, vendorUid: b.uid || '',
+      items: HE_ITEMS.map(([n, name, max, sec, basis]) => ({ n, name, max, sec, basis, lv: it[n].lv, lvLabel: HE_LV[it[n].lv] || '-', pts: hePts(n, it[n].lv), why: it[n].why })),
+      total, grade: accK ? heGrade(total) : '', accident: accK, accOpts: HE_ACC, comment: h ? h.comment || '' : '', status: h ? h.status : 'NEW', evaluator: h ? h.evaluator || '' : '', evaluatedAt: h ? h.evaluatedAt || '' : '',
+      jobs: aggs, going: going.map((j) => ({ title: j.title, store: j.storeName, start: j.startDate, end: j.endDate })), me: s.name };
+  }
+  /** [도급인] 반기 평가 목록 (오픈지원 업체 · 반기) */
+  API.halfEvalList = async (a, period) => {
+    await staffOnly(a); halfRange(period);
+    const cs = docs(await db.collection('COMPANIES').where('status', '==', 'VERIFIED').get()).filter((b) => isOpenInd(b.industry));
+    const hs = docs(await db.collection('HALF_EVALS').where('period', '==', period).get().catch(() => ({ docs: [] })));
+    return { period, list: cs.map((b) => { const h = hs.find((x) => x.companyId === b.id); return { companyId: b.id, company: b.company, contact: b.contact || '', status: h ? h.status : 'NEW', total: h ? h.total : '', grade: h ? h.grade : '' }; }) };
+  };
+  API.halfEvalPack = async (a, cid, period) => { const s = await staffOnly(a); return halfCalc(a, s, cid, period); };
+  /** [도급인] 저장 · 확정 (재해 선택 필수) */
+  API.halfEvalSave = async (a, cid, period, accident, comment, final) => {
+    const s = await staffOnly(a), acc = HE_ACC[accident] ? accident : '';
+    if (final && !acc) fail('9번 재해를 골라 주세요.');
+    const cur = await halfCalc(a, s, cid, period); if (cur.status === 'DONE') fail('확정된 평가입니다. [다시 수정]을 눌러 주세요.');
+    const ref = db.collection('HALF_EVALS').doc(cur.id), t = now();
+    await ref.set({ id: cur.id, companyId: cur.company.id, company: cur.company.company, period, from: cur.from, to: cur.to, vendorUid: cur.vendorUid, accident: acc, comment: tidy(comment, 500), status: final ? 'DONE' : 'DRAFT',
+      items: JSON.stringify(cur.items.map((x) => ({ n: x.n, lv: x.n === 9 ? (acc ? HE_ACC[acc][1] : '') : x.lv, why: x.why }))), jobs: cur.jobs.map((g) => g.jobId), updatedAt: t, updatedBy: a.email,
+      total: '', grade: '', evaluator: final ? (s.dept ? s.dept + ' ' : '') + s.name : '', evaluatedAt: final ? t : '' });
+    const fin = await halfCalc(a, s, cid, period);
+    if (final) { await ref.update({ total: fin.total, grade: fin.grade }); audit(a, cid, 'HALF_EVAL_DONE', cur.id + ' ' + fin.total + '점 ' + fin.grade); fin.status = 'DONE'; }
+    return halfCalc(a, s, cid, period);
+  };
+  API.halfEvalReopen = async (a, cid, period) => {
+    const s = await staffOnly(a), id = tidy(cid, 40) + '_' + period; halfRange(period);
+    await db.collection('HALF_EVALS').doc(id).update({ status: 'DRAFT', total: '', grade: '' }); audit(a, cid, 'HALF_EVAL_REOPEN', id);
+    return halfCalc(a, s, cid, period);
+  };
+  /** [계약담당자] 확정된 우리 업체 반기 평가 결과 */
+  API.myHalfEvals = async (a) => {
+    const b = await openOwner(a);
+    const L = docs(await db.collection('HALF_EVALS').where('vendorUid', '==', a.uid).where('status', '==', 'DONE').get().catch(() => ({ docs: [] }))).filter((x) => x.companyId === b.id);
+    return L.sort((p, q) => String(q.period).localeCompare(String(p.period))).map((h) => ({ period: h.period, from: h.from || '', to: h.to || '', total: h.total, grade: h.grade, comment: h.comment || '', evaluatedAt: h.evaluatedAt || '', evaluator: h.evaluator || '',
+      items: (parse(h.items, []) || []).map((x) => { const d = HE_ITEMS.find((y) => y[0] === x.n) || []; return { n: x.n, name: d[1] || '', max: d[2] || 0, lv: x.lv, lvLabel: HE_LV[x.lv] || '-', pts: hePts(x.n, x.lv), why: x.why }; }) }));
   };
   /** [근로자] 비상훈련 QR 참석 (등록된 근로자 · 현장관리자 · 인력관리자 = 바로 / 아니면 이름만) */
   API.drillCheckIn = async (a, token, name) => relay('drillIn', { token: String(token || '').toLowerCase(), name: tidy(name, 30) }, !name);
