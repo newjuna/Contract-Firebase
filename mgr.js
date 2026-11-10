@@ -9,18 +9,28 @@ const mgrDay=t=>{try{return new Date(t).toLocaleDateString('sv-SE',{timeZone:'As
 /** F2.3 짧은 일시 (한국 시간) 예) 11/9 08:05 */
 const mgrHM=t=>{try{if(!t)return '';const d=new Date(new Date(t).getTime()+9*3600e3).toISOString();return Number(d.slice(5,7))+'/'+Number(d.slice(8,10))+' '+d.slice(11,16)}catch(e){return ''}};
 /** renderMy 맨 앞에서 부름: 초대 링크로 들어왔으면 등록 화면 · 인력관리자 계정이면 인력관리자 화면 (true = 여기서 그림) */
-function mgrRoute(){if(!state)return false;
+function mgrRoute(){if(!state)return false;rmSetup('');
  if(MGR_LINK()){renderMgrJoin();return true}
  if(typeof SM_LINK==='function'&&SM_LINK()){renderSmJoin();return true}  // F2.3 현장관리자 지정 QR
  if(typeof DRL_LINK==='function'&&DRL_LINK()){renderDrillIn();return true}  // F2.4 비상훈련 참석 QR
  if(state.company||state.staff||state.mode==='STAFF')return false;
  /* F2.3 인력관리자이면서 현장관리자이기도 하면 위쪽 [화면 바꾸기]로 오감 (기본 = 현장관리자) */
- if(state.sm&&(!state.mgr||roleView!=='mgr')&&typeof renderSmHome==='function'){renderSmHome();return true}
- if(state.mgr){renderMgrHome();return true}
+ if(state.sm&&(!state.mgr||roleView!=='mgr')&&typeof renderSmHome==='function'){rmSetup('sm');if(typeof smPage!=='undefined')smPage='home';renderSmHome();return true}
+ if(state.mgr){rmSetup('mgr');renderMgrHome();return true}
  return false}
 let roleView='';
 function roleSwitchHtml(cur){if(!(state&&state.sm&&state.mgr))return '';const to=cur==='mgr'?'sm':'mgr';
- return '<div style="text-align:right;margin:0 0 8px"><button class="button ghost" type="button" style="padding:4px 10px;font-size:12px" onclick="roleView=\''+to+'\';renderMy()">↔ '+(to==='mgr'?'인력관리자':'현장관리자')+' 화면으로</button></div>'}
+ return '<div style="text-align:right;margin:0 0 8px"><button class="button ghost" type="button" style="padding:4px 10px;font-size:12px" onclick="roleView=\''+to+'\';renderMy()">↔ '+(to==='mgr'?'인력관리자(현장대리인)':'현장관리자(관리감독자)')+' 화면으로</button></div>'}
+/** F2.7 ☰ 메뉴: 인력관리자(현장대리인) · 현장관리자(관리감독자) 버튼만 보이기 (role = '' 이면 모두 숨김) · cur = 지금 화면 */
+function rmSetup(role,cur){document.querySelectorAll('.rmb').forEach(b=>{b.classList.toggle('hidden',b.dataset.role!==role);b.classList.toggle('active',!!role&&b.id==='rm_'+role+'_'+(cur||'home'))});if(role)$('myTab')?.classList.add('hidden')}
+const mgrPick=()=>((mgrHomeData&&mgrHomeData.jobs)||[]);
+async function mgrEnsure(){if(!mgrHomeData){try{mgrHomeData=await callQuiet('mgrHome')}catch(e){msg(e.message||'불러오지 못했습니다.');return null}}return mgrHomeData}
+/** F2.7 [인력관리자(현장대리인)] ☰ 메뉴 이동 */
+function mgrGo(v,arg){toggleMenu(false);if(typeof stopScan==='function')stopScan();setTopGuide('');rmSetup('mgr',v);window.scrollTo(0,0);if(typeof smRs!=='undefined')smRs=null;
+ if(v==='meet'){$('pageTitle').textContent='협의체 · 합동점검 참석';renderScan('my','mgrGo(\'home\')','meet');return}
+ if(v==='fix'){mgrFixDraw(arg||'');return}
+ if(v==='flyer'){mgrFlyerPick();return}
+ renderMgrHome()}
 /** 주소창의 초대 링크값 지우기 (등록 끝난 뒤 새로 고침해도 등록 화면이 다시 안 뜨게) */
 function mgrClearLink(){window.__mgrDone=true;try{history.replaceState(null,'',location.pathname)}catch(e){}}
 
@@ -45,44 +55,55 @@ async function sendMgrJoin(e){e.preventDefault();const name=value('mjName');if(!
 async function mgrJoinDone(){mgrClearLink();try{display(await call('portalData'))}catch(e){display(state)}}
 
 /* ---------- 인력관리자: 내 화면 (배정된 진행 중 오픈 매장) ---------- */
-async function renderMgrHome(){const el=$('my');$('pageTitle').textContent='인력관리자';$('myTab').textContent='내 업무';
- const M=state.mgr||{};el.innerHTML='<div class="card"><h2>'+escapeText(M.name||'')+' 님 · 인력관리자</h2><p class="desc">배정된 오픈 매장을 불러오는 중입니다…</p></div>';
- let d;try{d=await callQuiet('mgrHome')}catch(e){el.innerHTML='<div class="card"><h2>인력관리자</h2><p class="desc">'+escapeText(e.message||'불러오지 못했습니다.')+'</p><button class="button" type="button" onclick="renderMgrHome()">다시 시도</button></div>';return}
- const act=d.mgrs.filter(m=>m.status==='ACTIVE'),stop=d.mgrs.filter(m=>m.status!=='ACTIVE'),t=d.today;mgrHomeData=d;
- el.innerHTML=roleSwitchHtml('mgr')+'<div class="card"><h2 style="margin:0">'+escapeText((act[0]||d.mgrs[0]||{}).name||M.name||'')+' 님 · 인력관리자</h2><div class="muted">'+escapeText(act.map(m=>m.company).join(', ')||'-')+' · 오픈지원 · '+escapeText(d.email)+'</div>'
+/* F2.7 시안 v3: 매장마다 ① 관리감독자 지정 ② 협의체 · 합동점검 ③ 지적사항 조치 (설명 글 없음 · 위쪽 [❔ 가이드]) */
+async function renderMgrHome(){const el=$('my');$('pageTitle').textContent='인력관리자(현장대리인)';$('myTab').textContent='내 업무';rmSetup('mgr','home');
+ const M=state.mgr||{};if(!mgrHomeData)el.innerHTML='<div class="card"><h2>'+escapeText(M.name||'')+' 님 · 현장대리인</h2><p class="desc">불러오는 중입니다…</p></div>';
+ let d;try{d=await callQuiet('mgrHome')}catch(e){if(!mgrHomeData){el.innerHTML='<div class="card"><h2>인력관리자(현장대리인)</h2><p class="desc">'+escapeText(e.message||'불러오지 못했습니다.')+'</p><button class="button" type="button" onclick="renderMgrHome()">다시 시도</button></div>';return}d=mgrHomeData}
+ mgrHomeData=d;if(!$('my')||$('qrBox')||(typeof smRs!=='undefined'&&smRs))return;mgrHomeDraw()}
+function mgrHomeDraw(){const d=mgrHomeData,el=$('my'),M=state.mgr||{};if(!d||!el)return;const act=d.mgrs.filter(m=>m.status==='ACTIVE'),stop=d.mgrs.filter(m=>m.status!=='ACTIVE');
+ el.innerHTML=roleSwitchHtml('mgr')+'<div class="card"><h2 style="margin:0">'+escapeText((act[0]||d.mgrs[0]||{}).name||M.name||'')+' 님 · 현장대리인</h2><div class="muted">'+escapeText(act.map(m=>m.company).join(', ')||'-')+'</div>'
   +(stop.length?'<div class="note" style="margin-top:8px">사용 중지: '+escapeText(stop.map(m=>m.company).join(', '))+' (계약담당자에게 문의)</div>':'')+'</div>'
-  +'<div class="card"><h2>진행 중인 오픈 매장 <span class="cnt">'+d.jobs.length+'</span></h2>'
-  +(d.jobs.length?d.jobs.map(j=>{const s=j.startDate||'',e=j.endDate||'',first=s===t,dd=s>t?'시작 '+Math.round((new Date(s)-new Date(t))/864e5)+'일 전':first?'<b class="req">오늘 첫날</b>':'진행 중';
-   /* F2.3 현장관리자 지정 상태 · [지정 QR] */
-   const S=(j.siteMgrs||[]),cur=S.find(x=>x.status==='ACTIVE');
-   return '<div class="item"><div class="row" style="justify-content:space-between"><b>'+escapeText(j.title)+'</b><span class="pill '+(first?'bad':'ok')+'">'+dd+'</span></div><div class="muted">다이소 '+escapeText(j.storeName)+(j.address?' · '+escapeText(j.address):'')+'<br>'+escapeText(s)+' ~ '+escapeText(e)+' · 도급인 '+escapeText(j.hostName||'')+(act.length>1?' · '+escapeText(j.company):'')+'</div>'
-    +'<div class="subbox" style="margin-top:8px">'+(cur?'<div class="row" style="justify-content:space-between"><span>현장관리자 <b>'+escapeText(cur.name)+'</b> <span class="pill ok">지정됨</span></span><span class="muted" style="font-size:12px">'+escapeText(mgrHM(cur.designatedAt))+'</span></div><div class="muted" style="font-size:12px;word-break:break-all">'+escapeText(cur.email)+'</div>'
-      :'<div class="row" style="justify-content:space-between"><b class="req">현장관리자 미지정</b><span class="muted" style="font-size:12px">첫날 대표 근로자를 지정해 주세요</span></div>')
-     +(S.filter(x=>x.status!=='ACTIVE').length?'<div class="muted" style="font-size:12px">교체 전: '+escapeText(S.filter(x=>x.status!=='ACTIVE').map(x=>x.name).join(', '))+'</div>':'')
-     +'<button class="button'+(cur?' ghost':'')+'" type="button" style="width:100%;margin-top:8px" onclick="smQrOpen(\''+escapeText(j.id)+'\')">'+(cur?'현장관리자 바꾸기 (새 지정 QR)':'📱 현장관리자 지정 QR 보여주기')+'</button></div></div>'}).join('')
-   :'<p class="muted">아직 배정된 오픈 매장이 없습니다. 계약담당자가 오픈 매장에 배정하면 여기에 나옵니다. (끝난 오픈 매장은 보이지 않습니다)</p>')+'</div>'
-  +'<div class="card"><h2>첫날 할 일</h2><ol class="desc" style="padding-left:18px;margin:6px 0">'
-  +'<li>현장에서 근로계약서 작성 (앱 밖)</li><li>대표 근로자를 <b>현장관리자</b>로 지정: 위 [현장관리자 지정 QR]을 그 사람 휴대폰 카메라로 찍게 합니다 → <b>현장관리자 안내문</b> 전달</li>'
-  +'<li>협의체 · 합동점검 참석: 도급인이 보여 주는 <b>QR을 휴대폰 카메라로</b> 찍으면 인력관리자로 바로 참석 기록</li></ol>'
-  +'<p class="muted" style="margin:6px 0 0">현장관리자가 매일 TBM 사진 · 신규 근로자 등록 · 지적사항 조치를 합니다. 지정하면 계약담당자 <b>인력 명부</b>에 자동으로 기록됩니다.</p></div>'}
+  +(d.jobs.length?d.jobs.map(j=>mgrJobCard(j,act.length>1)).join(''):'<div class="card"><p class="muted" style="margin:0">배정된 오픈 매장이 없습니다.</p></div>');
+ setTopGuide('mgrhome')}
+function mgrJobCard(j,multi){const S=j.siteMgrs||[],cur=S.find(x=>x.status==='ACTIVE'),went=(j.attended||[]).length>0,n=j.open==null?null:j.open.length,id=escapeText(j.id);
+ return '<div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">'+escapeText(j.storeName)+'</h2><span class="muted">'+omd(j.startDate)+' ~ '+omd(j.endDate)+'</span></div>'+(multi?'<div class="muted">'+escapeText(j.company)+'</div>':'')
+  +'<div class="mgstep mgStep1"><div class="row"><span><span class="mgn">1</span><b>관리감독자 지정</b></span>'+(cur?'<span class="row" style="gap:6px"><span class="pill ok">✔ '+escapeText(cur.name)+'</span><button class="linkbtn" type="button" style="font-size:12px" onclick="smQrOpen(\''+id+'\')">바꾸기</button></span>':'<span class="pill bad">미지정</span>')+'</div>'
+   +(cur?'':'<button class="button mgQr" type="button" onclick="smQrOpen(\''+id+'\')">📱 지정 QR</button>')+'</div>'
+  +'<div class="mgstep mgStep2"><div class="row"><span><span class="mgn">2</span><b>협의체 · 합동점검</b></span>'+(went?'<span class="pill ok">✔ 참석</span>':'<span class="pill lock">참석 전</span>')+'</div>'
+   +(went?'':'<button class="button ghost mgMeet" type="button" onclick="mgrGo(\'meet\')">📷 참석 QR 찍기</button>')+'</div>'
+  +'<div class="mgstep mgStep3"><div class="row"><span><span class="mgn">3</span><b>지적사항 조치</b></span>'+(n==null?'<span class="pill lock">-</span>':'<span class="pill '+(n?'bad':'lock')+'">'+n+'건</span>')+'</div>'
+   +(n?'<button class="button mgFix" type="button" onclick="mgrGo(\'fix\',\''+id+'\')">조치하기</button>':'')+'</div></div>'}
+/** F2.7 [현장대리인] 지적사항 조치 목록 (only = 그 매장만) → 조치 등록 화면은 현장관리자와 같음 (sm.js smResolveDraw) */
+async function mgrFixDraw(only){const el=$('my');$('pageTitle').textContent='지적사항 조치';rmSetup('mgr','fix');
+ el.innerHTML='<div class="card"><h2>지적사항 조치</h2><p class="desc">불러오는 중입니다…</p></div>';
+ try{mgrHomeData=await callQuiet('mgrHome')}catch(e){el.innerHTML='<div class="card"><h2>지적사항 조치</h2><p class="desc">'+escapeText(e.message||'불러오지 못했습니다.')+'</p><button class="button" type="button" onclick="mgrFixDraw(\''+escapeText(only||'')+'\')">다시 시도</button></div>';return}
+ const L=mgrHomeData.jobs.filter(j=>!only||j.id===only);
+ el.innerHTML=(only?'<div class="card"><button class="button ghost" type="button" onclick="mgrGo(\'home\')">← 돌아가기</button></div>':'')
+  +'<div class="card" id="mfList"><h2>지적사항 조치</h2>'+(L.length?L.map(j=>'<div class="stage">'+escapeText(j.storeName)+' <span class="muted">'+omd(j.startDate)+' ~ '+omd(j.endDate)+'</span></div>'
+   +(j.open==null?'<p class="muted">지적사항을 불러오지 못했습니다.</p>':j.open.length?j.open.map(f=>'<div class="item"><div class="row" style="justify-content:space-between"><div><b>'+escapeText(f.item)+'</b><div class="muted">'+escapeText(omd(f.foundDate))+' · '+escapeText(f.memo)+'</div></div><button class="button" type="button" onclick="mgrRsOpen(\''+escapeText(j.id)+'\',\''+escapeText(f.id)+'\')">조치 등록</button></div></div>').join(''):'<p class="muted">미조치 없음</p>')
+   +((j.done||[]).length?'<details class="hist" style="margin-top:6px"><summary>조치 완료 '+j.done.length+'건</summary>'+j.done.map(f=>'<div class="muted" style="padding:4px 0;border-top:1px solid var(--line)">'+escapeText(f.actionDate)+' · '+escapeText(f.item)+' · '+escapeText(f.actionBy)+'</div>').join('')+'</details>':'')).join('')
+   :'<p class="muted">배정된 오픈 매장이 없습니다.</p>')+'</div>';setTopGuide('mgrfix')}
+function mgrRsOpen(jobId,fid){const j=mgrPick().find(x=>x.id===jobId),f=j&&(j.open||[]).find(x=>x.id===fid);if(!f)return;window.__wkCo=j.company||'';smRs={f,jobId,photos:[],who:'mgr'};setTopGuide('');smResolveDraw();window.scrollTo(0,0)}
+/** F2.7 ☰ 현장관리자 안내문 (매장이 여러 곳이면 고르기) */
+async function mgrFlyerPick(){$('pageTitle').textContent='현장관리자 안내문';const d=await mgrEnsure();if(!d)return;const L=d.jobs;if(L.length===1){smFlyer(L[0].id,true);return}
+ $('my').innerHTML='<div class="card"><h2>현장관리자 안내문</h2>'+(L.length?L.map(j=>'<button class="jobitem" type="button" onclick="smFlyer(\''+escapeText(j.id)+'\',true)"><div><b>'+escapeText(j.storeName)+'</b><div class="muted">'+omd(j.startDate)+' ~ '+omd(j.endDate)+'</div></div><span aria-hidden="true">›</span></button>').join(''):'<p class="muted">배정된 오픈 매장이 없습니다.</p>')+'</div>'}
 let mgrHomeData=null;
 /** F2.3 [인력관리자] 현장관리자 지정 QR (쓰지 않은 QR이 있으면 그대로 · 없으면 새로) */
 async function smQrOpen(jobId,fresh){const j=((mgrHomeData&&mgrHomeData.jobs)||[]).find(x=>x.id===jobId);if(!j)return;
  let iv=!fresh&&j.invite;if(!iv){try{iv=await call('smInvite',jobId);j.invite=iv}catch(e){return}}
  const el=$('my');el.innerHTML='<div class="card row" style="justify-content:space-between"><button class="button ghost" type="button" onclick="renderMgrHome()">‹ 이전으로</button><button class="button ghost" type="button" onclick="smFlyer(\''+escapeText(jobId)+'\')">📄 현장관리자 안내문</button></div>'
-  +'<div class="card" style="text-align:center"><small class="muted">'+escapeText(j.company)+' · 다이소 '+escapeText(j.storeName)+'</small><h2>현장관리자 지정 QR</h2>'
-  +'<p class="desc">대표 근로자의 <b>휴대폰 카메라</b>로 이 QR을 찍게 해 주세요.<br>본인 Google 계정으로 로그인 → 이름 · 안전 수칙 서약 → <b>현장관리자</b>로 등록됩니다.</p>'
-  +'<img src="'+escapeText(mgrQr(iv.link))+'" alt="현장관리자 지정 QR 코드" width="240" height="240" style="border:1px solid var(--line);border-radius:12px">'
+  +'<div class="card" style="text-align:center" id="smQrCard"><small class="muted">'+escapeText(j.company)+' · 다이소 '+escapeText(j.storeName)+'</small><h2>관리감독자 지정 QR</h2>'
+  +'<img id="smQrImg" src="'+escapeText(mgrQr(iv.link))+'" alt="현장관리자 지정 QR 코드" width="240" height="240" style="border:1px solid var(--line);border-radius:12px">'
   +'<div class="muted" style="word-break:break-all;font-size:12px;margin-top:6px">'+escapeText(iv.link)+'</div>'
   +'<div class="row" style="justify-content:center;gap:6px;margin-top:8px"><button class="button ghost" type="button" style="padding:6px 10px;font-size:13px" onclick="copyLink(\''+escapeText(iv.link)+'\')">링크 복사</button><button class="button ghost" type="button" style="padding:6px 10px;font-size:13px" onclick="smQrOpen(\''+escapeText(jobId)+'\',true)">QR 새로 만들기</button></div>'
   +'<p class="muted" style="margin-top:8px">QR 1개 = 1명 · '+escapeText(mgrHM(iv.expAt))+'까지 · 이미 지정된 사람이 있으면 새로 등록한 사람으로 바뀝니다 (전 사람은 명부에 남음)</p>'
-  +'<button class="button" type="button" style="width:100%;margin-top:6px" onclick="smQrCheck(\''+escapeText(jobId)+'\')">등록했는지 확인</button></div>';window.scrollTo(0,0)}
+  +'<button class="button" type="button" id="smQrChk" style="width:100%;margin-top:6px" onclick="smQrCheck(\''+escapeText(jobId)+'\')">등록했는지 확인</button></div>';window.scrollTo(0,0);setTopGuide('smqr')}
 async function smQrCheck(jobId){try{const d=await callQuiet('mgrHome');mgrHomeData=d;const j=d.jobs.find(x=>x.id===jobId),cur=j&&(j.siteMgrs||[]).find(x=>x.status==='ACTIVE');
  if(cur&&!j.invite){msg(cur.name+' 님이 현장관리자로 등록됐습니다.');renderMgrHome()}else msg('아직 등록 전입니다. 등록이 끝나면 다시 눌러 주세요.')}catch(e){}}
 /** F2.3 현장관리자 안내문 (A4 1장 · 인쇄 · PDF) */
-function smFlyer(jobId){const j=((mgrHomeData&&mgrHomeData.jobs)||[]).find(x=>x.id===jobId)||{},cur=(j.siteMgrs||[]).find(x=>x.status==='ACTIVE');
+function smFlyer(jobId,fromMenu){const j=((mgrHomeData&&mgrHomeData.jobs)||[]).find(x=>x.id===jobId)||{},cur=(j.siteMgrs||[]).find(x=>x.status==='ACTIVE');setTopGuide('');
  const st='border:1px solid #CBD5E1;padding:10px 12px;font-size:14px;line-height:1.6;vertical-align:top';
- $('my').innerHTML='<div class="card row" style="justify-content:space-between"><button class="button ghost" type="button" onclick="smQrOpen(\''+escapeText(jobId)+'\')">‹ 이전으로</button><button class="button" type="button" onclick="printA4(\'smSheet\',\'현장관리자 안내\')">🖨 인쇄 · PDF</button></div>'
+ $('my').innerHTML='<div class="card row" style="justify-content:space-between"><button class="button ghost" type="button" onclick="'+(fromMenu?'mgrGo(\'home\')':'smQrOpen(\''+escapeText(jobId)+'\')')+'">‹ 이전으로</button><button class="button" type="button" onclick="printA4(\'smSheet\',\'현장관리자 안내\')">🖨 인쇄 · PDF</button></div>'
   +'<div class="card sheet" style="overflow-x:auto"><div id="smSheet" style="font-family:\'Malgun Gothic\',sans-serif;color:#111827">'
   +'<div style="border-top:6px solid #CE2A4B;padding-top:10px"><div style="font-size:12px;color:#4B5563">(주)아성다이소 · 도급 안전관리 · 오픈지원</div><h1 style="font-size:24px;margin:4px 0 2px">현장관리자 안내</h1><div style="font-size:15px"><b>'+escapeText(j.company||'')+'</b> · 다이소 '+escapeText(j.storeName||'')+' · '+escapeText(j.startDate||'')+' ~ '+escapeText(j.endDate||'')+(cur?' · 현장관리자 <b>'+escapeText(cur.name)+'</b>':'')+'</div></div>'
   +'<table style="width:100%;border-collapse:collapse;margin-top:14px"><tr><td style="'+st+'"><b style="font-size:15px">현장관리자 = 관리감독자</b><p style="margin:4px 0 0">이 오픈 매장 동안 우리 근로자의 안전을 챙기는 대표 근로자입니다. 앱을 열면 <b>이 오픈 매장만</b> 보이고, 오픈 매장이 끝나면 사라집니다.</p></td></tr></table>'
@@ -94,37 +115,38 @@ function smFlyer(jobId){const j=((mgrHomeData&&mgrHomeData.jobs)||[]).find(x=>x.
   +'<p style="margin:6px 0 0;font-size:12.5px;color:#4B5563">· 비상대피 훈련은 도급인이 진행합니다. 근로자는 도급인이 보여 주는 QR로 참석만 체크합니다.<br>· 사고·위험 상황이면 즉시 작업을 멈추고 도급인 담당자 · 인력관리자에게 알립니다.</p></td></tr></table></div></div>';window.scrollTo(0,0)}
 
 /* ---------- 계약담당자: ☰ 인력관리자 관리 ---------- */
-async function renderVMgr(){const el=$('execArea');if(!el)return;$('pageTitle').textContent='인력관리자 관리';
- if(!mgrData)el.innerHTML='<div class="card"><h2>인력관리자 관리</h2><p class="desc">불러오는 중입니다…</p></div>';
- try{mgrData=await callQuiet('mgrBoard')}catch(e){el.innerHTML='<div class="card"><h2>인력관리자 관리</h2><p class="desc">'+escapeText(e.message||'불러오지 못했습니다.')+'</p><button class="button" type="button" onclick="renderVMgr()">다시 시도</button></div>';return}
+async function renderVMgr(){const el=$('execArea');if(!el)return;$('pageTitle').textContent='인력관리자(현장대리인) 관리';
+ if(!mgrData)el.innerHTML='<div class="card"><h2>인력관리자(현장대리인) 관리</h2><p class="desc">불러오는 중입니다…</p></div>';
+ try{mgrData=await callQuiet('mgrBoard')}catch(e){el.innerHTML='<div class="card"><h2>인력관리자(현장대리인) 관리</h2><p class="desc">'+escapeText(e.message||'불러오지 못했습니다.')+'</p><button class="button" type="button" onclick="renderVMgr()">다시 시도</button></div>';return}
  mgrDraw()}
 function mgrDraw(){const el=$('execArea'),d=mgrData;if(!el||!d||vmenu!=='mgr')return;const act=d.mgrs.filter(m=>m.status==='ACTIVE'),nm=e=>(d.mgrs.find(m=>m.email===e)||{}).name||e;
  const noMgr=d.jobs.filter(j=>!j.mgrs.length).length;
- el.innerHTML='<div class="card"><h2 style="margin:0">인력관리자 관리</h2><p class="desc" style="margin-top:6px">인력관리자 = <b>안전관리책임자 대리</b>입니다. 오픈 매장 첫날 현장에 가서 현장관리자를 지정하고, 협의체·합동점검에 참석합니다.<br>연락처는 받지 않고 <b>Google 계정 · 이름</b>만 기록합니다.</p></div>'
+ setTopGuide('vmgr');  /* F2.7 설명 글은 위쪽 [❔ 가이드]로 */
+ el.innerHTML='<div class="card"><h2 style="margin:0">인력관리자(현장대리인) 관리</h2></div>'
   /* ① 초대 */
-  +'<div class="card" id="mgInv"><h2>① 초대 링크로 등록 <span class="pill ok">추천</span></h2><p class="muted">링크(또는 QR)를 인력관리자에게 보내면, 본인 Google 계정으로 로그인해 이름만 적으면 등록됩니다. 링크 1개 = 1명 · '+d.days+'일 동안 유효</p>'
+  +'<div class="card" id="mgInv"><h2>① 초대 링크로 등록 <span class="pill ok">추천</span></h2><p class="muted">링크 1개 = 1명 · '+d.days+'일 동안 유효</p>'
   +(mgrNew?mgrLinkBox(mgrNew,true):'')
   +'<button class="button" type="button" style="width:100%;margin-top:8px" onclick="mgrInvite()">＋ 새 초대 링크 만들기</button>'
   +(d.invites.filter(x=>x.link!==mgrNew).length?'<div class="stage">아직 안 쓴 초대 링크</div>'+d.invites.filter(x=>x.link!==mgrNew).map(x=>'<div class="item"><div class="row" style="justify-content:space-between"><span class="muted">'+escapeText(mgrDay(x.createdAt))+' 만듦 · '+escapeText(mgrDay(x.expAt))+'까지</span><span class="row" style="gap:6px"><button class="button ghost" type="button" style="padding:4px 8px;font-size:12px" onclick="mgrShow(\''+escapeText(x.link)+'\')">보기</button><button class="button ghost danger" type="button" style="padding:4px 8px;font-size:12px" onclick="mgrInviteCancel(\''+escapeText(x.token)+'\')">취소</button></span></div></div>').join(''):'')+'</div>'
   /* ② 직접 입력 */
-  +'<div class="card"><h2>② 직접 입력</h2><p class="muted">링크를 보내기 어려우면 이름과 Google 계정(Gmail)을 직접 적습니다. 그 사람이 이 Gmail로 로그인하면 바로 인력관리자 화면이 열립니다.</p>'
+  +'<div class="card" id="mgAdd"><h2>② 직접 입력</h2>'
   +'<form onsubmit="mgrAddForm(event)"><div class="split">'+input('mgName','이름','','text',false,'홍길동')+input('mgMail','Google 계정 (Gmail)','','email',false,'hong123@gmail.com')+'</div><button class="button ghost" type="submit" style="width:100%;margin-top:6px">직접 등록</button></form></div>'
   /* ③ 명단 */
-  +'<div class="card"><h2>③ 인력관리자 명단 <span class="cnt">'+act.length+'</span></h2>'
+  +'<div class="card" id="mgList"><h2>③ 인력관리자(현장대리인) 명단 <span class="cnt">'+act.length+'</span></h2>'
   +(d.mgrs.length?d.mgrs.map(m=>'<div class="item"'+(m.status==='ACTIVE'?'':' style="opacity:.6"')+'><div class="row" style="justify-content:space-between"><div><b>'+escapeText(m.name)+'</b> <span class="pill '+(m.status==='ACTIVE'?'ok':'lock')+'">'+(m.status==='ACTIVE'?'사용 중':'사용 중지')+'</span>'
    +'<div class="muted" style="word-break:break-all">'+escapeText(m.email)+' · '+(m.method==='INVITE'?'초대 링크':'직접 입력')+(m.method==='MANUAL'&&!m.joinedAt?' · 아직 로그인 전':'')+' · 배정 '+m.jobs.length+'건</div></div>'
    +(m.status==='ACTIVE'?'<button class="button ghost danger" type="button" style="padding:4px 8px;font-size:12px" onclick="mgrSet(\''+escapeText(m.email)+'\',false)">사용 중지</button>':'<button class="button ghost" type="button" style="padding:4px 8px;font-size:12px" onclick="mgrSet(\''+escapeText(m.email)+'\',true)">다시 사용</button>')+'</div></div>').join('')
    :'<p class="muted">아직 등록한 인력관리자가 없습니다. 위 ① 또는 ②로 등록해 주세요.</p>')+'</div>'
   /* ④ 오픈 매장 배정 */
-  +'<div class="card" id="mgJobs"><h2>④ 오픈 매장 배정 '+(noMgr?'<span class="pill bad">미배정 '+noMgr+'</span>':'')+'</h2><p class="muted">도급인이 만든 진행 중 오픈 매장입니다. 매장마다 갈 인력관리자를 체크하고 [저장]을 누르세요. 끝난 오픈 매장은 자동으로 빠집니다.</p>'
+  +'<div class="card" id="mgJobs"><h2>④ 오픈 매장 배정 '+(noMgr?'<span class="pill bad">미배정 '+noMgr+'</span>':'')+'</h2>'
   +(d.jobs.length?d.jobs.map(j=>'<div class="item"><b>'+escapeText(j.title)+'</b><div class="muted">'+escapeText(j.storeName)+' · '+escapeText(j.startDate)+' ~ '+escapeText(j.endDate||'')+' · 도급인 '+escapeText(j.hostName||'')+'</div>'
    +(act.length||j.mgrs.length?'<div style="margin:6px 0">'+act.map(m=>'<label class="desc" style="display:inline-flex;align-items:center;gap:4px;margin:2px 10px 2px 0"><input type="checkbox" class="mgck" data-job="'+escapeText(j.id)+'" value="'+escapeText(m.email)+'" '+(j.mgrs.includes(m.email)?'checked':'')+'> '+escapeText(m.name)+'</label>').join('')
     +j.mgrs.filter(e=>!act.some(m=>m.email===e)).map(e=>'<span class="pill lock" style="margin-right:6px">'+escapeText(nm(e))+' (사용 중지)</span>').join('')+'</div>'
     +'<div class="row" style="justify-content:space-between"><span class="muted">'+(j.mgrs.length?'배정: '+escapeText(j.mgrs.map(nm).join(', ')):'<span class="req">아직 배정 안 됨</span>')+'</span><button class="button" type="button" style="padding:6px 12px;font-size:13px" onclick="mgrAssign(\''+escapeText(j.id)+'\')">저장</button></div>'
     :'<p class="muted">먼저 인력관리자를 등록해 주세요.</p>')+'</div>').join('')
-   :'<p class="muted">진행 중인 오픈 매장이 없습니다. 도급인이 오픈 매장을 만들고 업체를 배정하면 여기에 나옵니다.</p>')+'</div>'
-  /* ⑤ F2.3 인력 명부 (현장관리자 지정 때 자동 기록 · 연락처 없음) */
-  +'<div class="card" id="mgRoster"><h2>⑤ 인력 명부 · 현장관리자 <span class="cnt">'+(d.roster||[]).length+'</span></h2><p class="muted">인력관리자가 현장관리자를 지정하면 자동으로 기록됩니다. (Google 계정 · 이름 · 매장 · 기간 · 지정 일시 · 지정한 사람)</p>'
+   :'<p class="muted">진행 중인 오픈 매장이 없습니다.</p>')+'</div>'}
+/** F2.3 · F2.7 인력 명부 (☰ 인력 명부 · 관리감독자 지정 때 자동 기록 · 연락처 없음) */
+function mgrRosterHtml(d){return '<div class="card" id="mgRoster"><h2>인력 명부 · 현장관리자(관리감독자) <span class="cnt">'+(d.roster||[]).length+'</span></h2>'
   +((d.roster||[]).length?'<div style="overflow-x:auto"><table class="rtable" style="min-width:420px"><tr><th>이름 · 계정</th><th>매장 · 기간</th><th>지정</th></tr>'+d.roster.map(r=>'<tr'+(r.status==='ACTIVE'?'':' style="opacity:.6"')+'><td><b>'+escapeText(r.name)+'</b>'+(r.status==='ACTIVE'?'':' <span class="pill lock">교체됨</span>')+'<div class="muted" style="font-size:11px;word-break:break-all">'+escapeText(r.email)+'</div></td>'
     +'<td>'+escapeText(r.storeName)+'<div class="muted" style="font-size:11px">'+escapeText(String(r.startDate).slice(5))+' ~ '+escapeText(String(r.endDate).slice(5))+'</div></td><td><span style="font-size:12px">'+escapeText(mgrHM(r.designatedAt))+'</span><div class="muted" style="font-size:11px">'+escapeText(r.designatedName||r.designatedBy)+'</div></td></tr>').join('')+'</table></div>'
    :'<p class="muted">아직 지정된 현장관리자가 없습니다.</p>')+'</div>'}
@@ -154,6 +176,6 @@ function mgrFlyer(link){const d=mgrData||{},co=d.company||'';clearInterval(wkTim
   +'<p style="margin:8px 0 0;font-size:12.5px;color:#4B5563">· 이 링크는 <b>1명이 1번</b>만 쓸 수 있습니다 · '+escapeText(String(d.days||7))+'일 안에 등록해 주세요<br>· 연락처는 받지 않습니다 (Google 계정 · 이름만 기록)</p></td>'
   +'<td style="'+st+';text-align:center"><img src="'+escapeText(mgrQr(link))+'" alt="인력관리자 초대 QR" width="190" height="190"><div style="font-size:10.5px;color:#4B5563;word-break:break-all;margin-top:4px">'+escapeText(link)+'</div></td></tr></table>'
   +'<table style="width:100%;border-collapse:collapse;margin-top:12px"><tr><td style="'+st+'"><b style="font-size:15px">인력관리자가 하는 일</b><ul style="margin:6px 0 0;padding-left:20px">'
-  +'<li>오픈 매장 <b>첫날</b> 현장 방문 · 근로계약서 작성 (앱 밖)</li><li>대표 근로자를 <b>현장관리자</b>로 지정 (앱의 지정 QR) · 현장관리자 안내문 전달</li>'
-  +'<li><b>협의체 · 합동점검</b> 참석 (도급인이 보여 주는 QR을 찍으면 참석 기록)</li><li>합동점검 <b>지적사항 조치</b> (그날 못 하면 현장관리자가 조치)</li></ul></td></tr></table>'
+  +'<li>오픈 매장 <b>첫날</b> 현장 방문</li><li>대표 근로자를 <b>현장관리자(관리감독자)</b>로 지정 (앱의 지정 QR) · 현장관리자 안내문 전달</li>'
+  +'<li><b>협의체 · 합동점검</b> 참석 (앱 ☰ 메뉴 [참석 QR]로 도급인이 보여 주는 QR을 찍으면 참석 기록)</li><li>합동점검 <b>지적사항 조치</b> (그날 못 하면 현장관리자가 조치)</li></ul></td></tr></table>'
   +'<p style="font-size:12px;color:#4B5563;margin-top:10px">카카오톡 등 앱 안에서 링크가 열려 로그인이 안 되면, 오른쪽 위 메뉴에서 [다른 브라우저로 열기](크롬·사파리)를 눌러 주세요.</p></div></div>';window.scrollTo(0,0)}

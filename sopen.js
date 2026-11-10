@@ -82,11 +82,13 @@ async function opDrClose(close){if(close&&!await askOk('훈련 마치기','참�
 
 /* ---------- 근로자: 비상훈련 참석 QR (?review=DRL-토큰) ---------- */
 const DRL_LINK=()=>/^DRL-[a-f0-9]{32}$/.test(LINK_REVIEW)&&!window.__drlDone;
-async function renderDrillIn(name){const el=$('my'),token=LINK_REVIEW.slice(4).toLowerCase();$('pageTitle').textContent='비상훈련 참석';
+/** F2.7 닫기: 앱 안 QR 찍기로 들어왔으면 관리감독자 [비상훈련 참석] 화면으로 · 링크로 들어왔으면 처음 화면 */
+function drlClose(){const inApp=!!window.__drlTok;window.__drlTok='';window.__drlDone=true;try{history.replaceState(null,'',location.pathname)}catch(e){}if(inApp&&state&&state.sm&&typeof smGo==='function'){smGo('drill');return}display(state)}
+async function renderDrillIn(name){const el=$('my'),token=String(window.__drlTok||LINK_REVIEW.slice(4)).toLowerCase();$('pageTitle').textContent='비상훈련 참석';  // F2.7 __drlTok = 앱 안에서 찍은 QR
  if(!name)el.innerHTML='<div class="card"><h2>비상훈련 참석</h2><p class="desc">확인하는 중입니다…</p></div>';
  let r;try{r=await call('drillCheckIn',token,name||'')}catch(e){el.innerHTML='<div class="card"><h2>비상훈련 참석</h2><div class="note">'+escapeText(e.message||'참석을 기록하지 못했습니다.')+'</div><button class="button ghost" type="button" style="margin-top:10px" onclick="renderDrillIn()">다시 시도</button></div>';return}
  const head='<div class="card"><small class="muted">다이소 '+escapeText(r.store)+' · '+escapeText(r.date)+'</small><h2>'+escapeText(r.label)+' 참석</h2>';
- if(r.state==='DONE'){el.innerHTML=head+'<div style="text-align:center;padding:10px 0"><div style="font-size:44px;color:var(--ok)">✔</div><h2 style="color:var(--ok)">'+(r.again?'이미 참석했습니다':'참석 완료')+'</h2><p class="desc"><b>'+escapeText(r.name)+'</b> · '+escapeText(r.role||'')+'<br>계정 '+escapeText(state.email)+'</p></div><button class="button ghost" type="button" style="width:100%" onclick="window.__drlDone=true;try{history.replaceState(null,\'\',location.pathname)}catch(e){}display(state)">닫기</button></div>';return}
- if(r.state==='CLOSED'){el.innerHTML=head+'<div class="note">이 훈련은 끝났습니다. 도급인 담당자에게 알려 주세요.</div></div>';return}
+ if(r.state==='DONE'){el.innerHTML=head+'<div style="text-align:center;padding:10px 0"><div style="font-size:44px;color:var(--ok)">✔</div><h2 style="color:var(--ok)">'+(r.again?'이미 참석했습니다':'참석 완료')+'</h2><p class="desc"><b>'+escapeText(r.name)+'</b> · '+escapeText(r.role||'')+'<br>계정 '+escapeText(state.email)+'</p></div><button class="button ghost" type="button" style="width:100%" onclick="drlClose()">닫기</button></div>';return}
+ if(r.state==='CLOSED'){el.innerHTML=head+'<div class="note">이 훈련은 끝났습니다. 도급인 담당자에게 알려 주세요.</div><button class="button ghost" type="button" style="width:100%;margin-top:10px" onclick="drlClose()">닫기</button></div>';return}
  el.innerHTML=head+'<p class="desc">이 오픈 매장에 등록된 근로자 계정이 아닙니다. <b>이름</b>을 적으면 참석으로 기록됩니다.'+(r.company?' (소속: '+escapeText(r.company)+')':'')+'<br>로그인 계정 <b>'+escapeText(state.email)+'</b> <button class="linkbtn" type="button" onclick="relogin()">다른 계정으로 로그인</button></p>'
   +'<form onsubmit="event.preventDefault();const n=value(\'diName\');if(!n){markMissing([{key:\'diName\'}]);return}renderDrillIn(n)">'+input('diName','이름','','text',false,'예: 홍길동')+'<button class="button" type="submit" style="width:100%;margin-top:10px">참석</button></form></div>';setTimeout(()=>$('f_diName')?.focus(),50)}

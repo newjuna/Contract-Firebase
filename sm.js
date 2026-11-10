@@ -31,38 +31,69 @@ async function sendSmJoin(e){e.preventDefault();const name=value('sjName'),agree
 async function smJoinDone(){smClearLink();roleView='sm';try{display(await call('portalData'))}catch(e){display(state)}}
 
 /* ---------- 현장관리자 내 화면 ---------- */
-async function renderSmHome(quiet){const el=$('my');$('pageTitle').textContent='현장관리자';$('myTab').textContent='내 업무';
- if(!smData&&!quiet)el.innerHTML='<div class="card"><h2>'+escapeText((state.sm&&state.sm.name)||'')+' 님 · 현장관리자</h2><p class="desc">오픈 매장을 불러오는 중입니다…</p></div>';
- try{smData=await callQuiet('smHome')}catch(e){if(!smData){el.innerHTML='<div class="card"><h2>현장관리자</h2><p class="desc">'+escapeText(e.message||'불러오지 못했습니다.')+'</p><button class="button" type="button" onclick="renderSmHome()">다시 시도</button></div>';return}}
+async function renderSmHome(quiet){const el=$('my');if(!quiet)$('pageTitle').textContent='현장관리자(관리감독자)';$('myTab').textContent='내 업무';
+ if(!smData&&!quiet)el.innerHTML='<div class="card"><h2>'+escapeText((state.sm&&state.sm.name)||'')+' 님 · 관리감독자</h2><p class="desc">오픈 매장을 불러오는 중입니다…</p></div>';
+ try{smData=await callQuiet('smHome');if($('qrBox'))return/* F2.7 그사이 QR 찍기 화면으로 갔으면 덮지 않음 */}catch(e){if(!smData){el.innerHTML='<div class="card"><h2>현장관리자(관리감독자)</h2><p class="desc">'+escapeText(e.message||'불러오지 못했습니다.')+'</p><button class="button" type="button" onclick="renderSmHome()">다시 시도</button></div>';return}}
  smDraw()}
-function smDraw(){const el=$('my'),d=smData;if(!el||!d)return;if(smRs){smResolveDraw();return}const j=smJob();
- if(!j){el.innerHTML=roleSwitchHtml('sm')+'<div class="card"><h2>'+escapeText(d.name||(state.sm&&state.sm.name)||'')+' 님 · 현장관리자</h2><div class="note">진행 중인 오픈 매장이 없습니다.<br>끝난 오픈 매장은 보이지 않습니다. 새 오픈 매장은 그날 인력관리자가 다시 지정합니다.</div></div>';return}
- window.__wkCo=j.company||'';const t=j.today||smToday(),tt=j.tbmToday,todayW=j.workers.filter(w=>mgrDay(w.eduAt)===t),link=location.origin+location.pathname+'?review=WRK-'+j.workerToken;
- const sb='padding:8px 10px;font-size:13px';
- el.innerHTML=roleSwitchHtml('sm')
-  +'<div class="card"><h2 style="margin:0">'+escapeText(j.name)+' 님 · 현장관리자</h2>'
-  +(d.jobs.length>1?'<label class="muted" for="smSel" style="display:block;margin-top:8px">오픈 매장 선택</label><select id="smSel" class="vjsel" onchange="smSel=this.value;smTbmNew=[];smShow=\'\';smDraw()">'+d.jobs.map(x=>'<option value="'+escapeText(x.id)+'" '+(x.id===j.id?'selected':'')+'>'+escapeText(x.title)+' ('+escapeText(x.storeName)+')</option>').join('')+'</select>':'')
-  +'<div class="muted" style="margin-top:6px">'+escapeText(j.company)+' · 다이소 '+escapeText(j.storeName)+' · '+escapeText(j.startDate)+' ~ '+escapeText(j.endDate||'')+' · 도급인 '+escapeText(j.hostName)+'</div></div>'
+/* F2.7 시안 v3: 메인 = ① TBM ② 신규자 등록 ③ 지적사항 조치 · 끝낸 칸은 인테리어처럼 어둡게 + '✔ 오늘 완료' (눌러서 열기)
+ *  비상훈련 참석 · 협의체 참석 · 근로자 명단 · TBM 기록 = ☰ 메뉴 화면 (smGo) · 설명 글은 위쪽 [❔ 가이드] */
+let smPage='home';
+const smNoNewKey=j=>'smNoNew:'+j.id+':'+(j.today||smToday());
+function smNoNew(j){try{return localStorage.getItem(smNoNewKey(j))==='1'}catch(e){return false}}
+function smSetNoNew(on){const j=smJob();if(!j)return;try{if(on)localStorage.setItem(smNoNewKey(j),'1');else localStorage.removeItem(smNoNewKey(j))}catch(e){}smDraw()}
+/** 매장 이름 줄 (여러 오픈 매장이면 고르기) */
+function smHeadHtml(d,j){return '<div class="card"><h2 style="margin:0">'+escapeText(j.name)+' 님 · 관리감독자</h2>'
+  +(d.jobs.length>1?'<select id="smSel" class="vjsel" aria-label="오픈 매장 선택" style="margin-top:8px" onchange="smSel=this.value;smTbmNew=[];smShow=\'\';smDraw()">'+d.jobs.map(x=>'<option value="'+escapeText(x.id)+'" '+(x.id===j.id?'selected':'')+'>'+escapeText(x.storeName)+' ('+escapeText(omd(x.startDate))+' ~ '+escapeText(omd(x.endDate))+')</option>').join('')+'</select>':'')
+  +'<div class="muted" style="margin-top:4px">다이소 '+escapeText(j.storeName)+' · '+escapeText(omd(j.startDate))+' ~ '+escapeText(omd(j.endDate))+'</div></div>'}
+/** F2.7 [현장관리자(관리감독자)] ☰ 메뉴 이동 */
+function smGo(v){toggleMenu(false);if(typeof stopScan==='function')stopScan();setTopGuide('');smRs=null;smPage=v||'home';rmSetup('sm',smPage);window.scrollTo(0,0);
+ if(smPage==='meet'){$('pageTitle').textContent='협의체 · 합동점검 참석';renderScan('my','smGo(\'home\')','meet');return}
+ if(smPage==='drill'){$('pageTitle').textContent='비상훈련 참석';renderSmHome();return}  // 참석 ✔ 다시 받기
+ if(smData){smDraw();if(smPage==='home')renderSmHome(true)}else renderSmHome()}
+function smDraw(){const el=$('my'),d=smData;if(!el||!d)return;if(smRs){smResolveDraw();return}const j=smJob();rmSetup('sm',smPage);
+ if(!j){el.innerHTML=roleSwitchHtml('sm')+'<div class="card"><h2>'+escapeText(d.name||(state.sm&&state.sm.name)||'')+' 님 · 관리감독자</h2><div class="note">진행 중인 오픈 매장이 없습니다.</div></div>';setTopGuide('');return}
+ window.__wkCo=j.company||'';
+ if(smPage==='drill')return smDrillDraw(d,j);if(smPage==='edu')return smEduDraw(d,j);if(smPage==='tbm')return smTbmDraw(d,j);
+ $('pageTitle').textContent='현장관리자(관리감독자)';
+ const t=j.today||smToday(),tt=j.tbmToday,todayW=j.workers.filter(w=>mgrDay(w.eduAt)===t),link=location.origin+location.pathname+'?review=WRK-'+j.workerToken,noNew=smNoNew(j);
+ const sb='padding:8px 10px;font-size:13px',tbmDone=!!tt&&!smTbmNew.length,regDone=(todayW.length>0||noNew)&&!smShow;
+ el.innerHTML=roleSwitchHtml('sm')+smHeadHtml(d,j)
   /* ① TBM */
-  +'<div class="card" id="smTbmCard"><div class="vh-top"><h2 style="margin:0;font-size:16px">① 오늘 TBM</h2>'+(tt?'<span class="pill ok">✔ 저장 '+tt.photos.length+'장</span>':'<span class="pill bad">오늘 전</span>')+'</div>'
-  +'<p class="muted" style="margin:6px 0">작업 시작 전 안전 미팅(TBM) 사진을 1장 이상 저장하세요. 사진에 날짜·시각이 찍힙니다.</p>'
-  +(tt?'<div class="row">'+thumbs(tt.photos,'')+'</div>':'')
+  +'<div class="card" id="smTbmCard" style="position:relative">'+(tbmDone?doneMask('TBM 사진'):'')+'<div class="vh-top"><h2 style="margin:0;font-size:16px">① TBM 사진</h2>'+(tt?'<span class="pill ok">✔ '+tt.photos.length+'장</span>':'')+'</div>'
+  +(tt?'<div class="row" style="margin-top:6px">'+thumbs(tt.photos,'')+'</div>':'')
   +'<div class="row" id="smTbmList" style="margin-top:6px">'+thumbs(smTbmNew,'smDropTbm')+phBtns('smTbmFile','smAddTbm(','TBM 사진')+'</div>'
-  +(smTbmNew.length?'<button class="button" type="button" style="width:100%;margin-top:8px" onclick="smSaveTbm()">TBM 사진 '+smTbmNew.length+'장 '+(tt?'더 ':'')+'저장</button>':'')
-  +'<div class="muted" style="margin-top:6px;font-size:12px">TBM 한 날 '+j.tbmDays.length+'일'+(j.tbmDays.length?' · '+j.tbmDays.slice(0,7).map(x=>String(x).slice(5)).join(', '):'')+'</div></div>'
+  +(smTbmNew.length?'<button class="button" type="button" style="width:100%;margin-top:8px" onclick="smSaveTbm()">TBM 사진 '+smTbmNew.length+'장 '+(tt?'더 ':'')+'저장</button>':'')+'</div>'
   /* ② 신규자 등록 */
-  +'<div class="card" id="smRegCard"><div class="vh-top"><h2 style="margin:0;font-size:16px">② 신규자 등록</h2><span class="muted">전체 '+j.workers.length+'명</span></div>'
-  +'<div class="row" style="margin-top:8px;gap:6px"><button class="button" type="button" style="flex:1;'+sb+'" onclick="smShow=smShow===\'qr\'?\'\':\'qr\';smDraw()">'+(smShow==='qr'?'QR 닫기':'QR 보여주기')+'</button><button class="button ghost" type="button" style="flex:1;'+sb+'" onclick="smShow=smShow===\'add\'?\'\':\'add\';smDraw()">'+(smShow==='add'?'직접 등록 닫기':'직접 등록')+'</button></div>'
-  +(smShow==='qr'?'<div style="text-align:center;margin:12px 0 4px"><img src="https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&data='+encodeURIComponent(link)+'" alt="근로자 등록 QR 코드" width="220" height="220" style="border:1px solid var(--line);border-radius:12px"><p class="muted" style="margin:6px 0">새 근로자 휴대폰 카메라로 찍게 하세요. 본인 Google 계정으로 서명합니다.</p><div class="row" style="justify-content:center;gap:6px"><button class="button ghost" type="button" style="'+sb+'" onclick="copyLink(\''+escapeText(link)+'\')">등록 링크 복사</button><button class="button ghost" type="button" style="'+sb+'" onclick="renderSmHome(true)">⟳ 등록 확인</button></div></div>':'')
-  +(smShow==='add'?'<form class="subbox" onsubmit="smAddForm(event)">'+input('swName','이름','','text',false,'홍길동')+'<div class="muted" style="font-size:12px">구분: 보통인부 · 휴대폰·Google 계정이 없는 사람만</div><label class="desc" style="display:block;margin-top:8px"><input type="checkbox" id="swAgree"> 채용 시 교육(작업 안전 수칙 '+((typeof WORK_RULES_N!=='undefined')?WORK_RULES_N:14)+'개 항목 포함)을 하고 서약을 받았습니다. <b>(관리자 확인)</b></label><button class="button" type="submit" id="btnSmAdd" style="width:100%;margin-top:10px">직접 등록</button></form>':'')
-  +'<div style="margin-top:10px">'+(todayW.length?'<table class="rtable"><tr><th>오늘 등록</th><th>구분</th><th>방법</th></tr>'+todayW.map(w=>'<tr><td><b>'+escapeText(w.name)+'</b></td><td>'+escapeText(w.role)+'</td><td class="muted" style="font-size:12px">'+(w.method==='SELF'?'본인 서명':escapeText(w.confirmBy||'관리자 확인'))+'</td></tr>').join('')+'</table>':'<span class="muted">오늘 등록한 사람 없음</span>')
-  +(j.workers.length>todayW.length?'<details class="hist" style="margin-top:8px"><summary>전체 명단 '+j.workers.length+'명</summary>'+j.workers.map(w=>'<div class="row" style="justify-content:space-between;padding:4px 0;border-top:1px solid var(--line)"><span>'+escapeText(w.name)+' <span class="muted">· '+escapeText(w.role)+'</span></span><span class="muted" style="font-size:12px">'+escapeText(mgrHM(w.eduAt))+'</span></div>').join('')+'</details>':'')+'</div></div>'
+  +'<div class="card" id="smRegCard" style="position:relative">'+(regDone?doneMask('신규자 등록'):'')+'<div class="vh-top"><h2 style="margin:0;font-size:16px">② 신규자 등록</h2><span class="muted">전체 '+j.workers.length+'명</span></div>'
+  +'<div class="row" style="margin-top:8px;gap:6px"><button class="button" type="button" id="smBtnQr" style="flex:1;'+sb+'" onclick="smShow=smShow===\'qr\'?\'\':\'qr\';smDraw()">'+(smShow==='qr'?'QR 닫기':'QR 보여주기')+'</button><button class="button ghost" type="button" id="smBtnAdd" style="flex:1;'+sb+'" onclick="smShow=smShow===\'add\'?\'\':\'add\';smDraw()">'+(smShow==='add'?'직접 등록 닫기':'직접 등록')+'</button></div>'
+  +(smShow==='qr'?'<div style="text-align:center;margin:12px 0 4px"><img src="https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&data='+encodeURIComponent(link)+'" alt="근로자 등록 QR 코드" width="220" height="220" style="border:1px solid var(--line);border-radius:12px"><div class="row" style="justify-content:center;gap:6px;margin-top:6px"><button class="button ghost" type="button" style="'+sb+'" onclick="copyLink(\''+escapeText(link)+'\')">등록 링크 복사</button><button class="button ghost" type="button" style="'+sb+'" onclick="renderSmHome(true)">⟳ 등록 확인</button></div></div>':'')
+  +(smShow==='add'?'<form class="subbox" onsubmit="smAddForm(event)">'+input('swName','이름','','text',false,'홍길동')+'<label class="desc" style="display:block;margin-top:8px"><input type="checkbox" id="swAgree"> 채용 시 교육(작업 안전 수칙 '+((typeof WORK_RULES_N!=='undefined')?WORK_RULES_N:14)+'개 항목 포함)을 하고 서약을 받았습니다. <b>(관리자 확인)</b></label><button class="button" type="submit" id="btnSmAdd" style="width:100%;margin-top:10px">직접 등록</button></form>':'')
+  +'<div style="margin-top:10px">'+(todayW.length?'<table class="rtable"><tr><th>오늘 등록</th><th>구분</th><th>방법</th></tr>'+todayW.map(w=>'<tr><td><b>'+escapeText(w.name)+'</b></td><td>'+escapeText(w.role)+'</td><td class="muted" style="font-size:12px">'+(w.method==='SELF'?'본인 서명':escapeText(w.confirmBy||'관리자 확인'))+'</td></tr>').join('')+'</table>':'<div class="row" style="justify-content:space-between"><span class="muted">오늘 등록한 사람 없음'+(noNew?' · [오늘 신규자 없음] 표시함':'')+'</span>'+(noNew?'<button class="button ghost" type="button" style="padding:4px 8px;font-size:12px" onclick="smSetNoNew(false)">취소</button>':'<button class="button ghost" type="button" id="smBtnNoNew" style="padding:4px 8px;font-size:12px" onclick="smSetNoNew(true)">오늘 신규자 없음</button>')+'</div>')+'</div></div>'
   /* ③ 지적사항 조치 */
   +'<div class="card" id="smFixCard"><div class="vh-top"><h2 style="margin:0;font-size:16px">③ 지적사항 조치</h2>'+(j.open.length?'<span class="pill bad">미조치 '+j.open.length+'</span>':'<span class="pill ok">미조치 없음</span>')+'</div>'
   +(j.open.length?j.open.map(f=>'<div class="item"><div class="row" style="justify-content:space-between"><div><b>'+escapeText(f.item)+'</b><div class="muted">지적 '+escapeText(f.foundDate)+' · '+escapeText(f.memo)+'</div></div><button class="button" type="button" onclick="smResolveOpen(\''+escapeText(f.id)+'\')">조치 등록</button></div></div>').join('')
-   :'<p class="muted" style="margin:8px 0 0">도급인 순회점검에서 지적이 나오면 여기에 나옵니다.</p>')
+   :'')
   +(j.done.length?'<details class="hist" style="margin-top:8px"><summary>조치 완료 '+j.done.length+'건</summary>'+j.done.map(f=>'<div class="muted" style="padding:4px 0;border-top:1px solid var(--line)">'+escapeText(f.actionDate)+' · '+escapeText(f.item)+' · '+escapeText(f.actionBy)+'</div>').join('')+'</details>':'')+'</div>';
- if(tt&&tt.photos.length)loadInspPhotos(j.id)}
+ if(tt&&tt.photos.length)loadInspPhotos(j.id);setTopGuide('smhome')}
+/** F2.7 ☰ 비상훈련 참석: [📷 QR 찍기] (앱 안 카메라) · 도급인이 진행한 훈련과 내 참석 */
+function smDrillDraw(d,j){const L=j.drills||[];$('pageTitle').textContent='비상훈련 참석';
+ $('my').innerHTML=roleSwitchHtml('sm')+smHeadHtml(d,j)
+  +'<div class="card" style="text-align:center"><h2>비상훈련 참석</h2><button class="button" type="button" id="sdScan" style="width:100%" onclick="smPage=\'drill\';renderScan(\'my\',\'smGo(\\\'drill\\\')\',\'drill\')">📷 QR 찍기</button></div>'
+  +'<div class="card" id="sdList">'+(L.length?L.map(x=>'<div class="row" style="justify-content:space-between;padding:6px 0;border-top:1px solid var(--line)"><span>'+escapeText(x.label)+' <span class="muted">'+escapeText(omd(x.date))+'</span></span>'+(x.at?'<span class="pill ok">✔ '+escapeText(omd(mgrDay(x.at)))+' 참석</span>':x.open?'<span class="pill bad">참석 전</span>':'<span class="pill lock">'+(x.done?'끝남':'열리기 전')+'</span>')+'</div>').join(''):'<p class="muted" style="margin:0">아직 진행한 비상훈련이 없습니다.</p>')+'</div>';setTopGuide('smdrill')}
+/** F2.7 ☰ 근로자 명단 · 교육일지 (등록 방법 · 등록일 · 「관리자 확인」) */
+function smEduDraw(d,j){$('pageTitle').textContent='근로자 명단 · 교육일지';const W=j.workers||[];
+ $('my').innerHTML=roleSwitchHtml('sm')+smHeadHtml(d,j)
+  +'<div class="card" id="seList"><div class="vh-top"><h2 style="margin:0;font-size:16px">근로자 명단</h2><span class="pill ok">'+W.length+'명</span></div>'
+  +(W.length?'<table class="rtable" style="margin-top:10px"><tr><th>이름</th><th>구분</th><th>교육 · 서약</th><th style="width:64px">등록일</th></tr>'+W.map(w=>'<tr><td><b>'+escapeText(w.name)+'</b></td><td>'+escapeText(w.role)+'</td><td class="muted" style="font-size:12px">'+(w.method==='SELF'?'본인 서명':escapeText(w.confirmBy||'관리자 확인'))+'</td><td style="font-size:12px">'+escapeText(omd(mgrDay(w.eduAt)))+'</td></tr>').join('')+'</table>'
+   :'<p class="muted" style="margin:8px 0 0">아직 등록한 근로자가 없습니다.</p>')+'</div>';setTopGuide('smedu')}
+/** F2.7 ☰ TBM 기록 (저장한 날 · 오늘 사진) */
+function smTbmDraw(d,j){$('pageTitle').textContent='TBM 기록';const tt=j.tbmToday,D=j.tbmDays||[];
+ $('my').innerHTML=roleSwitchHtml('sm')+smHeadHtml(d,j)
+  +'<div class="card" id="stList"><div class="vh-top"><h2 style="margin:0;font-size:16px">TBM 기록</h2><span class="pill '+(D.length?'ok':'lock')+'">'+D.length+'일</span></div>'
+  +(tt?'<div class="stage">오늘 '+escapeText(omd(j.today))+'</div><div class="row">'+thumbs(tt.photos,'')+'</div>':'<p class="muted" style="margin:8px 0 0">오늘 TBM 전</p>')
+  +(D.length?'<div class="stage">저장한 날</div><div style="display:flex;flex-wrap:wrap;gap:6px">'+D.map(x=>'<span class="pill ok">✔ '+escapeText(omd(x))+'</span>').join('')+'</div>':'')
+  +'<button class="button ghost" type="button" style="width:100%;margin-top:12px" onclick="smGo(\'home\')">📷 오늘 TBM 사진 올리기</button></div>';
+ if(tt&&tt.photos.length)loadInspPhotos(j.id);setTopGuide('smtbm')}
 /* TBM 사진: 고르면 미리보기 → [저장] 때 올리기 + 저장 (체크리스트 한 번) */
 async function smAddTbm(src){const j=smJob();if(!j)return;const inp=$(src),fl=[...((inp&&inp.files)||[])].slice(0,Math.max(0,10-smTbmNew.length));if(inp)inp.value='';if(!fl.length)return;
  window.__wkCo=j.company||'';const ids=await pendPhotos(fl,async f=>{const x=await readFile(f,PHOTO_SITE);return api('smPhoto',[j.id,x])});ids.forEach(id=>{if(PEND[id]&&PEND[id].url)inspPhoto[id]=PEND[id].url});
@@ -79,10 +110,11 @@ async function smAddForm(e){e.preventDefault();const j=smJob();if(!j||smBusy)ret
  smBusy=true;const b=$('btnSmAdd');if(b){b.disabled=true;b.textContent='등록하는 중…'}
  try{smData=await call('smAddWorker',j.id,{name,agree},smPendW.rid);smPendW=null;smShow='';smDraw();msg(name+' 님을 등록했습니다.')}
  catch(err){if(b&&b.isConnected){b.disabled=false;b.textContent='직접 등록'}}finally{smBusy=false}}
-/* 지적사항 조치 */
+/* 지적사항 조치 (F2.7 who = 'mgr' 이면 인력관리자(현장대리인)가 조치 · 끝나면 그 목록으로) */
+function smRsBack(){const w=smRs&&smRs.who;smRs=null;if(w==='mgr')mgrFixDraw('');else smDraw()}
 function smResolveOpen(fid){const j=smJob(),f=j&&j.open.find(x=>x.id===fid);if(!f)return;smRs={f,jobId:j.id,photos:[]};smResolveDraw();window.scrollTo(0,0)}
 function smResolveDraw(){const f=smRs.f,t=smToday();
- $('my').innerHTML='<div class="card"><button class="button ghost" type="button" onclick="smRs=null;smDraw()">← 돌아가기</button><h2 style="margin-top:12px">지적사항 조치 등록</h2><table class="rtable"><tr><th>항목</th><td>'+escapeText(f.item)+'</td></tr><tr><th>지적일</th><td>'+escapeText(f.foundDate)+'</td></tr><tr><th>지적 내용</th><td>'+escapeText(f.memo)+'</td></tr><tr><th>조치 전</th><td>'+(thumbs(f.before||[],'')||'<span class="muted">사진 없음</span>')+'</td></tr></table></div>'
+ $('my').innerHTML='<div class="card"><button class="button ghost" type="button" onclick="smRsBack()">← 돌아가기</button><h2 style="margin-top:12px">지적사항 조치 등록</h2><table class="rtable"><tr><th>항목</th><td>'+escapeText(f.item)+'</td></tr><tr><th>지적일</th><td>'+escapeText(f.foundDate)+'</td></tr><tr><th>지적 내용</th><td>'+escapeText(f.memo)+'</td></tr><tr><th>조치 전</th><td>'+(thumbs(f.before||[],'')||'<span class="muted">사진 없음</span>')+'</td></tr></table></div>'
   +'<div class="card"><div class="field"><label for="f_smrMemo">조치 내용 <span class="req">*</span></label><input id="f_smrMemo" value="'+escapeText(smRs.memo||'')+'" placeholder="예) 통로 박스 정리 완료"></div>'
   +'<div class="field"><label for="f_smrDate">조치일 <span class="req">*</span></label><input id="f_smrDate" type="date" value="'+escapeText(smRs.date||t)+'" min="'+escapeText(f.foundDate)+'" max="'+t+'"></div>'
   +'<div class="field" id="smrPh"><label>조치 후 사진 <span class="req">*</span></label><div class="row" id="smrList">'+thumbs(smRs.photos,'')+phBtns('smrFile','smAddRs(','조치 후 사진')+'</div></div></div>'
@@ -92,6 +124,6 @@ async function smAddRs(src){const inp=$(src),fl=[...((inp&&inp.files)||[])].slic
  const ids=await pendPhotos(fl,async f=>{const x=await readFile(f,PHOTO_SITE);return api('smPhoto',[jid,x])});ids.forEach(id=>{if(PEND[id]&&PEND[id].url)inspPhoto[id]=PEND[id].url});smRs.photos=smRs.photos.concat(ids).slice(0,5);smResolveDraw()}
 async function smResolveNow(){if(smBusy)return;const d={memo:value('smrMemo'),date:value('smrDate'),photos:smRs.photos},miss=[];if(!d.memo)miss.push('f_smrMemo');if(!d.date)miss.push('f_smrDate');if(!d.photos.length)miss.push('smrPh');
  if(miss.length){inspFlag(miss,'빨간 칸을 채워 주세요 (조치 후 사진 필수)');return}if(!await askOk('조치 완료 등록',d.date+' 조치 완료로 등록할까요?','등록'))return;
- smBusy=true;const fid=smRs.f.id;let res=null;
+ smBusy=true;const fid=smRs.f.id,who=smRs.who;let res=null;
  try{await subRun('조치 완료 등록',[pendCount([smRs.photos])&&['조치 후 사진 '+pendCount([smRs.photos])+'장 올리기',set=>pendUpload([smRs.photos],set,inspPhoto)],['조치 결과 저장',async()=>{d.photos=smRs.photos;res=await api('smResolve',[fid,d])}]]);
-  smData=res;smRs=null;smDraw();msg('조치 완료로 등록했습니다.')}catch(e){showErr('조치 완료로 등록하지 못했습니다',e)}finally{smBusy=false}}
+  smRs=null;if(who==='mgr'){mgrFixDraw('')}else{smData=res;smDraw()}msg('조치 완료로 등록했습니다.')}catch(e){showErr('조치 완료로 등록하지 못했습니다',e)}finally{smBusy=false}}
