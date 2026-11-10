@@ -7,11 +7,41 @@ let smenu='dash',svData=null,svFilter='all';
 /* F1.8g 작업허가서 승인 · 순회점검 확인 메뉴 → '현장 확인' 하나로 (예전 이름으로 부르면 현장 확인으로) */
 const SMENU={flyer:'업체 안내문',dash:'대시보드',jobs:'공사 관리',meet:'협의체·합동점검',check:'현장 확인',data:'데이터 관리',principal:'도급인 책임자',permit:'작업허가서 승인',insp:'순회점검 확인',eval:'종료 평가',vendors:'업체 현황',notice:'참조 알림',tpl:'표준양식 관리',staff:'조직도',half:'반기 평가 (오픈지원)'};  // F2.5 half
 const isStaffUI=()=>!!(state&&state.staff);
+/* ---------- F2.6 담당 화면 (인테리어 · 오픈지원) ----------
+ *  마스터 · 안전보건팀 · 담당 2개 = 들어갈 때 고름 (위쪽 [바꾸기]) · 담당 1개 = 바로 · 비어 있으면 인테리어 (지금 화면 그대로)
+ *  인테리어 = 오픈지원 공사 · 업체 · 반기 평가 안 보임 / 오픈지원 = 오픈지원 것만 */
+let sScope='';
+const SC_NAME={INT:'인테리어 (공사)',OPEN:'오픈지원'};
+const sScopes=()=>(state&&state.staff&&state.staff.scopes)||['INT'];
+const sIsOpen=()=>sScope==='OPEN';
+const sIndOk=ind=>(String(ind||'')==='오픈지원')===sIsOpen();
+const sJobsOf=d=>((d&&d.jobs)||[]).filter(j=>(j.kind==='OPEN')===sIsOpen());
+const sView=d=>Object.assign({},d,{jobs:sJobsOf(d),vendors:((d&&d.vendors)||[]).filter(v=>sIndOk(v.industry))});
+function sScopeInit(){const L=sScopes();if(!L.includes(sScope))sScope=L.length===1?L[0]:''}
+function sScopeSet(k){if(!sScopes().includes(k))return;sScope=k;try{localStorage.setItem('sScope',k)}catch(e){}setupSMenu();sgo('dash')}
+/** 위쪽 표시: 지금 화면 + [바꾸기] (고를 수 있는 사람만) */
+function sScopeBar(){let el=$('scopeBar');const on=isStaffUI()&&!!sScope;
+ if(!el){if(!on)return;el=document.createElement('div');el.id='scopeBar';const m=document.querySelector('main.main');if(!m)return;m.insertBefore(el,m.firstChild)}
+ if(!on){el.hidden=true;return}const L=sScopes(),other=L.find(k=>k!==sScope);el.hidden=false;
+ el.innerHTML='<div class="scbar"><span class="scchip">'+escapeText(SC_NAME[sScope])+'</span>'+(other?'<button class="button ghost" type="button" onclick="sScopeSet(\''+other+'\')">↔ '+escapeText(SC_NAME[other].replace(' (공사)',''))+'로 바꾸기</button>':'')+'</div>';
+ if(!$('scopeCss')){const s=document.createElement('style');s.id='scopeCss';s.textContent='.scbar{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:6px 8px 6px 10px;margin:0 0 10px}'
+  +'.scchip{display:inline-block;border:1px solid var(--line);background:#f3f4f6;border-radius:999px;padding:4px 12px;font-size:13px;font-weight:700}.scbar .button{padding:5px 10px;font-size:12.5px;min-height:0}'
+  +'.scpick{display:block;width:100%;text-align:left;border:1px solid var(--line);border-radius:14px;background:#fff;padding:14px;margin-top:10px;font:inherit;color:inherit;cursor:pointer}.scpick.on{border:2px solid var(--main)}.scpick b{display:block;font-size:17px;margin-bottom:3px}';document.head.appendChild(s)}}
+/** 들어갈 화면 고르기 (마스터 · 안전보건팀 · 담당 2개) · 이 기기에서 마지막에 고른 칸을 미리 표시 */
+function sPickHtml(d){let last='';try{last=localStorage.getItem('sScope')||''}catch(e){}if(!sScopes().includes(last))last=sScopes()[0];
+ const act=((d&&d.jobs)||[]).filter(j=>j.status!=='ENDED'),nInt=act.filter(j=>j.kind!=='OPEN').length,nOpen=act.filter(j=>j.kind==='OPEN').length;
+ const box=(k,t,sub,n)=>'<button type="button" class="scpick'+(k===last?' on':'')+'" onclick="sScopeSet(\''+k+'\')"><b>'+t+'</b><span class="muted">'+sub+'</span><div class="muted" style="margin-top:6px">진행 중 '+n+'건'+(k===last?' · 마지막에 본 화면':'')+'</div></button>';
+ return '<div class="card"><h2>어느 화면으로 들어갈까요?</h2><div class="muted">'+escapeText(state.staff.name)+' 님 · '+escapeText(state.staff.roleLabel)+'</div>'
+  +(sScopes().includes('INT')?box('INT','🏗 인테리어 (공사)','매장 공사 · 허가서 · 업체 순회점검 · 종료 평가',nInt):'')
+  +(sScopes().includes('OPEN')?box('OPEN','🏪 오픈지원','오픈 매장 · 도급인 순회점검 · 비상훈련 · 반기 평가',nOpen):'')
+  +'<p class="muted" style="margin:10px 0 0">들어간 뒤에도 위쪽 [바꾸기]로 언제든 바꿀 수 있습니다.</p></div>'}
 const kstToday=()=>new Date(Date.now()+9*3600e3).toISOString().slice(0,10);
 /** 메뉴 보이기 (display 때마다) */
-function setupSMenu(){const on=isStaffUI(),safety=on&&state.staff.role==='SAFETY';
- /* F1.8h 관리(표준양식·직원)는 마스터 계정만 */
- document.querySelectorAll('.smb').forEach(b=>b.classList.toggle('hidden',!on||(b.dataset.safety==='1'&&!safety)||(b.dataset.master==='1'&&!state.isMaster)));
+function setupSMenu(){const on=isStaffUI(),safety=on&&state.staff.role==='SAFETY';if(on)sScopeInit();
+ /* F1.8h 관리(표준양식·직원)는 마스터 계정만 · F2.6 data-scope = 그 담당 화면에서만 (고르기 전에는 숨김) */
+ document.querySelectorAll('.smb').forEach(b=>b.classList.toggle('hidden',!on||(b.dataset.safety==='1'&&!safety)||(b.dataset.master==='1'&&!state.isMaster)||(!!b.dataset.scope&&b.dataset.scope!==sScope)));
+ if(on){SMENU.jobs=sIsOpen()?'오픈 매장 관리':'공사 관리';const jb=$('sm_jobs');if(jb)jb.textContent=sIsOpen()?'🏪 오픈 매장 관리':'🏗 공사 관리'}
+ sScopeBar();
  if(!on)return;['myTab','adminTab','reviewTab','tplTab','jobsTab','noticeTab','staffTab'].forEach(id=>$(id)&&$(id).classList.add('hidden'));
  markSMenu();if(tab==='my'&&!/^MEET-/.test(LINK_REVIEW))setTimeout(()=>sgo(smenu),0)}
 function markSMenu(){if(!isStaffUI())return;document.querySelectorAll('.smb').forEach(b=>b.classList.toggle('active',b.id==='sm_'+smenu));$('pageTitle').textContent=SMENU[smenu]||''}
@@ -22,10 +52,12 @@ function sgo(m){if(m==='permit'||m==='insp')m='check';if(m==='eval')m='jobs';/* 
 /** 알림 숫자 (showBadges에서 호출) */
 /* F1.8h 공사 관리 숫자 = 아직 안 본 알림(배정 대기 업체 · 연장·종료 · 종료 평가) · 알림을 눌러 보면 빠짐 · 참조 알림 숫자 없앰 */
 function sBadges(b){if(!isStaffUI())return;b=b||{};const vd=(b.admin||0)+(b.review||0),ck=(b.permits||0)+(b.insp||0),pa=b.pendingAttend||0;
- const al=typeof sAlertUnread==='function'&&jobData?sAlertUnread(jobData):null,jb=al?al.filter(x=>['nv','end','eval'].includes(x.type)).length:(b.newVendors||[]).length+(b.jobEnd||0)+(b.evalDraft||0);
+ const al=typeof sAlertUnread==='function'&&jobData?sAlertUnread(sScope?sView(jobData):jobData):null,/* F2.6 담당 화면 숫자 */jb=al?al.filter(x=>['nv','end','eval'].includes(x.type)).length:(b.newVendors||[]).length+(b.jobEnd||0)+(b.evalDraft||0);
  setBadge($('sm_jobs'),jb);setBadge($('sm_meet'),pa);setBadge($('sm_check'),ck);setBadge($('sm_vendors'),vd);setBadge($('menuBtn'),jb+pa+ck+vd)}
 /* ---------- 공사 화면 (메뉴별로 같은 공사 목록을 다르게 보여 줌) ---------- */
-function renderJobs(){jobsMode='list';roomId='';clearInterval(roomTimer);const d=jobData;if(!d)return;
+function renderJobs(){jobsMode='list';roomId='';clearInterval(roomTimer);const d0=jobData;if(!d0)return;
+ /* F2.6 화면을 아직 안 골랐으면 고르기 · 고른 담당의 공사 · 업체만 */
+ sScopeInit();if(!sScope){$('jobs').innerHTML=sPickHtml(d0);$('pageTitle').textContent='화면 고르기';return}const d=sView(d0);
  const H={flyer:sFlyer,dash:sDash,jobs:sJobs,meet:sMeet,check:sCheck,data:sData,principal:sPrincipal,permit:sCheck,insp:sCheck,eval:sEval,half:typeof sHalf==='function'?sHalf:sJobs}[smenu]||sJobs;$('jobs').innerHTML=H(d)}
 const sAct=d=>d.jobs.filter(j=>j.status!=='ENDED'),sEnded=d=>d.jobs.filter(j=>j.status==='ENDED');
 const sum=(l,f)=>l.reduce((s,x)=>s+(Number(f(x))||0),0);
@@ -55,7 +87,7 @@ function sWatch(d){const t=kstToday(),rows=[];
  return '<div class="card"><h2>주의가 필요한 공사·업체 '+(rows.length?'<span class="cnt">'+rows.length+'</span>':'')+'</h2>'+(rows.length?'<table class="rtable"><tr><th>공사</th><th>업체</th><th>내용</th></tr>'+rows.slice(0,12).map(r=>'<tr><td>'+escapeText(r[0])+'</td><td>'+escapeText(r[1])+'</td><td class="req">'+escapeText(r[2])+'</td></tr>').join('')+'</table>':'<p class="muted">기준(순회점검·허가서 60% 미만, 미조치 2건 이상, 종료일 경과)에 걸린 곳이 없습니다.</p>')+'</div>'
   +'<div class="card"><h2>업체별 지적 현황</h2>'+(top.length?'<table class="rtable"><tr><th>업체</th><th>지적</th><th>미조치</th><th>공사</th></tr>'+top.map(x=>'<tr><td>'+escapeText(x.company)+'</td><td>'+x.total+'</td><td'+(x.open?' class="req"':'')+'>'+x.open+'</td><td>'+x.jobs+'</td></tr>').join('')+'</table>':'<p class="muted">아직 순회점검 지적사항이 없습니다.</p>')+'</div>'}
 /* 공사 관리 */
-function sJobs(d){const nv=((state&&state.badges&&state.badges.newVendors)||[]);
+function sJobs(d){const nv=((state&&state.badges&&state.badges.newVendors)||[]).filter(v=>sIndOk(v.industry));  // F2.6 담당 화면의 업체만
  return gdRow('sjobs')+'<div class="card"><div class="vh-top"><h2 style="margin:0">공사 관리</h2><button class="button" type="button" onclick="jobForm()">+ 새 공사 만들기</button></div><p class="muted" style="margin-top:6px">공사를 만들고 업체를 배정합니다. 기간 연장·공사 종료도 여기서 합니다.</p></div>'
   +(nv.length?'<div class="card alertcard"><div class="vh-top"><h2 style="margin:0">공사 배정 대기 업체 <span class="cnt">'+nv.length+'</span></h2><button class="button" type="button" onclick="goNewJob('+escapeText(JSON.stringify(nv.map(v=>v.id)))+')">이 업체로 공사 만들기</button></div>'+nv.map(v=>'<div class="muted">· '+escapeText(v.company)+' ('+escapeText(v.industry)+')</div>').join('')+'</div>':'')
   +(d.jobs.map(j=>'<div class="card"><div class="vh-top"><div><h2 style="margin:0">'+escapeText(j.title)+(j.status==='ENDED'?' <span class="pill todo">종료</span>':'')+'</h2><div class="muted">'+escapeText(j.kindLabel)+' · '+sMeta(j)+'</div></div><div class="row"><button class="button ghost" type="button" onclick="jobForm(\''+escapeText(j.id)+'\')">수정</button><button class="button ghost danger" type="button" onclick="delJob(\''+escapeText(j.id)+'\')">삭제</button></div></div>'
@@ -97,7 +129,7 @@ function sEval(d){const act=sAct(d),ended=sEnded(d),soon=act.filter(j=>j.end&&['
 const SV_ST=b=>b.status==='PENDING'?['가입 승인 대기','bad','pending']:b.status==='REJECTED'?['반려','todo','etc']:b.renewAt&&b.submissionStatus!=='APPROVED'?(['SUBMITTED','SAFETY_REVIEW'].includes(b.submissionStatus)?['재평가 검토 중','bad','review']:['재평가 '+(b.submissionStatus==='CORRECTION'?'보완 요청':'작성 중'),'todo','draft']):b.submissionStatus==='APPROVED'&&b.valid&&b.valid.expired?['평가 만료','todo','draft']:({DRAFT:['서류 작성 중','todo','draft'],CORRECTION:['보완 요청','todo','draft'],SUBMITTED:['1차 검토 중','bad','review'],SAFETY_REVIEW:['확인 중','bad','review'],APPROVED:['승인 완료','ok','ok']}[b.submissionStatus||'DRAFT']||[b.submissionStatus,'todo','etc']);
 async function loadVendors(){if(!svData)svData=cacheGet('vendorList',[]);if(svData){seenTab.vendors=1;renderVendors()}try{const x=await fetcher('vendors')('vendorList');svData=x;if(tab==='vendors')renderVendors()}catch(e){}}
 function svSet(f){svFilter=f;renderVendors()}
-function renderVendors(){const L=svData.list,F=[['all','전체'],['pending','가입 대기'],['draft','작성 중'],['review','검토 중'],['ok','승인']],cnt=k=>k==='all'?L.length:L.filter(b=>SV_ST(b)[2]===k).length,list=L.filter(b=>svFilter==='all'||SV_ST(b)[2]===svFilter);
+function renderVendors(){const L=svData.list.filter(b=>!sScope||sIndOk(b.industry)),/* F2.6 담당 화면의 업체만 */F=[['all','전체'],['pending','가입 대기'],['draft','작성 중'],['review','검토 중'],['ok','승인']],cnt=k=>k==='all'?L.length:L.filter(b=>SV_ST(b)[2]===k).length,list=L.filter(b=>svFilter==='all'||SV_ST(b)[2]===svFilter);
  $('vendors').innerHTML=gdRow('vendors')+'<div class="card"><h2 style="margin:0">업체 현황</h2><p class="muted" style="margin-top:6px">가입 승인·서류 검토는 담당자 메일 링크로 처리됩니다. 여기서는 업체 상태와 제출 서류를 확인합니다.</p><div class="seg" role="tablist">'+F.map(([k,l])=>'<button type="button" role="tab" aria-selected="'+(svFilter===k)+'" class="'+(svFilter===k?'on':'')+'" onclick="svSet(\''+k+'\')">'+l+' '+cnt(k)+'</button>').join('')+'</div></div>'
   +'<div class="card">'+(list.map(b=>{const st=SV_ST(b),e=b.contractEval,l=b.lastEval;
    return '<details class="svitem"><summary><div><b>'+escapeText(b.company)+'</b> <span class="pill '+st[1]+'">'+escapeText(st[0])+'</span><div class="muted">'+escapeText(b.industry)+' · 공사 '+b.jobs+'건'+(l?' · 지난 종료 평가 '+escapeText(l.grade)+'등급':'')+'</div></div></summary>'

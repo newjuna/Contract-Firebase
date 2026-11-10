@@ -70,7 +70,7 @@ let fx={p:'all',from:'',to:''};const FX_PER=5;
 const fxShift=(t,n)=>new Date(Date.parse(t+'T00:00:00Z')-n*86400000).toISOString().slice(0,10);
 /* F1.8g 업체 메인 · 도급인 메인 공용 (도급인 = 전체 공사 · 줄마다 업체명 · 조치 완료는 [보기]) */
 const fxStaff=()=>typeof isStaffUI==='function'&&isStaffUI();
-const fxSrc=()=>fxStaff()?{today:kstToday(),jobs:(jobData&&jobData.jobs)||[]}:{today:(vjobs&&vjobs.today)||'',jobs:(vjobs&&vjobs.jobs)||[]};
+const fxSrc=()=>fxStaff()?{today:kstToday(),jobs:(typeof sJobsOf==='function'?sJobsOf(jobData):(jobData&&jobData.jobs))||[]/* F2.6 담당 화면의 공사만 */}:{today:(vjobs&&vjobs.today)||'',jobs:(vjobs&&vjobs.jobs)||[]};
 function fxList(){const d=fxSrc(),st=fxStaff(),multi=st||d.jobs.length>1,all=[];d.jobs.forEach(j=>(j.findings||[]).forEach(f=>all.push(Object.assign({jobId:j.id,job:j.title,store:j.storeName},f))));
  const L=all.filter(f=>(!fx.from||f.foundDate>=fx.from)&&(!fx.to||f.foundDate<=fx.to)).sort((a,b)=>((a.status==='DONE')-(b.status==='DONE'))||(a.foundDate<b.foundDate?1:a.foundDate>b.foundDate?-1:0));return {all,L,multi,st,today:d.today}}
 function fxRow(f,multi,st,t){const open=f.status!=='DONE',age=open&&t?dayDiff(f.foundDate,t):0,lab=escapeText(mdw(f.foundDate)+' '+(f.memo||f.item));
