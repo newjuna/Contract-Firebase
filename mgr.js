@@ -12,6 +12,7 @@ const mgrHM=t=>{try{if(!t)return '';const d=new Date(new Date(t).getTime()+9*360
 function mgrRoute(){if(!state)return false;
  if(MGR_LINK()){renderMgrJoin();return true}
  if(typeof SM_LINK==='function'&&SM_LINK()){renderSmJoin();return true}  // F2.3 현장관리자 지정 QR
+ if(typeof DRL_LINK==='function'&&DRL_LINK()){renderDrillIn();return true}  // F2.4 비상훈련 참석 QR
  if(state.company||state.staff||state.mode==='STAFF')return false;
  /* F2.3 인력관리자이면서 현장관리자이기도 하면 위쪽 [화면 바꾸기]로 오감 (기본 = 현장관리자) */
  if(state.sm&&(!state.mgr||roleView!=='mgr')&&typeof renderSmHome==='function'){renderSmHome();return true}
