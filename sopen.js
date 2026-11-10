@@ -8,8 +8,10 @@ async function openOpen(jobId,tab){try{opData=await call('openStaffPack',jobId)}
 function opBack(){clearInterval(opTimer);opTimer=null;opData=null;opIns=null;opDrill='';jobsMode='list';renderJobs()}
 function opDraw(){clearInterval(opTimer);opTimer=null;const d=opData,el=$('jobs');if(!el||!d)return;if(opIns)return opInsDraw();if(opDrill)return opDrillDraw();
  const j=d.job,seg=(k,l)=>'<button type="button" class="'+(opTab===k?'on':'')+'" aria-pressed="'+(opTab===k)+'" onclick="opTab=\''+k+'\';opDraw()">'+l+'</button>';
+ if(opTab==='agg'){el.innerHTML='<div class="card"><button class="button ghost" type="button" onclick="opBack()">← 돌아가기</button><h2 style="margin-top:12px">'+escapeText(j.title)+' · 도급인 업무</h2><div class="muted">오픈지원 · 다이소 '+escapeText(j.storeName)+' · '+escapeText(j.startDate)+' ~ '+escapeText(j.endDate||'')+'</div>'
+  +'<div class="seg" role="tablist" style="margin-top:10px">'+seg('insp','① 순회점검')+seg('drill','② 비상훈련')+seg('agg','③ 집계')+'</div></div><div id="opAggBox"><div class="card"><p class="desc">계산하는 중입니다…</p></div></div>';if(typeof opAggLoad==='function')opAggLoad();return}  // F2.5
  el.innerHTML='<div class="card"><button class="button ghost" type="button" onclick="opBack()">← 돌아가기</button><h2 style="margin-top:12px">'+escapeText(j.title)+' · 도급인 업무</h2><div class="muted">오픈지원 · 다이소 '+escapeText(j.storeName)+' · '+escapeText(j.startDate)+' ~ '+escapeText(j.endDate||'')+'</div>'
-  +'<div class="seg" role="tablist" style="margin-top:10px">'+seg('insp','① 순회점검')+seg('drill','② 비상훈련')+'</div></div>'+(opTab==='insp'?opInspList():opDrillList());
+  +'<div class="seg" role="tablist" style="margin-top:10px">'+seg('insp','① 순회점검')+seg('drill','② 비상훈련')+seg('agg','③ 집계')+'</div></div>'+(opTab==='insp'?opInspList():opDrillList());
  loadInspPhotos(j.id)}
 /* ---------- ① 순회점검 ---------- */
 function opInspList(){const d=opData;if(!d.vendors.length)return '<div class="card"><p class="muted">배정된 업체가 없습니다.</p></div>';

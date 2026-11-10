@@ -5,7 +5,7 @@
  *  서버: Code.gs myJobs(stats·end) · vendorJob */
 let vmenu='dash',vSel='';
 /* F1.8f 비상대피훈련 메뉴 없앰 (훈련·교육 사진은 순회점검 안에서 올림) */
-const VMENU={dash:'대시보드',today:'오늘 현장 업무',edu:'신규교육 현황',meet:'협의체 및 합동점검 참여',docs:'계약 서류',mgr:'인력관리자 관리'};  // F2.2 mgr = 오픈지원 업체만
+const VMENU={dash:'대시보드',today:'오늘 현장 업무',edu:'신규교육 현황',meet:'협의체 및 합동점검 참여',docs:'계약 서류',mgr:'인력관리자 관리',half:'반기 평가 결과'};  // F2.2 mgr = 오픈지원 업체만
 /* F1.8a 작업자 등록·작업허가서·순회점검은 '오늘 현장 업무' 한 화면으로 합침 · 예전 이름으로 부르면 그 칸으로 바로 이동 */
 const VJUMP={workers:'regCard',permit:'permitCard',insp:'inspCard'};
 /* v5.17 재평가 중(이전 승인 있음)이어도 수행 메뉴는 그대로 사용 */
@@ -30,7 +30,7 @@ function vgo(m,id){if(VJUMP[m]){window.__vjump=VJUMP[m];m='today'}if(!id&&VJOB_M
  if(m==='dash'){vjob=null;loadMyJobs(true);return}/* v5.20 가지고 있는 목록으로 바로 그리고, 20초 지났을 때만 뒤에서 새로 받음 */if(m==='docs'){renderVDocs();return}
  if(m==='mgr'){vjob=null;if(typeof renderVMgr==='function')renderVMgr();return}/* F2.2 인력관리자 관리 */vEnsureJob()}
 /** 승인 후 화면 시작 (renderMy에서 호출) */
-function vStart(){markVMenu();if(vmenu==='meet')return renderVMeet();if(vmenu==='docs')return renderVDocs();if(vmenu==='mgr'&&typeof renderVMgr==='function'){vjob=null;return renderVMgr()}if(vmenu==='drill')vmenu='dash';if(vmenu!=='dash'&&vjob)return renderVJob();loadMyJobs(true)/* v5.18 20초 안에 받은 목록이면 다시 받지 않음 */}
+function vStart(){markVMenu();if(vmenu==='meet')return renderVMeet();if(vmenu==='docs')return renderVDocs();if(vmenu==='mgr'&&typeof renderVMgr==='function'){vjob=null;return renderVMgr()}if(vmenu==='half'&&typeof vHalfOpen==='function')return vHalfOpen();if(vmenu==='drill')vmenu='dash';if(vmenu!=='dash'&&vjob)return renderVJob();loadMyJobs(true)/* v5.18 20초 안에 받은 목록이면 다시 받지 않음 */}
 async function vEnsureJob(){const el=$('execArea');if(!el)return;
  if(!vjobs){el.innerHTML='<div class="card"><p class="desc">공사를 불러오는 중입니다…</p></div>';try{vjobs=await callQuiet('myJobs')}catch(e){el.innerHTML='<div class="card"><p class="desc">'+escapeText(e.message||'공사를 불러오지 못했습니다.')+'</p></div>';return}}
  const jobs=vjobs.jobs;if(!jobs.length){el.innerHTML='<div class="card"><h2>'+escapeText(VMENU[vmenu])+'</h2><div class="note">아직 배정된 공사가 없습니다.<br>도급인 담당자가 공사에 업체를 배정하면 여기에서 진행할 수 있습니다.</div></div>';return}
@@ -118,6 +118,7 @@ function renderDash(){const el=$('execArea');if(!el||!vjobs)return;if(!vDashTime
   +(rn?'<button class="vtodo" type="button" onclick="vgo(\'docs\')"><span>신규 작성 (다음 계약 준비)</span><span class="req">'+escapeText(rn)+' ›</span></button>':cv&&(cv.expired||cv.days<=30)?validNote(cb)+'<button class="vtodo" type="button" onclick="openNewContract()"><span>신규 작성 (다음 계약 준비)</span><span class="req">'+(cv.expired?'만료':'D-'+cv.days)+' ›</span></button>':'')+'</div>'
   /* F2.2 오픈지원: 인력관리자가 배정 안 된 진행 중 오픈 매장 → [인력관리자 관리]로 */
   +(isOpenVendor()&&act.some(j=>Array.isArray(j.mgrs)&&!j.mgrs.length)?'<button class="vtodo" type="button" onclick="vgo(\'mgr\')"><span>👷 인력관리자 배정이 안 된 오픈 매장</span><span class="req">'+act.filter(j=>Array.isArray(j.mgrs)&&!j.mgrs.length).length+'건 ›</span></button>':'')
+  +(isOpenVendor()&&typeof vHalfOpen==='function'?'<button class="vtodo" type="button" onclick="vHalfOpen()"><span>📊 반기 평가 결과 (6월 · 12월)</span><span>보기 ›</span></button>':'')  /* F2.5 */
   +meetAlertHtml(d)+dayStartHtml(act)+fixCardHtml()  // F1.8f 메인: 미팅 알림 → 큰 버튼 → 지적사항 조치
   +(d.jobs.length?'<div class="card"><h2>공사 일정</h2>'+act.concat(ended).map(j=>ganttRow(j,t)).join('')+'</div>'
   +act.map(j=>{const S=j.stats||{},wd=S.workDays||0;return '<div class="card"><div class="vh-top"><div><h2 style="margin:0">'+escapeText(j.title)+'</h2><div class="muted">'+escapeText(j.storeName)+' · 도급인 '+escapeText(j.hostName)+' · 작업자 '+j.workers+'명</div></div></div>'
