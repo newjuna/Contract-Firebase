@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.10.27 F2.3a';
+  const VERSION = '26.10.28 F2.4';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   /* F2.1 업종 '오픈지원' 추가 (매장 오픈 인력 · 인력사무소형) · 인테리어(마감) = 지금까지의 공사 흐름 그대로 */
   const CFG = {
@@ -1025,7 +1025,7 @@
   API.deleteJob = async (a, jobId) => {
     const s = await staffOnly(a), id = tidy(jobId, 40), js = await db.collection('JOBS').doc(id).get(), j = js.exists ? js.data() : null;
     if (!j || !canSeeJob(a, s, j)) fail('삭제할 수 없는 공사입니다.');
-    const COLS = ['JOB_VENDORS', 'WORKERS', 'CREW', 'PERMITS', 'INSPECTIONS', 'FINDINGS', 'MEETINGS', 'ATTEND', 'JOB_EVALS', 'JOB_MGRS'], lists = await Promise.all(COLS.map((n) => db.collection(n).where('jobId', '==', id).get().catch((e) => { if (n === 'JOB_MGRS') return { docs: [] }; throw e; })));  // F2.2 JOB_MGRS (규칙을 아직 안 올렸으면 건너뜀)
+    const COLS = ['JOB_VENDORS', 'WORKERS', 'CREW', 'PERMITS', 'INSPECTIONS', 'FINDINGS', 'MEETINGS', 'ATTEND', 'JOB_EVALS', 'JOB_MGRS', 'OPEN_DRILLS', 'DRILL_ATTEND'], lists = await Promise.all(COLS.map((n) => db.collection(n).where('jobId', '==', id).get().catch((e) => { if (['JOB_MGRS', 'OPEN_DRILLS', 'DRILL_ATTEND'].includes(n)) return { docs: [] }; throw e; })));  // F2.4 비상훈련  // F2.2 JOB_MGRS (규칙을 아직 안 올렸으면 건너뜀)
     const b = db.batch(), cnt = {};
     COLS.forEach((n, i) => { cnt[n] = lists[i].docs.length; lists[i].docs.forEach((d) => b.delete(d.ref)); });
     lists[COLS.indexOf('MEETINGS')].docs.forEach((d) => { if (d.data().token) b.delete(db.collection('MEET_LINKS').doc(d.data().token)); });  // 참석 QR도 무효
@@ -1111,8 +1111,10 @@
       /* F2.3 오픈지원: 이 오픈 매장 현장관리자 · TBM 날짜 (계약담당자 화면에서 보기) · 규칙을 아직 안 올렸으면 빈 목록 */
       ...((isOpenInd(b.industry) || j.kind === 'OPEN') ? await Promise.all([
         db.collection('SITE_MGRS').where('vendorUid', '==', a.uid).get().then(docs).then((l) => l.filter((x) => x.jobId === j.id && x.companyId === b.id)).catch(() => []),
-        db.collection('TBMS').where('vendorUid', '==', a.uid).get().then(docs).then((l) => l.filter((x) => x.jobId === j.id && x.companyId === b.id)).catch(() => [])])
-        .then(([sm, tb]) => ({ siteMgrs: sm.sort((p, q) => String(q.designatedAt).localeCompare(String(p.designatedAt))).map(smView), tbms: tb.sort((p, q) => String(q.date).localeCompare(String(p.date))).map((x) => ({ date: x.date, n: (x.photos || []).length, by: x.by || '', photos: x.photos || [] })) })) : {}),
+        db.collection('TBMS').where('vendorUid', '==', a.uid).get().then(docs).then((l) => l.filter((x) => x.jobId === j.id && x.companyId === b.id)).catch(() => []),
+        db.collection('OPEN_DRILLS').where('vendorUids', 'array-contains', a.uid).get().then(docs).then((l) => l.filter((x) => x.jobId === j.id)).catch(() => []),  // F2.4 도급인 비상훈련
+        db.collection('DRILL_ATTEND').where('vendorUid', '==', a.uid).get().then(docs).then((l) => l.filter((x) => x.jobId === j.id)).catch(() => [])])
+        .then(([sm, tb, dr, da]) => ({ openDrills: dr.sort((p, q) => String(p.createdAt).localeCompare(String(q.createdAt))).map((d) => ({ label: d.label, date: d.date, done: !!d.doneAt, n: da.filter((x) => x.drillId === d.id).length })), siteMgrs: sm.sort((p, q) => String(q.designatedAt).localeCompare(String(p.designatedAt))).map(smView), tbms: tb.sort((p, q) => String(q.date).localeCompare(String(p.date))).map((x) => ({ date: x.date, n: (x.photos || []).length, by: x.by || '', photos: x.photos || [] })) })) : {}),
       todayCrew: tc ? day(tc) : null, history: cr.slice(0, 30).map(day), siteManager: tc ? tc.siteManager : sm0,
       // F1.8a 오늘 인원 기본 체크: 오늘 저장한 인원 → 없으면 가장 최근 날 인원 → 없으면 등록된 전원
       crewDefault: ((tc || cr[0]) ? ((tc || cr[0]).workers || []).map((w) => w.id) : ws.map((w) => w.id)).filter((id) => ws.some((w) => w.id === id)),
@@ -1281,6 +1283,92 @@
   API.smResolve = async (a, findingId, d) => relay('smResolve', { findingId: tidy(findingId, 40), d: { memo: tidy(d?.memo, 500), date: tidy(d?.date, 10), photos: photoIds(d?.photos, 5) } });
   /** 내가 현장관리자인 오픈 매장 (portalData) · 보안 규칙을 아직 안 올렸으면 빈 목록 */
   const mySms = (a) => db.collection('SITE_MGRS').where('email', '==', a.email).get().then(docs).catch(() => []);
+  /* ---------- F2.4 오픈지원 도급인 업무: 순회점검 작성 (매일) · 비상훈련 주최 (사진 · 근로자 QR 참석) ----------
+   *  순회점검 저장 · 지적사항 만들기 = 중계 서버 (업체 계정 기록으로 남김 → 현장관리자 · 계약담당자 화면에 조치 요청)
+   *  비상훈련 = OPEN_DRILLS (도급인) · 참석 = DRILL_ATTEND (근로자 QR은 중계 서버 · 이름만 추가는 도급인) */
+  const OPEN_DRILL_TYPES = { EVAC: '비상대피 훈련', FIRE: '소화기 사용 훈련' };
+  const drlLink = (token) => location.origin + location.pathname + '?review=DRL-' + token;
+  const badN = (it) => Object.values(it || {}).filter((v) => v === 'BAD').length;
+  /** [도급인] 오픈 매장 도급인 업무 화면 (업체별 점검표 · 오늘 TBM · 현장관리자 · 미조치 · 비상훈련) */
+  API.openStaffPack = async (a, jobId) => {
+    const s = await staffOnly(a), j = await staffJob(a, s, jobId), t = today();
+    const jvs = docs(await db.collection('JOB_VENDORS').where('jobId', '==', j.id).get());
+    const [ins, fds, tbs, sms, drs, ats] = await Promise.all(['INSPECTIONS', 'FINDINGS', 'TBMS', 'SITE_MGRS', 'OPEN_DRILLS', 'DRILL_ATTEND'].map((c) => db.collection(c).where('jobId', '==', j.id).get().then(docs).catch(() => [])));
+    const vendors = await Promise.all(jvs.map(async (v) => {
+      const fm = docs(await db.collection('CONTRACT_FORMS').where('companyId', '==', v.companyId).get().catch(() => ({ docs: [] }))).filter((x) => x.code === 'C02').sort((p, q) => String(q.updatedAt).localeCompare(String(p.updatedAt)))[0];
+      let qs = planRisks(parse(fm && fm.json, {}) || {}).filter((r) => OPEN_TRADES.includes(r.t)).map((r) => r.q);
+      if (!qs.length) qs = RISK_ALL.filter((r) => OPEN_TRADES.includes(r.t)).map((r) => r.q);  // 계획서에 고른 위험요인이 없으면 오픈지원 공종 전체
+      const mine = ins.filter((x) => x.companyId === v.companyId).sort((p, q) => String(q.date).localeCompare(String(p.date))), ti = mine.find((x) => x.date === t);
+      const tb = tbs.filter((x) => x.companyId === v.companyId), sm = sms.find((x) => x.companyId === v.companyId && x.status === 'ACTIVE');
+      return { companyId: v.companyId, company: v.company, items: INSP_BASE.concat(qs),
+        todayInsp: ti ? { id: ti.id, bad: badN(ti.items), by: ti.submittedName || '' } : null,
+        recent: mine.slice(0, 10).map((x) => ({ id: x.id, date: x.date, bad: badN(x.items), by: x.submittedName || '', byStaff: x.byStaff === 'Y' })),
+        tbm: ((tb.find((x) => x.date === t) || {}).photos) || [], tbmDays: tb.length, siteMgr: sm ? sm.name : '',
+        open: fds.filter((f) => f.companyId === v.companyId && f.status !== 'DONE').sort((p, q) => String(q.foundDate).localeCompare(String(p.foundDate))).map((f) => ({ id: f.id, no: Number(f.no), item: f.item, memo: f.memo, foundDate: f.foundDate, before: f.before || [] })) };
+    }));
+    return { today: t, me: s.name, job: { id: j.id, title: j.title, storeName: j.storeName, startDate: j.startDate, endDate: j.endDate, status: j.status, kind: j.kind }, vendors, types: OPEN_DRILL_TYPES,
+      drills: drs.sort((p, q) => String(q.createdAt).localeCompare(String(p.createdAt))).map((d) => ({ id: d.id, type: d.type, label: d.label, date: d.date, open: d.open === 'Y', done: !!d.doneAt, doneAt: d.doneAt || '', photos: d.photos || [], memo: d.memo || '', hostName: d.hostName || '', link: drlLink(d.token),
+        attendees: ats.filter((x) => x.drillId === d.id).sort((p, q) => String(p.at).localeCompare(String(q.at))).map((x) => ({ id: x.id, name: x.name, company: x.company, role: x.role, method: x.method, at: x.at })) })) };
+  };
+  /** [도급인] 오늘 순회점검 저장 (중계 서버가 일지 · 지적사항을 업체 기록으로 만듦) */
+  API.staffOpenInsp = async (a, jobId, companyId, d) => {
+    await staffOnly(a);
+    const items = {}; Object.keys(d?.items || {}).slice(0, 40).forEach((k) => { const v = String(d.items[k]); if (['OK', 'BAD', 'NA'].includes(v)) items[String(Number(k))] = v; });
+    const notes = {}; Object.keys(d?.notes || {}).slice(0, 40).forEach((k) => { const n = d.notes[k] || {}; notes[String(Number(k))] = { memo: tidy(n.memo, 500), photos: photoIds(n.photos, 5) }; });
+    await relay('staffInsp', { jobId: tidy(jobId, 40), companyId: tidy(companyId, 40), items, notes, labels: (Array.isArray(d?.labels) ? d.labels : []).slice(0, 40).map((x) => tidy(x, 200)), photos: photoIds(d?.photos, 5), memo: tidy(d?.memo, 300) });
+    return API.openStaffPack(a, jobId);
+  };
+  async function openDrillOf(a, id) {
+    const s = await staffOnly(a), ds = await db.collection('OPEN_DRILLS').doc(tidy(id, 40)).get().catch(() => null), d = ds && ds.exists ? ds.data() : null;
+    if (!d) fail('비상훈련 기록을 찾을 수 없습니다.'); const j = await staffJob(a, s, d.jobId); return { s, d, j };
+  }
+  /** [도급인] 비상훈련 시작 (참석 QR 열림) · 같은 날 같은 훈련이 열려 있으면 그대로 */
+  API.drillOpen = async (a, jobId, type) => {
+    const s = await staffOnly(a), j = await staffJob(a, s, jobId), t = today();
+    if (j.status === 'ENDED') fail('끝난 오픈 매장입니다.'); if (!OPEN_DRILL_TYPES[type]) fail('훈련 종류를 골라 주세요.');
+    const cur = docs(await db.collection('OPEN_DRILLS').where('jobId', '==', j.id).get().catch(() => ({ docs: [] }))).find((x) => x.type === type && x.date === t && x.open === 'Y');
+    if (!cur) {
+      const id = 'DR-' + rand8(), token = newToken();
+      await db.collection('OPEN_DRILLS').doc(id).set({ id, jobId: j.id, type, label: OPEN_DRILL_TYPES[type], date: t, token, open: 'Y', photos: [], memo: '', store: j.storeName || '', vendorUids: j.vendorUids || [],
+        hostEmail: a.email, hostName: s.name, createdAt: now(), doneAt: '', doneBy: '' });
+      audit(a, '', 'DRILL_OPEN', j.id + ' ' + type);
+    }
+    return API.openStaffPack(a, jobId);
+  };
+  /** [도급인] 훈련 사진 · 메모 저장 */
+  API.drillSave = async (a, id, photos, memo) => {
+    const { d, j } = await openDrillOf(a, id);
+    await db.collection('OPEN_DRILLS').doc(d.id).update({ photos: photoIds(photos, 10), memo: tidy(memo, 300) });
+    return API.openStaffPack(a, j.id);
+  };
+  /** [도급인] 휴대폰·Google 계정이 없는 근로자 → 이름만 참석 기록 */
+  API.drillAddName = async (a, id, name, companyId) => {
+    const { d, j } = await openDrillOf(a, id), nm = tidy(name, 30); if (!nm) fail('이름을 입력해 주세요.');
+    const jvs = docs(await db.collection('JOB_VENDORS').where('jobId', '==', j.id).get()), v = jvs.find((x) => x.companyId === companyId) || jvs[0];
+    if (!v) fail('이 오픈 매장에 배정된 업체가 없습니다.');
+    const aid = d.id + '_S' + rand8();
+    await db.collection('DRILL_ATTEND').doc(aid).set({ id: aid, drillId: d.id, jobId: j.id, name: nm, companyId: v.companyId, company: v.company, role: '근로자 (이름만)', method: 'STAFF', uid: '', email: '', vendorUid: v.vendorUid || '', at: now(), by: a.email });
+    return API.openStaffPack(a, j.id);
+  };
+  /** [도급인] 잘못 들어간 참석 기록 빼기 */
+  API.drillDelAtt = async (a, attId) => {
+    const s = await staffOnly(a), x = await db.collection('DRILL_ATTEND').doc(tidy(attId, 60)).get().catch(() => null); if (!x || !x.exists) fail('참석 기록을 찾을 수 없습니다.');
+    const j = await staffJob(a, s, x.data().jobId); await db.collection('DRILL_ATTEND').doc(x.id).delete(); audit(a, '', 'DRILL_ATT_DEL', x.id);
+    return API.openStaffPack(a, j.id);
+  };
+  /** [도급인] 훈련 마치기 (사진 1장 · 참석 1명 이상) / 다시 열기 */
+  API.drillClose = async (a, id, close) => {
+    const { s, d, j } = await openDrillOf(a, id);
+    if (close) {
+      const n = docs(await db.collection('DRILL_ATTEND').where('jobId', '==', j.id).get()).filter((x) => x.drillId === d.id).length, bad = [];
+      if (!(d.photos || []).length) bad.push('훈련 사진'); if (!n) bad.push('참석자 (QR 또는 이름 추가)');
+      if (bad.length) fail('훈련을 마치기 전에 확인해 주세요:\n- ' + bad.join('\n- '));
+      await db.collection('OPEN_DRILLS').doc(d.id).update({ open: 'N', doneAt: now(), doneBy: s.name }); audit(a, '', 'DRILL_DONE', d.id + ' ' + n + '명');
+    } else await db.collection('OPEN_DRILLS').doc(d.id).update({ open: 'Y', doneAt: '', doneBy: '' });
+    return API.openStaffPack(a, j.id);
+  };
+  /** [근로자] 비상훈련 QR 참석 (등록된 근로자 · 현장관리자 · 인력관리자 = 바로 / 아니면 이름만) */
+  API.drillCheckIn = async (a, token, name) => relay('drillIn', { token: String(token || '').toLowerCase(), name: tidy(name, 30) }, !name);
   /** [업체] QR 새로 만들기 (링크가 외부로 퍼졌을 때) — 이전 QR은 바로 사용 불가 */
   API.renewWorkerQr = async (a, jobId) => {
     const b = await execVendor(a), { jv, j } = await vendorJobOf(a, b, jobId, true);
