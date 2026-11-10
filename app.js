@@ -61,7 +61,7 @@ function switchTab(which){tab=which;toggleMenu(false);stopScan();if($(which+'Tab
 /* F1.9t 홈 화면 앱(PWA): 서비스 워커 등록 (저장 안 함 · 홈 화면에 추가할 수 있게만) */
 if('serviceWorker' in navigator&&location.protocol==='https:')window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 // ★ 화면 버전: 여기 한 줄만 고침 (GitHub만 올리면 로그인 화면·앱 화면·메뉴에 모두 반영, Code.gs 수정 불필요)
-const UI_VERSION='26.10.30 F2.8a';
+const UI_VERSION='26.10.30 F2.9';
 /* F1.8o 전화번호 · 사업자번호: 숫자만 쳐도 '-' 자동 (서버는 원래 숫자만 골라 씀) */
 function fmtTel(v){const d=String(v||'').replace(/\D/g,'').slice(0,11);if(d.startsWith('02'))return d.length<3?d:d.length<6?d.slice(0,2)+'-'+d.slice(2):d.length<10?d.slice(0,2)+'-'+d.slice(2,5)+'-'+d.slice(5):d.slice(0,2)+'-'+d.slice(2,6)+'-'+d.slice(6,10);
  return d.length<4?d:d.length<8?d.slice(0,3)+'-'+d.slice(3):d.length<11?d.slice(0,3)+'-'+d.slice(3,6)+'-'+d.slice(6):d.slice(0,3)+'-'+d.slice(3,7)+'-'+d.slice(7)}
@@ -159,7 +159,7 @@ async function uploadTpl(code){const name=(templateList.find(t=>t.code===code)||
 /** F1.8z 사업자 등록 신청서 (처음 신청 · 승인 대기 중 고치기 공용) · P = 미리 채울 값 */
 let regEdit=false;
 function regFormHtml(P,edit){const T=P||{};  /* F1.8z 테스트용 미리 채우기 값 없앰 (직접 작성) */
- return gdRow('regForm')+'<form onsubmit="register(event)"><div class="split">'+input('company','업체명',T.company,'text',false,'예: (주)○○인테리어')+input('regNo','사업자등록번호 (10자리)',T.regNo?fmtBiz(T.regNo):'','tel',false,'숫자 10자리 (- 자동)')+input('representative','대표자 성명',T.representative,'text',false,'예: 홍길동')+input('address','사업장 주소',T.address,'text',false,'예: 서울시 ○○구 ○○로 12')+input('contact','현장대리인 성명 (업체 소장)',T.contact,'text',false,'예: 김소장 (현장을 맡는 업체 소장)')+input('phone','현장대리인 연락처',T.phone?fmtTel(T.phone):'','tel',false,'숫자만 입력 (- 자동)')+'</div>'
+ return gdRow('regForm')+'<form onsubmit="register(event)"><div class="split">'+input('company','업체명',T.company,'text',false,'예: (주)○○인테리어')+input('regNo','사업자등록번호 (10자리)',T.regNo?fmtBiz(T.regNo):'','tel',false,'숫자 10자리 (- 자동)')+input('representative','대표자 성명',T.representative,'text',false,'예: 홍길동')+input('address','사업장 주소',T.address,'text',false,'예: 서울시 ○○구 ○○로 12')+input('contact','현장대리인 성명 (현장 소장 또는 관리자 등)',T.contact,'text',false,'예: 김소장 (현장을 맡는 업체 소장)')+input('phone','현장대리인 연락처',T.phone?fmtTel(T.phone):'','tel',false,'숫자만 입력 (- 자동)')+'</div>'
   +input('approverEmail','본사 승인 담당자 이메일 (다이소 담당자에게 받은 주소)',T.approverEmail||'','email',false,'예: hong.gildong@daiso.co.kr')
   +'<div class="field"><label for="f_industry">도급 업종</label><select id="f_industry"><option value="">업종 선택</option>'+state.industries.map(x=>'<option '+(x===T.industry?'selected':'')+'>'+escapeText(x)+'</option>').join('')+'</select></div>'
   +'<div class="field"><label for="cert">사업자등록증 첨부 <span class="muted">(선택 · PDF·JPG·PNG, 최대 5MB · 휴대폰 촬영 사진 가능)</span>'+(edit?' — <span class="muted">바꿀 때만 고르세요 (안 고르면 기존 파일 그대로)</span>':'')+'</label><input type="file" id="cert" accept=".pdf,.jpg,.jpeg,.png"></div>'
@@ -244,7 +244,7 @@ async function accCertUp(id){const inp=$(id),fl=[...((inp&&inp.files)||[])].slic
  popup('산재 확인서 제출 완료',fl.length+'건을 올렸습니다.'+(ch?'\n계약 전 평가 12번이 '+(LV[ch.from]||'-')+' → '+LV[ch.to]+'(으)로 자동 반영되었습니다.':'\n평가에 자동 반영됩니다.'),'확인')}
 /** v5.17 신규 작성: 업체 기본 정보(사업자 정보) 확인·수정 카드. 업체명·사업자번호는 계정 기준이라 고정 */
 function bizInfoCard(b,dis){const fresh=b.infoFresh,blank=b.renewMode==='NEW'&&!fresh,v=k=>blank?'':escapeText(b[k]||''),ph=k=>blank&&b[k]?' placeholder="이전: '+escapeText(b[k])+'"':'';
- const F=[['bRep','representative','대표자'],['bAddr','address','사업장 주소'],['bContact','contact','현장대리인 (업체 소장)'],['bPhone','phone','현장대리인 연락처']];
+ const F=[['bRep','representative','대표자'],['bAddr','address','사업장 주소'],['bContact','contact','현장대리인 (현장 소장 또는 관리자 등)'],['bPhone','phone','현장대리인 연락처']];
  return '<div class="card" id="bizCard"><h2>⓪ 사업자 정보 '+(fresh&&b.infoAt&&String(b.infoAt)>=String(b.renewAt)?'<span class="pill ok">✔ 확인 완료</span>':b.renewMode==='NEW'?'<span class="pill todo">입력 필요</span>':'<span class="pill lock">이전 정보</span>')+'</h2>'
   +'<p class="muted">업체명 <b>'+escapeText(b.company)+'</b> · 사업자번호 <b>'+escapeText(b.regNo)+'</b> (변경 불가 · 사업자가 바뀌면 새로 가입해 주세요)</p>'
   +'<div class="formgrid">'+F.map(([id,k,l])=>'<div class="lb"><label for="f_'+id+'">'+l+'<span class="req">*</span></label></div><div class="vl"><input id="f_'+id+'" type="'+(k==='phone'?'tel':'text')+'" value="'+v(k)+'"'+ph(k)+(dis?' disabled':'')+'></div>').join('')
@@ -394,11 +394,12 @@ function jobForm(id,preIds){jobsMode='form';const d=jobData,j=id?d.jobs.find(x=>
   +(v.expired?' <span class="pill todo">계약 전 평가 만료 ('+escapeText(v.valid.until)+')</span>'+(lock?'<span class="muted"> · 업체가 서류를 다시 제출해 승인받으면 배정 가능</span>':''):v.valid&&v.valid.days<=30?' <span class="pill todo">평가 유효 D-'+v.valid.days+'</span>':'')
   +(v.renewing?' <span class="pill lock">재평가 '+escapeText({DRAFT:'작성 중',CORRECTION:'보완 중',SUBMITTED:'검토 중',SAFETY_REVIEW:'검토 중'}[v.renewStatus]||'진행 중')+'</span>':'')+lastEvalHtml(v)+preEvalHtml(v)+(j&&j.vendors.some(x=>x.companyId===v.id)?' <span class="muted">(배정됨)</span>':(preIds||[]).includes(v.id)?' <span class="pill ok">새 업체</span>':'')+'</label>'}).join('')||'<p class="muted">배정할 수 있는 업체가 없습니다.</p>')
  /* F1.8k 위임장은 손으로 적지 않음 → 공사 기간으로 자동 (협의체 · 합동점검 2장) */
- +'<div class="line"></div><h2 style="font-size:15px">위임장 (자동)</h2><p class="desc">'+escapeText(principalName('ceo',1))+' → <b>'+escapeText(principalName('delegate'))+'</b> · 위임 기간 = 공사 시작일 ~ 종료일 (연장하면 자동으로 늘어남)<br>저장한 뒤 공사 카드의 [위임장]에서 볼 수 있습니다.</p>'
+ +'<div class="line"></div><h2 style="font-size:15px">위임장 (자동)</h2><p class="desc">'+escapeText(principalName('ceo',1))+' → <b id="jDelegName">'+escapeText(principalName(delegKey((j&&j.kind==='OPEN')||(!j&&typeof sIsOpen==='function'&&sIsOpen()))))+'</b> · 위임 기간 = 공사 시작일 ~ 종료일 (연장하면 자동으로 늘어남)<br>저장한 뒤 공사 카드의 [위임장]에서 볼 수 있습니다.</p>'
  +'<div class="row" style="margin-top:12px"><button class="button" type="submit">저장</button><button class="button ghost" type="button" onclick="renderJobs()">취소</button></div></form></div>';jvKindFilter();window.scrollTo(0,0)}
 /** F2.1 구분에 맞는 업체만 보이기: 오픈지원 = 업종 '오픈지원' 업체만 · 그 외 = 오픈지원 업체 숨김 (이미 배정된 업체는 그대로 보임) */
 function jvKindFilter(){const s=$('f_jKind');if(!s)return;const open=s.value==='OPEN';let n=0;
  document.querySelectorAll('.jvl').forEach(l=>{const show=(l.dataset.open==='1')===open||l.dataset.has==='1';l.style.display=show?'block':'none';if(show)n++;else{const c=l.querySelector('.jv');if(c)c.checked=false}});
+ const jd=$('jDelegName');if(jd){jd.textContent=principalName(delegKey(open));jd.className=open&&/미지정/.test(jd.textContent)?'req':''}if(open&&typeof openDelegWarn==='function')openDelegWarn();  /* F2.9 담당별 현장대리인 */
  const h=$('jKindHint');if(h)h.textContent=open?'오픈지원 업체만 표시합니다. 작업허가서·업체 순회점검 작성은 없습니다.'+(n?'':' (배정할 수 있는 오픈지원 업체가 없습니다)'):''}
 async function saveJobForm(e,id){e.preventDefault();
  // v4.4 서버로 보내기 전에 빈 칸 먼저 확인 → 그 칸으로 이동 + 붉은 테두리·흔들림
@@ -428,7 +429,7 @@ function showRoom(r){
  if(!tabs.some(t=>t[0]===roomTab))roomTab='att';
  /* F1.8j 미팅 방에서 바로: ← 협의체·합동점검 목록 · + 같은 공사에 미팅 방 하나 더 */
  $('jobs').innerHTML='<div class="card"><div class="row" style="justify-content:space-between"><button class="button ghost" type="button" onclick="clearInterval(roomTimer);sgo(\'meet\')">‹ 협의체·합동점검</button>'+gdBtn('room')+'</div><h2 style="margin-top:12px">'+escapeText(r.title)+' · '+escapeText(r.job.storeName)+'</h2><div class="muted">'+escapeText(r.date)+' '+escapeText(r.time||'')+' · '+escapeText(r.place)+' · '+escapeText(r.kinds.join(', '))+'</div>'
-  +'<div class="muted">도급인 책임자: '+escapeText(principalName('ceo',1))+' → 위임 <b>'+escapeText(principalName('delegate'))+'</b></div>'  /* F1.8k 회의록·점검표에도 같은 줄 · F1.9z 「· 담당」 뺌 */
+  +'<div class="muted">도급인 책임자: '+escapeText(principalName('ceo',1))+' → 위임 <b>'+escapeText(principalName(delegKey(r.job&&r.job.kind==='OPEN')))+'</b></div>'  /* F1.8k 회의록·점검표에도 같은 줄 · F1.9z 「· 담당」 뺌 */
   +(r.done?'<div class="note" style="margin-top:12px"><b style="color:var(--ok)">✔ 미팅 실시 완료</b> · '+escapeText(fmtTime(r.doneAt))+' · '+escapeText(r.doneBy||'')+'</div>':'')
   /* F1.8l 탭 없이 한 화면에서 ①참석 → ②합동점검 → ③회의록 순서대로 (위 칩을 누르면 그 단계로 이동) */
   +'<div class="row" style="flex-wrap:wrap;gap:6px;margin-top:10px">'+tabs.map(([k,l],i)=>'<button type="button" class="fxchip" id="rt_'+k+'" onclick="setRoomTab(\''+k+'\')">'+'①②③'[i]+' '+escapeText(l)+'</button>').join('')+'</div></div>'
