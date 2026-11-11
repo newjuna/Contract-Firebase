@@ -61,7 +61,7 @@ function switchTab(which){tab=which;toggleMenu(false);stopScan();if($(which+'Tab
 /* F1.9t 홈 화면 앱(PWA): 서비스 워커 등록 (저장 안 함 · 홈 화면에 추가할 수 있게만) */
 if('serviceWorker' in navigator&&location.protocol==='https:')window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 // ★ 화면 버전: 여기 한 줄만 고침 (GitHub만 올리면 로그인 화면·앱 화면·메뉴에 모두 반영, Code.gs 수정 불필요)
-const UI_VERSION='26.11.02 F3.0';
+const UI_VERSION='26.11.11 F3.1';
 /* F1.8o 전화번호 · 사업자번호: 숫자만 쳐도 '-' 자동 (서버는 원래 숫자만 골라 씀) */
 function fmtTel(v){const d=String(v||'').replace(/\D/g,'').slice(0,11);if(d.startsWith('02'))return d.length<3?d:d.length<6?d.slice(0,2)+'-'+d.slice(2):d.length<10?d.slice(0,2)+'-'+d.slice(2,5)+'-'+d.slice(5):d.slice(0,2)+'-'+d.slice(2,6)+'-'+d.slice(6,10);
  return d.length<4?d:d.length<8?d.slice(0,3)+'-'+d.slice(3):d.length<11?d.slice(0,3)+'-'+d.slice(3,6)+'-'+d.slice(6):d.slice(0,3)+'-'+d.slice(3,7)+'-'+d.slice(7)}
@@ -410,7 +410,9 @@ async function saveJobForm(e,id){e.preventDefault();
  const dl={};['COUNCIL','JOINT'].forEach(k=>dl[k]={delegator:value('d'+k+'a'),delegatee:value('d'+k+'b'),date:value('d'+k+'c')});const d={id,kind:$('f_jKind').value,title:value('jTitle'),storeName:value('jStore'),storeCode:cur?cur.storeCode:'',address:cur?cur.address:'',startDate:value('jStart'),endDate:value('jEnd'),delegations:dl,vendorIds:[...document.querySelectorAll('.jv:checked')].map(x=>x.value)};try{jobData=await call('saveJob',d);jobsMode='list';renderJobs();msg('공사를 저장했습니다.');refreshBadges()}catch(err){alert(err.message)}}
 function meetForm(jobId){jobsMode='form';const j=jobData.jobs.find(x=>x.id===jobId),today=new Date().toISOString().slice(0,10);$('jobs').innerHTML='<div class="card"><h2>미팅 방 만들기 · '+escapeText(j.title)+'</h2><form onsubmit="saveMeetForm(event,\''+escapeText(jobId)+'\')"><div class="split">'+input('mTitle','미팅명','착수 전 현장 미팅')+input('mPlace','장소',j.storeName)+input('mDate','일자',today,'date')+'</div><div class="field"><label>포함할 행사</label>'+Object.entries(jobData.meetKinds).map(([k,v])=>'<label class="desc" style="display:block;margin:6px 0"><input type="checkbox" class="mk" value="'+k+'" checked> '+escapeText(v)+'</label>').join('')+'</div><p class="desc">만들면 참여 업체 화면에 📢 미팅 알림이 나옵니다. 참석 체크는 현장에서 [방 열기]를 눌러야 시작됩니다.</p><div class="row"><button class="button" type="submit">방 만들기</button><button class="button ghost" type="button" onclick="renderJobs()">취소</button></div></form></div>'}
 async function saveMeetForm(e,jobId){e.preventDefault();const d={title:value('mTitle'),place:value('mPlace'),date:value('mDate'),time:value('mTime'),kinds:[...document.querySelectorAll('.mk:checked')].map(x=>x.value)};try{const r=await call('createMeeting',jobId,d);jobAt=0;/* 목록으로 돌아가면 새 미팅이 바로 보이게 */showRoom(r);msg('미팅 방을 만들었습니다.')}catch(err){alert(err.message)}}
-async function openRoom(id){try{showRoom(await call('meetingDetail',id))}catch(e){}}
+async function openRoom(id){if(window.__roomOpen&&window.__roomOpen.room!==id)window.__roomOpen=null;try{showRoom(await call('meetingDetail',id))}catch(e){}}
+/** F3.1 오픈 매장 [오늘 할 일]에서 연 방이면 그 매장으로 돌아감 */
+function roomBack(){clearInterval(roomTimer);const o=window.__roomOpen;window.__roomOpen=null;if(o&&room&&o.room===room.id&&typeof openOpen==='function')openOpen(o.job,'today');else sgo('meet')}
 /* ---------- v4.6 미팅 방: 탭으로 나눔 [QR 참석] [합동점검] [협의체 회의록] + 아래 실시 완료 ---------- */
 let room=null,roomTab='att';const photoPrev={};
 const MARK={OK:'양호',BAD:'불량',NA:'해당없음'};
@@ -428,7 +430,7 @@ function showRoom(r){
  const K=r.kindCodes||[],tabs=[['att','QR 참석 '+okAtt(r).length+'명']].concat(K.includes('JOINT')?[['joint','합동점검']]:[]).concat(K.includes('COUNCIL')?[['council','협의체 회의록']]:[]);
  if(!tabs.some(t=>t[0]===roomTab))roomTab='att';
  /* F1.8j 미팅 방에서 바로: ← 협의체·합동점검 목록 · + 같은 공사에 미팅 방 하나 더 */
- $('jobs').innerHTML='<div class="card"><div class="row" style="justify-content:space-between"><button class="button ghost" type="button" onclick="clearInterval(roomTimer);sgo(\'meet\')">‹ 협의체·합동점검</button>'+gdBtn('room')+'</div><h2 style="margin-top:12px">'+escapeText(r.title)+' · '+escapeText(r.job.storeName)+'</h2><div class="muted">'+escapeText(r.date)+' '+escapeText(r.time||'')+' · '+escapeText(r.place)+' · '+escapeText(r.kinds.join(', '))+'</div>'
+ $('jobs').innerHTML='<div class="card"><div class="row" style="justify-content:space-between"><button class="button ghost" type="button" onclick="roomBack()">'+(window.__roomOpen&&window.__roomOpen.room===r.id?'‹ 오픈 매장':'‹ 협의체·합동점검')+'</button>'+gdBtn('room')+'</div><h2 style="margin-top:12px">'+escapeText(r.title)+' · '+escapeText(r.job.storeName)+'</h2><div class="muted">'+escapeText(r.date)+' '+escapeText(r.time||'')+' · '+escapeText(r.place)+' · '+escapeText(r.kinds.join(', '))+'</div>'
   +'<div class="muted">도급인 책임자: '+escapeText(principalName('ceo',1))+' → 위임 <b>'+escapeText(principalName(delegKey(r.job&&r.job.kind==='OPEN')))+'</b></div>'  /* F1.8k 회의록·점검표에도 같은 줄 · F1.9z 「· 담당」 뺌 */
   +(r.done?'<div class="note" style="margin-top:12px"><b style="color:var(--ok)">✔ 미팅 실시 완료</b> · '+escapeText(fmtTime(r.doneAt))+' · '+escapeText(r.doneBy||'')+'</div>':'')
   /* F1.8l 탭 없이 한 화면에서 ①참석 → ②합동점검 → ③회의록 순서대로 (위 칩을 누르면 그 단계로 이동) */
@@ -522,7 +524,21 @@ async function confirmAt(id,ok){if(!confirm(ok?'이 참석자를 확인할까요
 function copyLink(t){navigator.clipboard?.writeText(t).then(()=>msg('링크를 복사했습니다.'),()=>prompt('아래 링크를 복사하세요',t))}
 /* ---------- v2.9 참석 체크 (QR로 들어온 모든 계정) ---------- */
 /* F1.8p 응답이 25초 넘게 없으면 로딩을 끝내고 [다시 시도] (예전: 로딩 창이 끝없이 떠 있음) */
-async function meetCheckIn(info){const token=MEET_TOKEN||LINK_REVIEW.slice(5);let tt=0;try{const r=await Promise.race([call('meetCheckIn',token,info||null),new Promise((_,rej)=>{tt=setTimeout(()=>{loadEnd();rej(Error('서버 응답이 늦습니다. 인터넷 연결을 확인한 뒤 [다시 시도]를 눌러 주세요. (이미 기록됐으면 다시 시도 때 완료로 보입니다)'))},25000)})]);showCheckIn(r)}catch(e){$('my').innerHTML='<div class="card"><h2>참석 체크 실패</h2><p class="desc">'+escapeText(e.message||'')+'</p><button class="button" type="button" onclick="meetCheckIn()">다시 시도</button></div>'}finally{clearTimeout(tt)}switchTab('my');$('my').scrollIntoView()}
+/* F3.1 25초가 지나도 '실패' 대신 '기록하는 중' → 5초마다 기록됐는지 확인 (3분까지) · 완료되면 바로 '참석 체크 완료' */
+let mcSeq=0,mcPoll=0;
+async function meetCheckIn(info){const token=MEET_TOKEN||LINK_REVIEW.slice(5),seq=++mcSeq;let tt=0,shown=false,slow=false;clearInterval(mcPoll);
+ const show=r=>{if(seq!==mcSeq||shown)return;shown=true;clearTimeout(tt);clearInterval(mcPoll);showCheckIn(r);switchTab('my')};
+ const fail=m=>{if(seq!==mcSeq||shown)return;shown=true;clearTimeout(tt);clearInterval(mcPoll);$('my').innerHTML='<div class="card"><h2>참석 체크 실패</h2><p class="desc">'+escapeText(m||'')+'</p><button class="button" type="button" onclick="meetCheckIn()">다시 시도</button></div>';switchTab('my')};
+ tt=setTimeout(()=>{if(shown)return;slow=true;loadEnd();meetSlow(token,seq,show,fail)},25000);
+ try{show(await call('meetCheckIn',token,info||null))}
+ catch(e){if(slow)return;/* 오류가 나도 기록은 됐을 수 있음 → 한 번 확인 */try{const r=await callQuiet('meetCheckStatus',token);if(r&&r.state==='DONE'){show(r);return}}catch(x){}fail(e.message)}
+ if(!slow){switchTab('my');$('my').scrollIntoView()}}
+function meetSlow(token,seq,show,fail){let n=0;
+ $('my').innerHTML='<div class="card" id="mcSlow"><h2>참석 체크</h2><div class="note"><b>⏳ 참석을 기록하는 중입니다</b><br>인터넷이 느려 조금 오래 걸리고 있습니다. 이 화면을 닫지 마세요.<br><span class="muted">5초마다 자동으로 확인합니다 · 완료되면 바로 「참석 체크 완료」로 바뀝니다</span></div><button class="button ghost" type="button" id="mcNow" style="width:100%;margin-top:10px">지금 다시 확인</button></div>';
+ switchTab('my');$('my').scrollIntoView();
+ const chk=async()=>{if(seq!==mcSeq||!$('mcSlow')){clearInterval(mcPoll);return}n++;try{const r=await callQuiet('meetCheckStatus',token);if(r&&r.state==='DONE'){show(r);return}}catch(e){}
+  if(n>=36)fail('3분 동안 기록을 확인하지 못했습니다. 인터넷 연결을 확인한 뒤 [다시 시도]를 눌러 주세요. (이미 기록됐으면 다시 시도 때 완료로 보입니다)')};
+ const b=$('mcNow');if(b)b.onclick=chk;mcPoll=setInterval(chk,5000)}
 /** F1.8p 미등록 계정: 참석 화면 → 사업자 등록 신청(또는 승인 대기) 화면으로 */
 function meetToReg(){try{history.replaceState(null,'',location.pathname)}catch(e){}MEET_TOKEN='';renderMy();switchTab('my');window.scrollTo(0,0)}
 function showCheckIn(r){const head='<div class="card"><small class="muted">'+escapeText(r.store)+' · '+escapeText(r.date)+' · '+escapeText(r.place)+'</small><h2>'+escapeText(r.meeting)+'</h2>';let body='';
