@@ -31,7 +31,15 @@ function opTodayHtml(){const d=opData,t=d.today,ended=d.job.status==='ENDED';if(
  const fx='<div class="card" id="opFixCard"><div class="vh-top"><h2 style="margin:0;font-size:16px">③ 지적사항 조치</h2>'+(F.length?'<span class="pill bad">미조치 '+F.length+'</span>':'<span class="pill ok">미조치 없음</span>')+'</div>'
   +F.map(f=>{const age=dayDiff(f.foundDate,t);return '<div class="item"><div><b>'+escapeText(f.item)+'</b>'+reqPill(f)+'<div class="muted">'+escapeText(omd(f.foundDate))+' · '+escapeText(f.company)+(age>=1?' · <span class="req">'+age+'일째</span>':'')+(f.memo?' · '+escapeText(f.memo):'')+'</div></div>'
    +'<div class="row" style="gap:6px;margin-top:6px"><button class="button ghost opReqBtn" type="button" style="flex:1;padding:8px;font-size:13px" onclick="dashReq(\''+escapeText(d.job.id)+'\',\''+escapeText(f.id)+'\')">📢 조치 요청</button><button class="button opFixBtn" type="button" style="flex:1;padding:8px;font-size:13px" onclick="opFix(\''+escapeText(f.id)+'\')">조치하기</button></div></div>'}).join('')+'</div>';
- return ins+dr+fx}
+ return opMeetHtml(d)+ins+dr+fx}
+/** F3.1 협의체 · 합동점검 칸 (아직 안 한 미팅 + 오늘 끝낸 미팅) → [방 열기 · 진행하기] = 미팅 방 · 돌아오면 이 매장 */
+function opMeetHtml(d){const t=d.today,L=(d.meetings||[]).filter(m=>!m.done||m.date===t);
+ const pill=m=>m.done?'<span class="pill ok">✔ 실시 완료</span>':m.open?'<span class="pill bad">방 열림</span>':m.date===t?'<span class="pill todo">오늘</span>':m.date<t?'<span class="pill bad">지남</span>':'<span class="pill lock">'+escapeText(omd(m.date))+'</span>';
+ return '<div class="card" id="opMeetCard"><div class="vh-top"><h2 style="margin:0;font-size:16px">📢 협의체 · 합동점검</h2>'+(L.some(m=>!m.done&&m.date<=t)?'<span class="pill todo">오늘 '+L.filter(m=>!m.done&&m.date<=t).length+'건</span>':'')+'</div>'
+  +(L.length?L.map(m=>'<div class="item"><div class="row" style="justify-content:space-between;gap:6px"><div><b>'+escapeText(m.title)+'</b><div class="muted">'+escapeText(omd(m.date))+(m.time?' '+escapeText(m.time):'')+(m.place?' · '+escapeText(m.place):'')+' · '+escapeText(m.kinds.join(' · '))+'</div></div>'+pill(m)+'</div>'
+    +'<button class="button'+(m.done?' ghost':'')+'" type="button" style="width:100%;margin-top:8px" onclick="opMeet(\''+escapeText(m.id)+'\')">'+(m.done?'기록 보기':m.open?'▶ 진행하기 (방 열림)':'방 열기 · 진행하기')+'</button></div>').join('')
+   :'<p class="muted" style="margin:6px 0 0">예정된 협의체 · 합동점검이 없습니다. <button class="linkbtn" type="button" onclick="sgo(\'meet\')">협의체·합동점검 메뉴</button></p>')+'</div>'}
+function opMeet(id){window.__roomOpen={job:opData.job.id,room:id};openRoom(id)}
 /** 도급인이 대신 조치 등록 (인테리어와 같은 화면) → 끝나면 이 매장 [오늘 할 일] */
 async function opFix(fid){const jid=opData.job.id;try{inspJob=await call('inspList',jid)}catch(e){return}if(!(inspJob.findings||[]).some(f=>f.id===fid&&f.status!=='DONE')){msg('이미 조치된 지적사항입니다.');openOpen(jid,'today');return}
  setTopGuide('');jobsMode='insp';openResolve(fid,'staff','open');window.scrollTo(0,0)}

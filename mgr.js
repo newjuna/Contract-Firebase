@@ -50,7 +50,7 @@ function mgrJoinForm(name){return '<form onsubmit="sendMgrJoin(event)">'+input('
  +'<button class="button" type="submit" id="btnMgrJoin" style="width:100%;margin-top:12px">인력관리자로 등록</button></form>'}
 async function sendMgrJoin(e){e.preventDefault();const name=value('mjName');if(!name){markMissing([{key:'mjName'}]);return}
  const b=$('btnMgrJoin');if(b){b.disabled=true;b.textContent='등록하는 중…'}
- try{const s=await call('mgrJoin',LINK_REVIEW.slice(4).toLowerCase(),name);mgrClearLink();display(s);msg((s.joined&&s.joined.company?s.joined.company+' ':'')+'인력관리자로 등록했습니다.')}
+ try{const s=await call('mgrJoin',LINK_REVIEW.slice(4).toLowerCase(),name);mgrClearLink();display(s);msg((s.joined&&s.joined.company?s.joined.company+' ':'')+'인력관리자로 등록했습니다.'+(s.joined&&(s.joined.stores||[]).length?' 배정 매장: '+s.joined.stores.join(', '):''))}  /* F3.1 초대 때 고른 매장 바로 배정 */
  catch(err){if(b&&b.isConnected){b.disabled=false;b.textContent='인력관리자로 등록'}}}
 async function mgrJoinDone(){mgrClearLink();try{display(await call('portalData'))}catch(e){display(state)}}
 
@@ -135,8 +135,8 @@ const mgAv=m=>'<span class="ogav" aria-hidden="true">'+escapeText(String(m.name|
 /** 전체 인력: [+ 초대 링크] [+ 직접 입력] · 사람 줄 (누르면 펼침) · 아직 안 쓴 초대 링크 */
 function mgrAllMain(d){const iv=d.invites.filter(x=>x.link!==mgrNew);
  return '<div class="ogt">전체 인력</div><div class="ogbar" id="mgInv"><button class="button" type="button" onclick="mgAdd=mgAdd===\'inv\'?\'\':\'inv\';mgOpen=\'\';mgrDraw()">+ 초대 링크</button><button class="button ghost" type="button" id="mgAdd" onclick="mgAdd=mgAdd===\'man\'?\'\':\'man\';mgOpen=\'\';mgrDraw()">+ 직접 입력</button></div>'
-  +(mgAdd==='inv'?'<div class="ogfm"><b style="font-size:13px">초대 링크 · 1개 = 1명 · '+d.days+'일</b>'+(mgrNew?mgrLinkBox(mgrNew,true):'<button class="button" type="button" style="width:100%;margin-top:8px" onclick="mgrInvite()">＋ 새 초대 링크 만들기</button>')
-   +(iv.length?'<div class="ogp" style="margin-top:8px">아직 안 쓴 초대 링크 '+iv.length+'개</div>'+iv.map(x=>'<div class="row" style="justify-content:space-between;padding:4px 0;border-top:1px solid #f0f1f4"><span class="muted" style="font-size:12px">'+escapeText(mgrDay(x.createdAt))+' 만듦 · '+escapeText(mgrDay(x.expAt))+'까지</span><span class="row" style="gap:4px"><button class="button ghost" type="button" style="padding:3px 8px;font-size:12px" onclick="mgrShow(\''+escapeText(x.link)+'\')">보기</button><button class="button ghost danger" type="button" style="padding:3px 8px;font-size:12px" onclick="mgrInviteCancel(\''+escapeText(x.token)+'\')">취소</button></span></div>').join(''):'')+'</div>':'')
+  +(mgAdd==='inv'?'<div class="ogfm"><b style="font-size:13px">초대 링크 · 1개 = 1명 · '+d.days+'일</b>'+(mgrNew?mgrLinkBox(mgrNew,true)+'<button class="button ghost" type="button" style="width:100%;margin-top:8px" onclick="mgrNew=\'\';mgInvJobs=new Set();mgInvNone=false;mgrDraw()">＋ 다른 사람 초대 링크 만들기</button>':mgrInvPick(d))
+   +(iv.length?'<div class="ogp" style="margin-top:8px">아직 안 쓴 초대 링크 '+iv.length+'개</div>'+iv.map(x=>'<div class="row" style="justify-content:space-between;padding:4px 0;border-top:1px solid #f0f1f4"><span class="muted" style="font-size:12px">'+escapeText(mgrDay(x.createdAt))+' 만듦 · '+escapeText(mgrDay(x.expAt))+'까지<br>'+escapeText((x.jobNames||[]).length?x.jobNames.join(' · '):'매장 없이 등록')+'</span><span class="row" style="gap:4px"><button class="button ghost" type="button" style="padding:3px 8px;font-size:12px" onclick="mgrShow(\''+escapeText(x.link)+'\')">보기</button><button class="button ghost danger" type="button" style="padding:3px 8px;font-size:12px" onclick="mgrInviteCancel(\''+escapeText(x.token)+'\')">취소</button></span></div>').join(''):'')+'</div>':'')
   +(mgAdd==='man'?'<form class="ogfm" onsubmit="mgrAddForm(event)"><b style="font-size:13px">직접 입력</b>'+input('mgName','이름','','text',false,'홍길동')+input('mgMail','Google 계정 (Gmail)','','email',false,'hong123@gmail.com')+'<div class="row" style="gap:6px"><button class="button" type="submit" style="flex:1">등록</button><button class="button ghost" type="button" onclick="mgAdd=\'\';mgrDraw()">취소</button></div></form>':'')
   +'<div id="mgList">'+(d.mgrs.map(m=>mgOpen===m.email?mgrPersonForm(d,m):'<button type="button" class="ogr"'+(m.status==='ACTIVE'?'':' style="opacity:.55"')+' onclick="mgOpen=\''+escapeText(m.email)+'\';mgAdd=\'\';mgrDraw()">'+mgAv(m)+'<span class="ognm"><b>'+escapeText(m.name)+'</b><span class="t">'+(m.status==='ACTIVE'?'':'사용 중지')+'</span><div>'+escapeText(d.jobs.filter(x=>x.mgrs.includes(m.email)).map(mgStore).join(' · ')||'배정 없음')+'</div></span><span class="ogmk">'+d.jobs.filter(x=>x.mgrs.includes(m.email)).length+'곳</span></button>').join('')
    ||'<p class="muted" style="margin-top:12px">아직 등록한 사람이 없습니다.</p>')+'</div>'}
@@ -168,7 +168,18 @@ function mgrLinkBox(link,fresh){return '<div class="subbox" style="text-align:ce
  +'<div class="muted" style="word-break:break-all;font-size:12px">'+escapeText(link)+'</div><div class="row" style="justify-content:center;margin-top:8px;gap:6px"><button class="button ghost" type="button" style="padding:6px 10px;font-size:13px" onclick="copyLink(\''+escapeText(link)+'\')">링크 복사</button><button class="button" type="button" style="padding:6px 10px;font-size:13px" onclick="mgrFlyer(\''+escapeText(link)+'\')">📄 안내문 보기 · 인쇄</button></div>'
  +'<p class="muted" style="margin:8px 0 0;font-size:12px">카카오톡·문자로 링크를 보내거나, 안내문을 인쇄해 전달하세요.</p></div>'}
 function mgrShow(link){mgrNew=link;mgAdd='inv';mgSel='';mgrDraw();$('mgInv')?.scrollIntoView({block:'start'})}
-async function mgrInvite(){try{mgrData=await call('mgrInvite');mgrNew=mgrData.newLink||'';mgrDraw();$('mgInv')?.scrollIntoView({block:'start'})}catch(e){}}
+/* F3.1 초대 링크 만들 때 매장 고르기 (여러 곳) · 또는 매장 없이 등록 (나중에 배정) → 등록하면 고른 매장에 바로 배정 */
+let mgInvJobs=new Set(),mgInvNone=false;
+function mgrInvPick(d){const n=mgInvJobs.size,ck=(on,js,lab)=>'<label class="wk" style="margin:0;padding:8px 4px;border-top:1px solid #f0f1f4"><input type="checkbox" '+(on?'checked':'')+' onchange="'+js+'"><span>'+lab+'</span></label>';
+ return '<p class="muted" style="margin:6px 0 4px;font-size:12px">등록하면 고른 매장에 바로 배정됩니다. (나중에 고칠 수 있음)</p>'
+  +d.jobs.map(x=>ck(mgInvJobs.has(x.id),'mgrInvJob(\''+escapeText(x.id)+'\',this.checked)','🏪 '+escapeText(mgStore(x))+' <span class="muted">'+escapeText(omd(x.startDate))+' ~ '+escapeText(omd(x.endDate))+'</span>')).join('')
+  +ck(mgInvNone,'mgrInvNoneSet(this.checked)','매장 없이 등록 <span class="muted">(나중에 배정)</span>')
+  +'<button class="button" type="button" style="width:100%;margin-top:8px" onclick="mgrInvite()">＋ 초대 링크 만들기'+(n?' ('+n+'곳)':mgInvNone?' (매장 없이)':'')+'</button>'}
+function mgrInvJob(id,on){on?mgInvJobs.add(id):mgInvJobs.delete(id);if(on)mgInvNone=false;mgrDraw()}
+function mgrInvNoneSet(on){mgInvNone=on;if(on)mgInvJobs=new Set();mgrDraw()}
+async function mgrInvite(){const ids=[...mgInvJobs].filter(id=>(mgrData.jobs||[]).some(x=>x.id===id));
+ if(!ids.length&&!mgInvNone){popup('확인해 주세요','배정할 매장을 고르거나 「매장 없이 등록」을 체크해 주세요.','확인');return}
+ try{mgrData=await call('mgrInvite',ids);mgrNew=mgrData.newLink||'';mgInvJobs=new Set();mgInvNone=false;mgrDraw();$('mgInv')?.scrollIntoView({block:'start'})}catch(e){}}
 async function mgrInviteCancel(token){if(!confirm('이 초대 링크를 취소할까요? 취소하면 이 링크로는 등록할 수 없습니다.'))return;try{mgrData=await call('mgrInviteCancel',token);if(mgrNew&&mgrNew.endsWith(token))mgrNew='';mgrDraw();msg('초대 링크를 취소했습니다.')}catch(e){}}
 async function mgrAddForm(e){e.preventDefault();const n=value('mgName'),m=value('mgMail').toLowerCase();const miss=[];if(!n)miss.push({key:'mgName'});if(!m)miss.push({key:'mgMail'});if(miss.length){markMissing(miss);return}
  try{mgrData=await call('mgrAdd',n,m);mgrNew='';mgAdd='';mgOpen=m;mgrDraw();msg(n+' 님을 등록했습니다. 아래에서 오픈 매장을 고르면 바로 배정됩니다.')}catch(err){}}
