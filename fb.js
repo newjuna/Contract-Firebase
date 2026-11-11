@@ -6,7 +6,7 @@
  * - 아직 옮기지 않은 기능은 '아직 Firebase로 옮기지 않은 기능' 안내
  */
 (function () {
-  const VERSION = '26.11.02 F3.0';
+  const VERSION = '26.11.11 F3.1';
   /* ---------- 기존 Code.gs와 같은 기준값 ---------- */
   /* F2.1 업종 '오픈지원' 추가 (매장 오픈 인력 · 인력사무소형) · 인테리어(마감) = 지금까지의 공사 흐름 그대로 */
   const CFG = {
@@ -246,6 +246,7 @@
    ['12','D. 재해발생 수준','최근 3년 산업재해 현황','계획서 Ⅳ 증빙자료']
   ];
   const EVAL_LEVELS={G:'우수',N:'보통',P:'미흡'};
+  const EVAL_OPEN_NAMES={8:'작업 전 TBM · 작업 안전 수칙',10:'사용 도구 · 운반 장비'};  // F3.1 오픈지원 계약 전 평가 (Relay EVAL_OPEN_ 와 같은 값)
   const EVAL_POINTS={1:[5,3,1],2:[10,5,1],3:[5,3,1],4:[5,3,1],5:[10,5,1],6:[10,5,1],7:[5,3,1],8:[10,5,1],9:[5,3,1],10:[10,5,1],11:[5,3,1],12:[20,10,1]};
   const EVAL_SECTIONS=[['A',[1,2,3],20],['B',[4,5,6,7,8],40],['C',[9,10,11],20],['D',[12],20]];
   const EVAL_RULE={rateGood:0.9,rateNormal:0.6,fixDaysGood:3};
@@ -958,7 +959,7 @@
     const evs = await Promise.all(cs.map((x) => db.collection('EVALUATIONS').where('companyId', '==', x.id).get().then(docs).catch(() => [])));
     const pre = (l) => { const e = l.filter((x) => x.result === 'APPROVED').sort((p, q) => String(p.evaluatedAt).localeCompare(String(q.evaluatedAt))).pop(); if (!e) return null;
       const lv = parse(e.items, {}), its = {}; Object.keys(lv).forEach((n) => { if (EVAL_LEVELS[lv[n]]) its[n] = { lv: lv[n] }; }); const sc = evalScore_(its);
-      return { total: sc.total, grade: sc.grade, limited: sc.limited, at: e.evaluatedAt || '', low: EVAL_ITEMS.filter(([n]) => its[n] && its[n].lv !== 'G').map(([n, , name]) => [n, name, EVAL_LEVELS[its[n].lv]]) }; };
+      return { total: sc.total, grade: sc.grade, limited: sc.limited, at: e.evaluatedAt || '', low: EVAL_ITEMS.filter(([n]) => its[n] && its[n].lv !== 'G').map(([n, , name]) => [n, (e.itemSet === 'OPEN' && EVAL_OPEN_NAMES[n]) || name, EVAL_LEVELS[its[n].lv]]) }; };  // F3.1 오픈지원 새 평가 이름
     return cs.map((x, i) => {
       const v = contractValid(x);
       return { id: x.id, uid: x.uid, company: x.company, industry: x.industry, approved: canExec(x),
@@ -1182,17 +1183,20 @@
     return { company: b.company, today: t, days: MGR_INVITE_DAYS,
       roster: roster.sort((p, q) => String(q.designatedAt).localeCompare(String(p.designatedAt))).map(smView),
       mgrs: ms.sort((p, q) => (p.status === q.status ? String(p.name).localeCompare(String(q.name)) : p.status === 'ACTIVE' ? -1 : 1)).map((m) => mgrView(m, jm)),
-      invites: ivs.filter((x) => !x.usedAt && String(x.expAt || '') > now0).sort((p, q) => String(q.createdAt).localeCompare(String(p.createdAt))).map((x) => ({ token: x.token, link: mgrLink(x.token), createdAt: x.createdAt, expAt: x.expAt })),
+      invites: ivs.filter((x) => !x.usedAt && String(x.expAt || '') > now0).sort((p, q) => String(q.createdAt).localeCompare(String(p.createdAt))).map((x) => ({ token: x.token, link: mgrLink(x.token), createdAt: x.createdAt, expAt: x.expAt, jobNames: x.jobNames || [] })),
       used: ivs.filter((x) => x.usedAt).length,
       jobs: jvs.map((v, i) => { const j = js[i]; return j && j.status !== 'ENDED' ? { id: j.id, title: j.title, storeName: j.storeName, startDate: j.startDate, endDate: j.endDate, hostName: j.hostName, mgrs: jm.filter((x) => x.jobId === j.id).map((x) => x.email) } : null; })
         .filter(Boolean).sort((p, q) => String(p.startDate).localeCompare(String(q.startDate))) };
   };
   /** [계약담당자] 초대 링크 만들기 (1명 1번 · 7일) */
-  API.mgrInvite = async (a) => {
-    const b = await openOwner(a), token = newToken(), t = now();
+  /* F3.1 jobIds = 등록하면 바로 배정할 진행 중 오픈 매장 (빈 목록 = 매장 없이 등록 · 나중에 배정) · 배정은 등록 때 중계 서버(mgrJoin_)가 함 */
+  API.mgrInvite = async (a, jobIds) => {
+    const b = await openOwner(a), token = newToken(), t = now(), pick = [];
+    for (const id of [...new Set((Array.isArray(jobIds) ? jobIds : []).map((x) => tidy(x, 40)).filter(Boolean))].slice(0, 20)) {
+      const { j } = await vendorJobOf(a, b, id, true); pick.push({ id: j.id, store: j.storeName || j.title || '' }); }
     await db.collection('MGR_INVITES').doc(token).set({ token, companyId: b.id, company: b.company, vendorUid: a.uid, createdBy: a.email, createdAt: t,
-      expAt: new Date(Date.now() + MGR_INVITE_DAYS * 86400000).toISOString(), usedAt: '', usedBy: '', usedName: '' });
-    audit(a, b.id, 'MGR_INVITE', token.slice(0, 8));
+      expAt: new Date(Date.now() + MGR_INVITE_DAYS * 86400000).toISOString(), usedAt: '', usedBy: '', usedName: '', jobs: pick.map((x) => x.id), jobNames: pick.map((x) => x.store) });
+    audit(a, b.id, 'MGR_INVITE', token.slice(0, 8) + ' 매장 ' + pick.length);
     return Object.assign(await API.mgrBoard(a), { newLink: mgrLink(token) });
   };
   /** [계약담당자] 아직 안 쓴 초대 링크 취소 */
@@ -1326,7 +1330,7 @@
   API.openStaffPack = async (a, jobId) => {
     const s = await staffOnly(a), j = await staffJob(a, s, jobId), t = today();
     const jvs = docs(await db.collection('JOB_VENDORS').where('jobId', '==', j.id).get());
-    const [ins, fds, tbs, sms, drs, ats] = await Promise.all(['INSPECTIONS', 'FINDINGS', 'TBMS', 'SITE_MGRS', 'OPEN_DRILLS', 'DRILL_ATTEND'].map((c) => db.collection(c).where('jobId', '==', j.id).get().then(docs).catch(() => [])));
+    const [ins, fds, tbs, sms, drs, ats, mts] = await Promise.all(['INSPECTIONS', 'FINDINGS', 'TBMS', 'SITE_MGRS', 'OPEN_DRILLS', 'DRILL_ATTEND', 'MEETINGS'].map((c) => db.collection(c).where('jobId', '==', j.id).get().then(docs).catch(() => [])));
     const vendors = await Promise.all(jvs.map(async (v) => {
       const fm = docs(await db.collection('CONTRACT_FORMS').where('companyId', '==', v.companyId).get().catch(() => ({ docs: [] }))).filter((x) => x.code === 'C02').sort((p, q) => String(q.updatedAt).localeCompare(String(p.updatedAt)))[0];
       let qs = planRisks(parse(fm && fm.json, {}) || {}).filter((r) => OPEN_TRADES.includes(r.t)).map((r) => r.q);
@@ -1341,6 +1345,8 @@
         done: fds.filter((f) => f.companyId === v.companyId && f.status === 'DONE').sort((p, q) => String(q.actionDate).localeCompare(String(p.actionDate))).slice(0, 30).map((f) => ({ id: f.id, inspId: f.inspId || '', item: f.item, foundDate: f.foundDate, actionDate: f.actionDate || '', actionBy: f.actionBy || '', reqN: Number(f.reqN) || 0 })) };
     }));
     return { today: t, me: s.name, job: { id: j.id, title: j.title, storeName: j.storeName, startDate: j.startDate, endDate: j.endDate, status: j.status, kind: j.kind }, vendors, types: OPEN_DRILL_TYPES,
+      /* F3.1 협의체 · 합동점검 (오늘 할 일에서 바로 방 열기) */
+      meetings: mts.sort((p, q) => (String(p.date) + String(p.time || '')).localeCompare(String(q.date) + String(q.time || ''))).map((m) => ({ id: m.id, title: m.title || '', date: m.date || '', time: m.time || '', place: m.place || '', kinds: (m.kinds || []).map((k) => MEET_KINDS[k] || k), open: m.open === 'Y', done: !!m.doneAt })),
       drills: drs.sort((p, q) => String(q.createdAt).localeCompare(String(p.createdAt))).map((d) => ({ id: d.id, type: d.type, label: d.label, date: d.date, open: d.open === 'Y', done: !!d.doneAt, doneAt: d.doneAt || '', photos: d.photos || [], memo: d.memo || '', hostName: d.hostName || '', link: drlLink(d.token),
         attendees: ats.filter((x) => x.drillId === d.id).sort((p, q) => String(p.at).localeCompare(String(q.at))).map((x) => ({ id: x.id, name: x.name, company: x.company, role: x.role, method: x.method, at: x.at })) })) };
   };
@@ -2034,33 +2040,38 @@
   /** [로그인한 누구나] QR/링크로 참석 체크. info 없이 부르면 필요한 입력을 알려 줌 */
   API.meetCheckIn = async (a, token, info) => {
     token = String(token || '').toLowerCase(); if (!/^[a-f0-9]{32}$/.test(token)) fail('잘못된 참여 링크입니다.');
-    const ls = await db.collection('MEET_LINKS').doc(token).get().catch(() => null); if (!ls || !ls.exists) fail('참여 링크를 찾을 수 없습니다.');
+    /* F3.1 아이폰 · 약한 신호에서 25초를 넘기던 문제: 확인을 하나씩(약 7번 왕복) → 한꺼번에 동시에 (읽기 2번 + 저장 1번) */
+    const [ls, myAt] = await Promise.all([db.collection('MEET_LINKS').doc(token).get().catch(() => null), db.collection('ATTEND').where('uid', '==', a.uid).get().then(docs)]);
+    if (!ls || !ls.exists) fail('참여 링크를 찾을 수 없습니다.');
     const L = ls.data(), base = { meeting: L.title, store: L.store, date: L.date, place: L.place }, id = L.meetingId + '_' + a.uid;
     const done = (x) => ({ ...base, state: 'DONE', name: x.name, company: x.company, role: x.role, status: x.status, checkedAt: x.checkedAt });
-    const mine = docs(await db.collection('ATTEND').where('uid', '==', a.uid).get()).find((x) => x.id === id && x.status !== 'REJECTED');
+    const mine = myAt.find((x) => x.id === id && x.status !== 'REJECTED');
     if (mine) return done(mine);
     if (L.open !== 'Y') return { ...base, state: 'CLOSED' };
+    const [st, cs, wks, jms, mms] = await Promise.all([staffOf(a), myCompanies(a),
+      info ? [] : db.collection('WORKERS').where('uid', '==', a.uid).get().then(docs).catch(() => []),
+      info ? null : db.collection('JOB_MGRS').doc(L.jobId + '_' + a.email).get().catch(() => null),
+      info ? [] : myMgrs(a).catch(() => [])]);
     const rec = async (o) => {
       const r = { id, meetingId: L.meetingId, jobId: L.jobId, token, email: a.email, uid: a.uid, checkedAt: now(), confirmedBy: '', confirmedAt: '', ...o };
       await db.collection('ATTEND').doc(id).set(r); audit(a, r.companyId, 'MEETING_CHECKIN', L.meetingId + ' ' + r.status);
       return done(r);
     };
-    const st = await staffOf(a);
     if (st) return rec({ name: st.name, side: 'STAFF', companyId: '', company: '아성다이소', role: '도급인(' + (STAFF_ROLES[st.role] || st.role) + ')', status: 'OK' });
-    const vs = L.vendors || [], cs = await myCompanies(a), own = cs.find((x) => x.status === 'VERIFIED') || null, assigned = own && vs.find((v) => v.companyId === own.id);
+    const vs = L.vendors || [], own = cs.find((x) => x.status === 'VERIFIED') || null, assigned = own && vs.find((v) => v.companyId === own.id);
     if (!vs.length) return { ...base, state: 'NO_VENDOR' };
     /* F1.8j QR만 찍으면 바로 참석 (입력 없음)
      *  배정된 업체 대표 계정 → 업체명 + 현장대리인 이름(없으면 업체 담당자) · 관리자
      *  이 공사에 등록된 작업자 본인 계정 → 등록한 이름 · 업체 · 근로자 */
     if (!info && assigned) return rec({ name: (await siteManagerOf(a, own).catch(() => '')) || own.contact || own.representative || a.email, side: 'VENDOR', companyId: own.id, company: own.company, role: ATTEND_ROLES[0], status: 'OK' });
     if (!info) {
-      const w = docs(await db.collection('WORKERS').where('uid', '==', a.uid).get().catch(() => ({ docs: [] }))).find((x) => x.jobId === L.jobId && x.active !== 'N' && vs.some((v) => v.companyId === x.companyId));
+      const w = wks.find((x) => x.jobId === L.jobId && x.active !== 'N' && vs.some((v) => v.companyId === x.companyId));
       if (w) return rec({ name: w.name, side: 'VENDOR', companyId: w.companyId, company: w.company || (vs.find((v) => v.companyId === w.companyId) || {}).company || '', role: ATTEND_ROLES[1], status: 'OK', workerId: w.id });
     }
     /* F2.2 이 오픈 매장에 배정된 오픈지원 인력관리자 본인 계정 → 바로 참석 (역할 = 인력관리자) */
     if (!info) {
-      const jms = await db.collection('JOB_MGRS').doc(L.jobId + '_' + a.email).get().catch(() => null), x = jms && jms.exists ? jms.data() : null;
-      const m = x && vs.some((v) => v.companyId === x.companyId) ? (await myMgrs(a)).find((y) => y.companyId === x.companyId && y.status === 'ACTIVE') : null;
+      const x = jms && jms.exists ? jms.data() : null;
+      const m = x && vs.some((v) => v.companyId === x.companyId) ? mms.find((y) => y.companyId === x.companyId && y.status === 'ACTIVE') : null;
       if (m) return rec({ name: m.name, side: 'VENDOR', companyId: x.companyId, company: x.company || m.company, role: '인력관리자', status: 'OK', mgr: 'Y' });
     }
     /* F1.8p 승인된 업체 계정도 아니고 이 공사 작업자도 아니면 참석 불가 → 사업자 등록 안내 (승인 대기 중이면 대기 안내) */
@@ -2071,6 +2082,14 @@
     if (assigned) return rec({ name, side: 'VENDOR', companyId: own.id, company: own.company, role, status: 'OK' });
     const v = vs.find((x) => x.companyId === String(info.companyId || '')); if (!v) fail('소속 업체를 선택해 주세요.');
     return rec({ name, side: 'VENDOR', companyId: v.companyId, company: v.company, role, status: 'PENDING' });
+  };
+  /** F3.1 참석이 기록됐는지 읽기만 (응답이 늦을 때 화면이 5초마다 확인 · 기록은 하지 않음) */
+  API.meetCheckStatus = async (a, token) => {
+    token = String(token || '').toLowerCase(); if (!/^[a-f0-9]{32}$/.test(token)) fail('잘못된 참여 링크입니다.');
+    const [ls, myAt] = await Promise.all([db.collection('MEET_LINKS').doc(token).get().catch(() => null), db.collection('ATTEND').where('uid', '==', a.uid).get().then(docs)]);
+    if (!ls || !ls.exists) fail('참여 링크를 찾을 수 없습니다.');
+    const L = ls.data(), x = myAt.find((r) => r.id === L.meetingId + '_' + a.uid && r.status !== 'REJECTED');
+    return x ? { meeting: L.title, store: L.store, date: L.date, place: L.place, state: 'DONE', name: x.name, company: x.company, role: x.role, status: x.status, checkedAt: x.checkedAt } : { state: 'WAIT' };
   };
 
   /* ---------- F1.7 공사 연장 · 종료 · 종료 평가 ----------
